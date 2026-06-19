@@ -44,6 +44,20 @@ projects/
 *.db-wal
 *.db-shm
 
+# 前端依赖与构建
+apps/web/node_modules/
+apps/web/.next/
+apps/web/dist/
+
+# QA 截图存档（不进 git）
+apps/web/download/
+
+# 上传素材（logo 已移到 public/）
+apps/web/upload/
+
+# Caddy / 运行时
+apps/web/dev.log
+
 # 备份
 *.bak
 *.backup

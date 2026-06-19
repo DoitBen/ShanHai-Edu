@@ -1,0 +1,282 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+  山海教育 · AI幼教ProMax可视化工作台 设计系统
+  设计气质：高级 / 克制 / 干净 / 大气
+  色彩：暖纸白底 + 深青灰主色 + 古铜金点缀 + 低饱和状态色
+  字体层级：3 级（页面标题 / 模块标题 / 正文说明）
+  无外部字体、无外部图标、无外部图片依赖。
+*/
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-bronze: var(--bronze);
+  --color-bronze-foreground: var(--bronze-foreground);
+
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: var(--font-sans-stack);
+  --font-mono: var(--font-mono-stack);
+}
+
+:root {
+  --radius: 0.625rem;
+
+  /* 字体：纯系统栈，零远程依赖；CJK 优先级保证中文渲染高级感 */
+  --font-sans-stack: ui-sans-serif, system-ui, -apple-system, "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC",
+    sans-serif;
+  --font-mono-stack: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code",
+    "Roboto Mono", Menlo, Consolas, monospace;
+
+  /* 基础中性色 —— 暖纸白体系 */
+  --background: #f6f5f1;        /* 暖纸白，克制不刺眼 */
+  --foreground: #23272e;        /* 深石墨灰，正文 */
+  --card: #ffffff;              /* 纯白卡片 */
+  --card-foreground: #23272e;
+  --popover: #ffffff;
+  --popover-foreground: #23272e;
+
+  /* 主色：深青灰（低饱和），呼应山海，非强蓝 */
+  --primary: #2d4356;
+  --primary-foreground: #f7f6f1;
+  --brand: #2d4356;
+  --brand-foreground: #f7f6f1;
+
+  /* 次要 / 静音 */
+  --secondary: #eceae3;
+  --secondary-foreground: #3a3f48;
+  --muted: #efece5;
+  --muted-foreground: #6b727c;
+
+  /* 强调：古铜金（仅用于品牌点缀、当前状态指示） */
+  --accent: #efece5;
+  --accent-foreground: #2d4356;
+  --bronze: #9c7c4e;
+  --bronze-foreground: #fbf7ee;
+
+  /* 状态色：低饱和 */
+  --success: #4f6b59;
+  --success-foreground: #f1f6f2;
+  --warning: #9a7340;
+  --warning-foreground: #faf3e6;
+  --info: #45627a;
+  --info-foreground: #eef3f7;
+  --destructive: #9a4747;
+  --destructive-foreground: #fbf0f0;
+
+  /* 边框 / 输入 / 聚焦 */
+  --border: #e4e1d9;
+  --input: #e4e1d9;
+  --ring: #2d4356;
+
+  /* 侧栏 */
+  --sidebar: #fbfaf6;
+  --sidebar-foreground: #2d3440;
+  --sidebar-primary: #2d4356;
+  --sidebar-primary-foreground: #f7f6f1;
+  --sidebar-accent: #efece5;
+  --sidebar-accent-foreground: #2d4356;
+  --sidebar-border: #e7e4dc;
+  --sidebar-ring: #2d4356;
+}
+
+.dark {
+  --background: #161a20;
+  --foreground: #e9e7e1;
+  --card: #1d222a;
+  --card-foreground: #e9e7e1;
+  --popover: #1d222a;
+  --popover-foreground: #e9e7e1;
+  --primary: #c9a36a;
+  --primary-foreground: #1a1410;
+  --brand: #c9a36a;
+  --brand-foreground: #1a1410;
+  --secondary: #262c35;
+  --secondary-foreground: #d8d5cd;
+  --muted: #232830;
+  --muted-foreground: #9aa0ab;
+  --accent: #262c35;
+  --accent-foreground: #e9e7e1;
+  --bronze: #c9a36a;
+  --bronze-foreground: #1a1410;
+  --success: #6f8a78;
+  --success-foreground: #1a201c;
+  --warning: #b98a4e;
+  --warning-foreground: #1f1810;
+  --info: #6f8aa3;
+  --info-foreground: #161c22;
+  --destructive: #b05a5a;
+  --destructive-foreground: #201515;
+  --border: #2a3038;
+  --input: #2a3038;
+  --ring: #c9a36a;
+  --sidebar: #14181e;
+  --sidebar-foreground: #d8d5cd;
+  --sidebar-primary: #c9a36a;
+  --sidebar-primary-foreground: #1a1410;
+  --sidebar-accent: #232830;
+  --sidebar-accent-foreground: #e9e7e1;
+  --sidebar-border: #232830;
+  --sidebar-ring: #c9a36a;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans-stack);
+    /* 字体层级仅 3 级：通过下方工具类控制 */
+    font-feature-settings: "kern", "liga", "calt";
+  }
+
+  /* 3 级字体层级工具类 */
+  .t-title {
+    font-size: 1.625rem;
+    line-height: 1.2;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .t-module {
+    font-size: 1.0625rem;
+    line-height: 1.35;
+    font-weight: 600;
+    letter-spacing: 0.005em;
+  }
+  .t-body {
+    font-size: 0.875rem;
+    line-height: 1.6;
+    font-weight: 400;
+  }
+  .t-caption {
+    font-size: 0.75rem;
+    line-height: 1.5;
+    font-weight: 400;
+    letter-spacing: 0.02em;
+  }
+  .t-overline {
+    font-size: 0.6875rem;
+    line-height: 1.4;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+}
+
+@layer utilities {
+  /* 克制的细滚动条 */
+  .scroll-fine::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scroll-fine::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scroll-fine::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 9999px;
+  }
+  .scroll-fine::-webkit-scrollbar-thumb:hover {
+    background: var(--muted-foreground);
+  }
+
+  /* 山海纹背景 —— 极淡的等高线，呼应品牌意象，非渐变 */
+  .bg-topo {
+    background-image: radial-gradient(
+        circle at 18% 22%,
+        rgba(45, 67, 86, 0.04) 0,
+        transparent 32%
+      ),
+      radial-gradient(
+        circle at 82% 78%,
+        rgba(156, 124, 78, 0.05) 0,
+        transparent 36%
+      );
+  }
+
+  .bg-grid {
+    background-image: linear-gradient(
+        to right,
+        rgba(45, 67, 86, 0.04) 1px,
+        transparent 1px
+      ),
+      linear-gradient(to bottom, rgba(45, 67, 86, 0.04) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  /* 极克制的卡片阴影：仅在需要层次时使用 */
+  .shadow-soft {
+    box-shadow: 0 1px 2px rgba(35, 39, 46, 0.04),
+      0 4px 16px -8px rgba(35, 39, 46, 0.08);
+  }
+  .shadow-lift {
+    box-shadow: 0 2px 4px rgba(35, 39, 46, 0.05),
+      0 12px 32px -12px rgba(35, 39, 46, 0.12);
+  }
+
+  .focus-ring {
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+  }
+  .focus-ring:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
+/* 选区色 */
+::selection {
+  background: rgba(45, 67, 86, 0.16);
+  color: inherit;
+}

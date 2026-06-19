@@ -1,0 +1,13 @@
+rule_id: R051
+title: 批量出图前必须先测 1 张
+trigger_node: "ppt_visual_asset|intro_video_asset"
+trigger_event: on_submit_to_api
+severity: warning
+check:
+  type: test_first_required
+  expression: |
+    EXISTS test_asset WHERE test_asset.status == "approved"
+    OR user_authorized_fast_mode == true
+action_message: 默认必须先测 1 张图，确认效果后再批量出图（除非用户明确授权快速模式）
+executor: builtin
+legacy_source: 04_审查规则/README.md「阶段5」

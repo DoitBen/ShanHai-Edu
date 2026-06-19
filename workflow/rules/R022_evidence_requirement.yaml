@@ -1,0 +1,13 @@
+rule_id: R022
+title: 判断/选择/练习页需有证据表达
+trigger_node: ppt_page_script
+trigger_event: on_generate
+severity: warning
+check:
+  type: foreach_page
+  expression: |
+    IF page.page_type IN ["error_judge", "practice_challenge", "evidence_reasoning"]:
+      page.evidence_requirement IS NOT NULL AND LENGTH(page.evidence_requirement) > 5
+action_message: 判断 / 练习 / 说理类页面必须写明学生需要根据哪些数量、图形关系、操作结果或生活观察说明理由
+executor: builtin
+legacy_source: PPT探究型页面约束_工作流节点.md

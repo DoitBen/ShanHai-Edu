@@ -1,0 +1,13 @@
+rule_id: R001
+title: 中文男声硬约束
+trigger_node: final_video
+trigger_event: on_approve_attempt
+severity: hard_block
+check:
+  type: jsonpath_assertion
+  expression: |
+    ($.voice_gender == "male" AND $.voice_language == "zh-CN")
+    OR ($.voice_exemption.approved == true)
+action_message: 必须中文男声，或填写结构化人工豁免（approved/approver/reason/approved_at）
+executor: builtin
+legacy_source: 01_执行入口.md「事故防复发规则」

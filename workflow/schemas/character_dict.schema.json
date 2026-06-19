@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "character_dict.schema.json",
+  "title": "角色字典",
+  "type": "object",
+  "required": ["characters"],
+  "properties": {
+    "characters": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/character" },
+      "minItems": 0
+    }
+  },
+  "$defs": {
+    "character": {
+      "type": "object",
+      "required": [
+        "character_id", "name", "identity",
+        "view_front", "view_side", "view_back",
+        "outfit_lock", "hair_lock", "body_proportion",
+        "style_constraint", "banned_keywords"
+      ],
+      "properties": {
+        "character_id": { "type": "string", "pattern": "^char_[a-z0-9_]+$" },
+        "name": { "type": "string" },
+        "identity": { "type": "string" },
+        "view_front": { "type": "string" },
+        "view_side": { "type": "string" },
+        "view_back": { "type": "string" },
+        "view_half": { "type": "string" },
+        "view_hand": { "type": "string" },
+        "outfit_lock": {
+          "type": "object",
+          "required": ["color", "style"],
+          "properties": {
+            "color": { "type": "string" },
+            "style": { "type": "string" },
+            "accessories": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "hair_lock": { "type": "string" },
+        "body_proportion": { "type": "string" },
+        "style_constraint": {
+          "type": "string",
+          "enum": ["cartoon", "silhouette", "3d_non_realistic"]
+        },
+        "banned_keywords": {
+          "type": "array",
+          "items": { "type": "string" },
+          "contains": { "enum": ["真人", "photorealistic", "real child"] },
+          "minContains": 3
+        },
+        "reference_image": { "type": "string", "format": "uri-reference" }
+      }
+    }
+  }
+}

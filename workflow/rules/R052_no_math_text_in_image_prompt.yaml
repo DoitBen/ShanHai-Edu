@@ -1,0 +1,13 @@
+rule_id: R052
+title: 生图 prompt 不得包含可读数学文字
+trigger_node: "ppt_page_script|storyboard"
+trigger_event: on_save
+severity: warning
+check:
+  type: foreach_image_prompt
+  expression: |
+    prompt.description NOT_MATCHES /[0-9一二三四五六七八九十]+ *[+\-×÷=]/
+    AND prompt.description NOT_CONTAINS "答案"
+    AND prompt.description NOT_CONTAINS "公式"
+action_message: 图片 prompt 含数学公式/数字/答案描述，应改在 math_assertions 走 PPT 可编辑层
+executor: "agent:claude"

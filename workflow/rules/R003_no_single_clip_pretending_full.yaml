@@ -1,0 +1,15 @@
+rule_id: R003
+title: 单段不得冒充完整视频
+trigger_node: final_video
+trigger_event: on_approve_attempt
+severity: hard_block
+check:
+  type: conditional
+  conditions:
+    - when: "project_config.intro_video_type == 'full_60_120s'"
+      assert: "$.clip_count >= 6 AND $.total_duration_sec >= 60 AND $.total_duration_sec <= 120"
+    - when: "project_config.intro_video_type == 'short_10_15s'"
+      assert: "$.total_duration_sec >= 10 AND $.total_duration_sec <= 15"
+action_message: 单段 omni_flash-10s 只能作为短导入片或素材，不能作为完整教学视频
+executor: "script:final_delivery_gate.py"
+legacy_source: 01_执行入口.md「事故防复发规则」

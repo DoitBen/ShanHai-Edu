@@ -1,0 +1,11 @@
+rule_id: R027
+title: ppt-master Eight Confirmations
+trigger_node: pptx_artifact
+trigger_event: on_generate
+severity: hard_block
+check:
+  type: jsonpath_assertion
+  expression: "$.eight_confirmations_status IN ['confirmed', 'fast_mode_authorized']"
+action_message: ppt-master Eight Confirmations 必须 confirmed 或用户明确授权 fast_mode_authorized
+executor: builtin
+legacy_source: 第十步：ppt-master公开课PPT生成_自动化执行规则.md

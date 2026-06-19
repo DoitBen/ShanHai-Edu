@@ -1,0 +1,12 @@
+rule_id: R024
+title: 页面类型多样性（至少覆盖 5 类）
+trigger_node: ppt_assembly_plan
+trigger_event: on_approve_attempt
+severity: warning
+check:
+  type: jsonpath_assertion
+  expression: |
+    COUNT(keys($.page_type_quota) WHERE value >= 1) >= 5
+action_message: PPT 总装方案至少需覆盖 5 类页面类型
+executor: builtin
+legacy_source: PPT探究型页面约束_工作流节点.md

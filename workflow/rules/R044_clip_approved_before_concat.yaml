@@ -1,0 +1,10 @@
+rule_id: R044
+title: 视频片段必须人工验收后才能拼接
+trigger_node: final_video
+trigger_event: on_approve_attempt
+severity: hard_block
+check:
+  type: foreach_clip
+  expression: "clip.status == 'approved'"
+action_message: 拼接前所有视频片段必须人工验收通过（status=approved）
+executor: builtin

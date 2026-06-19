@@ -1,0 +1,11 @@
+rule_id: R040
+title: 旁白时长与字数匹配
+trigger_node: intro_video_script
+trigger_event: on_generate
+severity: warning
+check:
+  type: jsonpath_assertion
+  expression: |
+    ABS(($.narration_word_count / 280.0 * 60.0) - $.total_duration_sec) <= $.total_duration_sec * 0.1
+action_message: 旁白字数与视频时长不匹配（按 280 字/分钟换算偏差超过 10%）
+executor: builtin

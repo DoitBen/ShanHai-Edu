@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pptx_artifact.schema.json",
+  "title": "PPT 装配产物",
+  "type": "object",
+  "required": [
+    "pptx_path", "pdf_preview_path", "contact_sheet_path",
+    "svg_quality_passed", "eight_confirmations_status",
+    "slide_count", "notes_count", "media_count"
+  ],
+  "properties": {
+    "pptx_path": { "type": "string" },
+    "pdf_preview_path": { "type": "string" },
+    "contact_sheet_path": { "type": "string" },
+    "svg_quality_passed": { "type": "boolean", "const": true, "description": "R028 强约束" },
+    "eight_confirmations_status": {
+      "type": "string",
+      "enum": ["pending", "confirmed", "fast_mode_authorized"],
+      "description": "R027 强约束：confirmed 或 fast_mode_authorized"
+    },
+    "slide_count": { "type": "integer", "minimum": 1 },
+    "notes_count": { "type": "integer", "minimum": 1, "description": "R029 应等于 slide_count" },
+    "media_count": { "type": "integer", "minimum": 1, "description": "R030 强约束 > 0" }
+  }
+}

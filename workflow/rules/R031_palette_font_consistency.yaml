@@ -1,0 +1,12 @@
+rule_id: R031
+title: 配色 / 字体一致性
+trigger_node: pptx_artifact
+trigger_event: on_approve_attempt
+severity: warning
+check:
+  type: pptx_style_extract_and_match
+  expression: |
+    pptx.colors_used IS_SUBSET_OF visual_contract.palette
+    AND (visual_contract.font_preference IS NULL OR pptx.fonts_used IS_SUBSET_OF [visual_contract.font_preference])
+action_message: PPT 使用的配色 / 字体未严格落在第 0 步定义的视觉契约内
+executor: builtin

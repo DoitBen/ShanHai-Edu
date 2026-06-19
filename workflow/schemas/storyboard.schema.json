@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "storyboard.schema.json",
+  "title": "分镜脚本（L3 逐镜头）",
+  "type": "object",
+  "required": ["shots"],
+  "properties": {
+    "shots": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/shot" },
+      "minItems": 6,
+      "description": "R003 完整教学视频默认 ≥6 个主分镜；短导入片可放宽"
+    }
+  },
+  "$defs": {
+    "shot": {
+      "type": "object",
+      "required": [
+        "shot_id", "duration_sec", "main_subject",
+        "reference_image_ids", "narration_slice",
+        "model_prompt", "first_frame_test_status"
+      ],
+      "properties": {
+        "shot_id": { "type": "string", "pattern": "^shot_\\d{2}$" },
+        "duration_sec": { "type": "integer", "enum": [10, 12, 15] },
+        "main_subject": { "type": "string" },
+        "character_refs": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^char_[a-z0-9_]+$" }
+        },
+        "reference_image_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "R013 强约束：非空"
+        },
+        "narration_slice": { "type": "string", "minLength": 1 },
+        "subtitle": { "type": "string" },
+        "model_prompt": {
+          "type": "string",
+          "minLength": 20,
+          "description": "R043 必须包含「旁白（男声，中文）」和「禁止英文配音」"
+        },
+        "first_frame_test_status": {
+          "type": "string",
+          "enum": ["not_tested", "passed", "failed"],
+          "description": "R042 提交 API 前必须 passed"
+        },
+        "first_frame_asset_id": { "type": "string" }
+      }
+    }
+  }
+}

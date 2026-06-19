@@ -1,0 +1,13 @@
+rule_id: R004
+title: 角色字典禁真人
+trigger_node: character_dict
+trigger_event: on_save
+severity: hard_block
+check:
+  type: foreach_character
+  expression: |
+    character.style_constraint IN ["cartoon", "silhouette", "3d_non_realistic"]
+    AND character.banned_keywords CONTAINS ALL ["真人", "photorealistic", "real child"]
+action_message: 角色风格必须非写实，且禁用关键词必须包含「真人」「photorealistic」「real child」三项
+executor: builtin
+legacy_source: 第九步分镜小云雀提示词、合规要求

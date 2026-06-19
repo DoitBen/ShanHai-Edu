@@ -1,0 +1,13 @@
+rule_id: R010
+title: 上游必须 approved 才能进入下游
+trigger_node: "*"
+trigger_event: on_generate
+severity: hard_block
+check:
+  type: dependency_check
+  expression: |
+    FOR EACH dep IN node.depends_on:
+      dep.status IN ["approved", "skipped"]
+action_message: 上游依赖节点未 approved 或 skipped
+executor: builtin
+legacy_source: 01_执行入口.md「关键停顿点」

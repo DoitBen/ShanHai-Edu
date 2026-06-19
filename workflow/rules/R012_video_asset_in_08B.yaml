@@ -1,0 +1,15 @@
+rule_id: R012
+title: 视频资产只能进 08B，禁用 PPT 资产作参考
+trigger_node: intro_video_asset
+trigger_event: on_save
+severity: hard_block
+check:
+  type: foreach_asset
+  expression: |
+    asset.storage_path STARTS_WITH '08B_导入视频资产/'
+    AND asset.reference_path NOT_STARTS_WITH '08A_PPT视觉资产/'
+    AND asset.reference_path NOT_CONTAINS 'contact_sheet'
+    AND asset.reference_path NOT_CONTAINS '本地候选'
+action_message: 视频资产必须落在 08B_导入视频资产/ 且不得引用 PPT 资产 / contact sheet / 本地候选视频抽帧
+executor: builtin
+legacy_source: 公开课自动化9步完整流程-Promax版.md「资产目录必须分支隔离」

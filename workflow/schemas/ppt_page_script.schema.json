@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ppt_page_script.schema.json",
+  "title": "PPT 页面脚本（细粒度 13 字段，逐页）",
+  "type": "object",
+  "required": ["pages"],
+  "properties": {
+    "pages": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/page" },
+      "minItems": 1
+    }
+  },
+  "$defs": {
+    "page": {
+      "type": "object",
+      "required": [
+        "page_index", "core_competency", "page_objective",
+        "student_action", "page_type", "main_visual",
+        "zone_layout", "density_limits"
+      ],
+      "properties": {
+        "page_index": { "type": "integer", "minimum": 1 },
+        "core_competency": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "number_sense","quantity_sense","symbol_awareness","operation_ability",
+              "geometric_intuition","spatial_concept","reasoning_awareness","data_awareness",
+              "model_awareness","application_awareness","innovation_awareness"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 2
+        },
+        "page_objective": { "type": "string", "maxLength": 30 },
+        "student_action": {
+          "type": "string",
+          "enum": ["look","touch","arrange","count","divide","compare","circle","link","draw","speak","judge","fill","correct","find"]
+        },
+        "page_type": {
+          "type": "string",
+          "enum": [
+            "life_observation","role_task","inquiry_operation","step_reveal",
+            "dual_image_compare","error_judge","practice_challenge","evidence_reasoning",
+            "math_id_card","blackboard_summary","homework_practice"
+          ]
+        },
+        "main_visual": {
+          "type": "object",
+          "required": ["description", "serves_purpose"],
+          "properties": {
+            "description": { "type": "string" },
+            "serves_purpose": {
+              "type": "string",
+              "description": "服务的教学动作：观察/操作/比较/分类/说理/小结。R021 不允许「装饰」"
+            }
+          }
+        },
+        "character_refs": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^char_[a-z0-9_]+$" }
+        },
+        "image_prompts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/image_prompt" }
+        },
+        "math_assertions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/math_assertion" }
+        },
+        "zone_layout": {
+          "type": "object",
+          "required": ["task_zone", "math_zone", "conclusion_zone"],
+          "properties": {
+            "task_zone": { "type": "string" },
+            "math_zone": { "type": "string" },
+            "conclusion_zone": { "type": "string" }
+          }
+        },
+        "evidence_requirement": {
+          "type": "string",
+          "description": "判断/选择/练习页必须非空（R022）"
+        },
+        "accuracy_notes": {
+          "type": "string",
+          "description": "教师备注层，不进学生可见层"
+        },
+        "link_to_prev_page": { "type": "string" },
+        "density_limits": {
+          "type": "object",
+          "required": ["body_text_max", "info_chunks_max"],
+          "properties": {
+            "body_text_max": { "type": "integer", "minimum": 1, "maximum": 25 },
+            "info_chunks_max": { "type": "integer", "minimum": 1, "maximum": 5 }
+          }
+        }
+      }
+    },
+    "image_prompt": {
+      "type": "object",
+      "required": ["prompt_id", "description", "knowledge_link", "real_life_scene", "aspect_ratio"],
+      "properties": {
+        "prompt_id": { "type": "string" },
+        "description": { "type": "string" },
+        "knowledge_link": { "type": "string" },
+        "real_life_scene": { "type": "boolean" },
+        "character_refs": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^char_[a-z0-9_]+$" }
+        },
+        "aspect_ratio": { "type": "string", "enum": ["16:9", "1:1", "9:16"] }
+      }
+    },
+    "math_assertion": {
+      "type": "object",
+      "required": ["content", "editable_layer"],
+      "properties": {
+        "content": { "type": "string" },
+        "answer": { "type": "string" },
+        "editable_layer": {
+          "type": "string",
+          "enum": ["ppt_text", "ppt_shape", "ppt_chart"],
+          "description": "R006 红线：禁止 ppt_image / video"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "project_meta.schema.json",
+  "title": "项目元数据",
+  "type": "object",
+  "required": ["project_id", "project_name", "subject", "grade", "textbook_version", "volume", "lesson_type", "lesson_duration_min", "created_at"],
+  "properties": {
+    "project_id": { "type": "string", "format": "uuid" },
+    "project_name": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "subject": { "type": "string", "enum": ["math"] },
+    "grade": { "type": "integer", "minimum": 1, "maximum": 6 },
+    "textbook_version": { "type": "string", "enum": ["renjiao", "beishida", "sujiao", "xishida", "other"] },
+    "volume": { "type": "string", "enum": ["shang", "xia"] },
+    "lesson_type": { "type": "string", "enum": ["public", "regular", "review", "practice"] },
+    "lesson_duration_min": { "type": "integer", "enum": [35, 40] },
+    "created_at": { "type": "string", "format": "date-time" },
+    "deadline_at": { "type": "string", "format": "date-time" }
+  }
+}

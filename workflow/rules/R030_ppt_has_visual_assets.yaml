@@ -1,0 +1,11 @@
+rule_id: R030
+title: PPT 必须有课程视觉资产
+trigger_node: pptx_artifact
+trigger_event: on_approve_attempt
+severity: hard_block
+check:
+  type: jsonpath_assertion
+  expression: "$.media_count > 0"
+action_message: PPT 不得只有文本框 / 色块 / 装饰形状，必须包含课程视觉资产或可编辑矢量主视觉
+executor: builtin
+legacy_source: 01_执行入口.md「事故防复发规则」

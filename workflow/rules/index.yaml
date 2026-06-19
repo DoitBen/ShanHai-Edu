@@ -1,0 +1,87 @@
+# 规则登记表索引
+# 每条规则一个独立 YAML 文件，调度器按 trigger_node + trigger_event 索引取出
+# 详细规则定义见 rules/R*.yaml；语义和分组说明见 rules.md
+
+version: "1.0.0"
+last_updated: "2026-06-19"
+
+# 严重度
+severity_levels:
+  - hard_block    # 阻断 approve，无 override
+  - warning       # 红字提示，允许 override（记入飞轮）
+  - info          # 仅提示
+
+# 执行器
+executors:
+  builtin:                                  # 内置 Python 检查函数
+    type: function
+    location: "engine/builtin_checks.py"
+  agent:claude:                             # 调用 Claude 智能体
+    type: llm_agent
+    provider: claude
+    prompt_template: "prompts/supervisor/page_reviewer.md"
+  "script:final_delivery_gate.py":
+    type: external_script
+    location: "scripts/final_delivery_gate.py"
+  "script:audit_student_visible_text.py":
+    type: external_script
+    location: "scripts/audit_student_visible_text.py"
+  "script:audit_six_package_consistency.py":
+    type: external_script
+    location: "scripts/audit_six_package_consistency.py"
+  "script:audit_delivery_contracts.py":
+    type: external_script
+    location: "scripts/audit_delivery_contracts.py"
+  "script:workflow_enforcement_gate.py":
+    type: external_script
+    location: "scripts/workflow_enforcement_gate.py"
+  "script:svg_quality_checker.py":
+    type: external_script
+    location: "ppt-master/svg_quality_checker.py"
+
+# 规则索引（按编号）
+rules:
+  # 红线（hard_block）
+  - { id: R001, file: R001_voice_male_zh.yaml, severity: hard_block }
+  - { id: R002, file: R002_no_english_audio.yaml, severity: hard_block }
+  - { id: R003, file: R003_no_single_clip_pretending_full.yaml, severity: hard_block }
+  - { id: R004, file: R004_character_no_realistic.yaml, severity: hard_block }
+  - { id: R005, file: R005_candidate_not_final.yaml, severity: hard_block }
+  - { id: R006, file: R006_math_editable_layer.yaml, severity: hard_block }
+  # 状态/契约
+  - { id: R010, file: R010_upstream_approved_required.yaml, severity: hard_block }
+  - { id: R011, file: R011_ppt_asset_in_08A.yaml, severity: hard_block }
+  - { id: R012, file: R012_video_asset_in_08B.yaml, severity: hard_block }
+  - { id: R013, file: R013_clip_requires_reference.yaml, severity: hard_block }
+  - { id: R014, file: R014_concat_manifest_fields.yaml, severity: hard_block }
+  - { id: R015, file: R015_pre_submit_gates.yaml, severity: hard_block }
+  # PPT 探究型 + 装配
+  - { id: R020, file: R020_each_page_student_action.yaml, severity: warning }
+  - { id: R021, file: R021_main_visual_serves_purpose.yaml, severity: warning }
+  - { id: R022, file: R022_evidence_requirement.yaml, severity: warning }
+  - { id: R023, file: R023_blackboard_summary_required.yaml, severity: warning }
+  - { id: R024, file: R024_page_type_diversity.yaml, severity: warning }
+  - { id: R025, file: R025_info_density_limit.yaml, severity: warning }
+  - { id: R026, file: R026_no_internal_info_in_student_view.yaml, severity: hard_block }
+  - { id: R027, file: R027_eight_confirmations.yaml, severity: hard_block }
+  - { id: R028, file: R028_svg_quality_pass.yaml, severity: hard_block }
+  - { id: R029, file: R029_slide_notes_count_match.yaml, severity: warning }
+  - { id: R030, file: R030_ppt_has_visual_assets.yaml, severity: hard_block }
+  - { id: R031, file: R031_palette_font_consistency.yaml, severity: warning }
+  - { id: R032, file: R032_character_ref_exists.yaml, severity: hard_block }
+  # 视频
+  - { id: R040, file: R040_narration_duration_match.yaml, severity: warning }
+  - { id: R041, file: R041_narration_slice_completeness.yaml, severity: hard_block }
+  - { id: R042, file: R042_first_frame_test_pass.yaml, severity: hard_block }
+  - { id: R043, file: R043_video_prompt_zh_male_constraint.yaml, severity: hard_block }
+  - { id: R044, file: R044_clip_approved_before_concat.yaml, severity: hard_block }
+  - { id: R045, file: R045_banned_elements_required.yaml, severity: hard_block }
+  # 图片
+  - { id: R050, file: R050_verified_aspect_ratio.yaml, severity: hard_block }
+  - { id: R051, file: R051_test_before_batch.yaml, severity: warning }
+  - { id: R052, file: R052_no_math_text_in_image_prompt.yaml, severity: warning }
+  # 收尾
+  - { id: R060, file: R060_six_package_consistency.yaml, severity: hard_block }
+  - { id: R061, file: R061_student_visible_text_audit.yaml, severity: hard_block }
+  - { id: R062, file: R062_delivery_contracts_audit.yaml, severity: hard_block }
+  - { id: R063, file: R063_time_stats_required.yaml, severity: warning }

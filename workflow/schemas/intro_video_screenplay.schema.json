@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "intro_video_screenplay.schema.json",
+  "title": "导入视频剧本（L2 分场）",
+  "type": "object",
+  "required": ["scenes"],
+  "properties": {
+    "scenes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/scene" },
+      "minItems": 1
+    }
+  },
+  "$defs": {
+    "scene": {
+      "type": "object",
+      "required": ["scene_id", "duration_sec", "scene_description", "narration_segment"],
+      "properties": {
+        "scene_id": { "type": "string", "pattern": "^scene_\\d{2}$" },
+        "duration_sec": { "type": "integer", "minimum": 1 },
+        "scene_description": { "type": "string", "minLength": 5 },
+        "character_refs": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^char_[a-z0-9_]+$" }
+        },
+        "narration_segment": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

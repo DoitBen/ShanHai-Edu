@@ -1,0 +1,11 @@
+rule_id: R005
+title: 候选不得伪装终版
+trigger_node: final_delivery
+trigger_event: on_approve_attempt
+severity: hard_block
+check:
+  type: jsonpath_assertion
+  expression: "$.gate_result_json.mode == 'final' AND $.gate_passed == true"
+action_message: 必须 final_delivery_gate.py --mode final 通过；--mode candidate 不能交付
+executor: "script:final_delivery_gate.py"
+legacy_source: 01_执行入口.md「正式交付硬边界」

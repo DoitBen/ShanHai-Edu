@@ -1,0 +1,11 @@
+rule_id: R029
+title: PPTX 幻灯片数与备注数一致
+trigger_node: pptx_artifact
+trigger_event: on_approve_attempt
+severity: warning
+check:
+  type: jsonpath_assertion
+  expression: "$.slide_count == $.notes_count"
+action_message: PPTX 幻灯片数与备注数不一致，可能漏了备注
+executor: builtin
+legacy_source: 第十步：ppt-master公开课PPT生成_自动化执行规则.md

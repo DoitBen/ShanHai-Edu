@@ -1,0 +1,11 @@
+rule_id: R011
+title: PPT 视觉资产只能进 08A
+trigger_node: ppt_visual_asset
+trigger_event: on_save
+severity: hard_block
+check:
+  type: foreach_asset
+  expression: "asset.storage_path STARTS_WITH '08A_PPT视觉资产/'"
+action_message: PPT 视觉资产必须落在 08A_PPT视觉资产/ 目录下
+executor: builtin
+legacy_source: 公开课自动化9步完整流程-Promax版.md「资产目录必须分支隔离」

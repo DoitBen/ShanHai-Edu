@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "final_video.schema.json",
+  "title": "最终视频（生成+拼接+中文男声）",
+  "type": "object",
+  "required": [
+    "video_path", "total_duration_sec", "clip_count", "clips",
+    "audio_streams_count", "audio_verified",
+    "voice_gender", "voice_language",
+    "narration_audio_path", "model_audio_policy",
+    "english_audio_detected", "concat_manifest_path"
+  ],
+  "properties": {
+    "video_path": { "type": "string" },
+    "total_duration_sec": { "type": "integer", "minimum": 10 },
+    "clip_count": { "type": "integer", "minimum": 1 },
+    "clips": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/clip" },
+      "minItems": 1
+    },
+    "audio_streams_count": { "type": "integer", "minimum": 1 },
+    "audio_verified": { "type": "boolean", "const": true },
+    "voice_gender": {
+      "type": "string",
+      "enum": ["male", "exempted_female", "exempted_child", "exempted_ambient"],
+      "description": "R001 默认 male，非 male 需配 voice_exemption"
+    },
+    "voice_language": { "type": "string", "const": "zh-CN", "description": "R001 强约束" },
+    "narration_audio_path": { "type": "string" },
+    "subtitle_srt_path": { "type": "string" },
+    "model_audio_policy": {
+      "type": "string",
+      "enum": ["discarded_or_muted", "verified_chinese", "no_model_audio"],
+      "description": "R002 强约束"
+    },
+    "english_audio_detected": { "type": "boolean", "const": false, "description": "R002 强约束" },
+    "concat_manifest_path": { "type": "string" },
+    "voice_exemption": {
+      "type": "object",
+      "required": ["approved", "approver", "reason", "approved_at"],
+      "properties": {
+        "approved": { "type": "boolean" },
+        "approver": { "type": "string" },
+        "reason": { "type": "string" },
+        "approved_at": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "$defs": {
+    "clip": {
+      "type": "object",
+      "required": ["shot_id", "model", "api_task_id", "download_path", "status", "reference_image_ids"],
+      "properties": {
+        "shot_id": { "type": "string", "pattern": "^shot_\\d{2}$" },
+        "model": { "type": "string", "enum": ["omni_flash_10s", "sora_2_12s"] },
+        "api_task_id": { "type": "string" },
+        "download_path": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "generated", "approved", "failed"],
+          "description": "R044 拼接前所有 clip status 必须 approved"
+        },
+        "reference_image_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "R013 强约束"
+        },
+        "failed_reason": { "type": "string" }
+      }
+    }
+  }
+}

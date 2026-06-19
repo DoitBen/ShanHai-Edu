@@ -1,0 +1,14 @@
+rule_id: R015
+title: 真实提交前合同 + 批校 + 强制门禁三连
+trigger_node: storyboard
+trigger_event: on_submit_to_api
+severity: hard_block
+check:
+  type: gate_chain
+  must_pass_in_order:
+    - "scripts/workflow_contract_gate.py --mode submit"
+    - "scripts/videogen_batch_jobs.py validate"
+    - "scripts/workflow_enforcement_gate.py --stage submit"
+action_message: 真实视频提交前合同门禁/批校/强制门禁任一未通过，禁止提交付费 API
+executor: "script:workflow_enforcement_gate.py"
+legacy_source: 02_规范索引/00_原始规范索引.md

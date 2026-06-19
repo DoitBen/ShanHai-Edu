@@ -1,0 +1,426 @@
+# AI-youjiao 半自动化工作流总枢纽
+# 调度器读这一份就能知道：9 步怎么串、节点依赖、跳过条件、状态机、规则触发
+# 修改本文件前必读：state_machine.md / rules.md / schema.md
+
+version: "1.0.0"
+last_updated: "2026-06-18"
+
+# ============================================================
+# 状态枚举（与 state_machine.md 一致）
+# ============================================================
+states:
+  - not_started
+  - drafted
+  - needs_review
+  - approved
+  - blocked
+  - skipped
+
+# 仅这两个状态被下游视为"已通过"
+passable_states:
+  - approved
+  - skipped
+
+# ============================================================
+# 状态转换规则
+# ============================================================
+transitions:
+  - from: not_started
+    to: drafted
+    trigger: ai_generate
+  - from: not_started
+    to: skipped
+    trigger: config_change
+  - from: drafted
+    to: needs_review
+    trigger: ai_generate_done
+  - from: drafted
+    to: needs_review
+    trigger: user_save_edit
+  - from: needs_review
+    to: drafted
+    trigger: user_redo
+  - from: needs_review
+    to: drafted
+    trigger: user_edit
+  - from: needs_review
+    to: approved
+    trigger: user_approve
+    preconditions:
+      - "all hard_block rules pass"
+  - from: needs_review
+    to: blocked
+    trigger: user_mark_blocked
+  - from: approved
+    to: needs_review
+    trigger: cascade_invalidate
+  - from: approved
+    to: drafted
+    trigger: user_redo
+  - from: approved
+    to: drafted
+    trigger: user_edit
+  - from: blocked
+    to: drafted
+    trigger: user_resolve
+  - from: any
+    to: blocked
+    trigger: hard_block_rule_hit
+  - from: skipped
+    to: not_started
+    trigger: user_cancel_skip
+
+# ============================================================
+# 提供商配置（节点级可覆盖）
+# ============================================================
+providers:
+  llm:
+    text_default: deepseek
+    text_fallback: gpt
+    supervisor: claude
+  image:
+    default: gpt-image-2
+  video:
+    default: omni_flash_10s
+    fallback: sora_2_12s
+  tts:
+    default: TBD  # 待选型
+    voice_gender: male
+    voice_language: zh-CN
+
+# ============================================================
+# 节点定义（核心 DAG）
+# ============================================================
+nodes:
+  # -------- 第 0 步：项目元数据 + 配置 + 视觉契约 + 角色字典 --------
+  - id: project_meta
+    step: 0
+    title: 项目元数据
+    branch: shared
+    depends_on: []
+    schema: schemas/project_meta.schema.json
+    prompts_dir: null  # 表单填写，不调 LLM
+    optional: false
+
+  - id: project_config
+    step: 0
+    title: 项目配置
+    branch: shared
+    depends_on: [project_meta]
+    schema: schemas/project_config.schema.json
+    prompts_dir: null
+    optional: false
+
+  - id: visual_contract
+    step: 0
+    title: 视觉契约
+    branch: shared
+    depends_on: [project_meta]
+    schema: schemas/visual_contract.schema.json
+    prompts_dir: null
+    optional: false
+
+  - id: character_dict
+    step: 0
+    title: 角色字典
+    branch: shared
+    depends_on: [project_meta]
+    schema: schemas/character_dict.schema.json
+    prompts_dir: null  # 表单填写为主，可选 AI 辅助
+    optional: false
+
+  # -------- 第 1 步：公开课教案 --------
+  - id: lesson_plan
+    step: 1
+    title: 公开课教案
+    branch: shared
+    depends_on: [project_meta, project_config]
+    schema: schemas/lesson_plan.schema.json
+    prompts_dir: prompts/node_01_lesson_plan/
+    hard_stop: true  # 必须 user_approve 后才能继续
+    optional: false
+
+  # -------- 第 1.5 步：导入设计选择集 --------
+  - id: intro_selection
+    step: 1.5
+    title: 导入设计选择集
+    branch: intro_video
+    depends_on: [lesson_plan]
+    schema: schemas/intro_selection.schema.json
+    prompts_dir: null  # 用户从教案的 intro_designs 中选
+    skip_when: "project_config.needs_intro_video == false"
+    optional: false
+
+  # -------- PPT 分支：第 2 步 PPT 总装方案 --------
+  - id: ppt_assembly_plan
+    step: 2
+    title: PPT 总装方案
+    branch: ppt
+    depends_on: [lesson_plan]
+    schema: schemas/ppt_assembly_plan.schema.json
+    prompts_dir: prompts/node_02_ppt_assembly/
+    hard_stop: true
+    optional: false
+
+  # -------- PPT 分支：第 3 步 PPT 页面脚本 --------
+  - id: ppt_page_script
+    step: 3
+    title: PPT 页面脚本
+    branch: ppt
+    depends_on: [ppt_assembly_plan, character_dict, visual_contract]
+    schema: schemas/ppt_page_script.schema.json
+    prompts_dir: prompts/node_03_ppt_page_script/
+    supervisor: prompts/supervisor/page_reviewer.md  # 逐页审查智能体
+    per_page: true  # 一页一审，不是整体一审
+    optional: false
+
+  # -------- PPT 分支：第 5A 步 PPT 视觉资产 --------
+  - id: ppt_visual_asset
+    step: 5
+    title: PPT 视觉资产
+    branch: ppt
+    depends_on: [ppt_page_script, character_dict, visual_contract]
+    schema: schemas/ppt_visual_asset.schema.json
+    prompts_dir: prompts/node_05a_ppt_visual_asset/
+    provider_override:
+      llm: null
+      image: gpt-image-2
+    storage_path_constraint: "08A_PPT视觉资产/"
+    optional: false
+
+  # -------- 导入视频分支：第 4B 步 文稿 --------
+  - id: intro_video_script
+    step: 4
+    title: 导入视频文稿
+    branch: intro_video
+    depends_on: [intro_selection, lesson_plan]
+    schema: schemas/intro_video_script.schema.json
+    prompts_dir: prompts/node_4b_intro_video_script/
+    skip_when: "project_config.needs_intro_video == false"
+    hard_stop: true
+    optional: false
+
+  # -------- 导入视频分支：第 4C 步 剧本 --------
+  - id: intro_video_screenplay
+    step: 4
+    title: 导入视频剧本
+    branch: intro_video
+    depends_on: [intro_video_script, character_dict]
+    schema: schemas/intro_video_screenplay.schema.json
+    prompts_dir: prompts/node_4c_intro_video_screenplay/
+    skip_when: "project_config.needs_intro_video == false"
+    optional: false
+
+  # -------- 导入视频分支：第 5B 步 视频资产 --------
+  - id: intro_video_asset
+    step: 5
+    title: 导入视频资产
+    branch: intro_video
+    depends_on: [intro_video_screenplay, character_dict, visual_contract]
+    schema: schemas/intro_video_asset.schema.json
+    prompts_dir: prompts/node_05b_intro_video_asset/
+    provider_override:
+      image: gpt-image-2
+    storage_path_constraint: "08B_导入视频资产/"
+    forbidden_reference_sources:
+      - "08A_PPT视觉资产/"
+      - "PPT contact sheet"
+      - "本地候选视频抽帧"
+    skip_when: "project_config.needs_intro_video == false"
+    optional: false
+
+  # -------- 导入视频分支：第 6 步 分镜脚本 --------
+  - id: storyboard
+    step: 6
+    title: 分镜脚本
+    branch: intro_video
+    depends_on: [intro_video_screenplay, intro_video_asset, character_dict]
+    schema: schemas/storyboard.schema.json
+    prompts_dir: prompts/node_06_storyboard/
+    skip_when: "project_config.needs_intro_video == false"
+    pre_submit_check:  # 提交 API 前必跑
+      - first_frame_test_passed  # R042
+    optional: false
+
+  # -------- PPT 分支：第 7 步 ppt-master 装配 --------
+  - id: pptx_artifact
+    step: 7
+    title: PPT 装配
+    branch: ppt
+    depends_on: [ppt_page_script, ppt_visual_asset]
+    schema: schemas/pptx_artifact.schema.json
+    prompts_dir: null  # 调 ppt-master 技能链路
+    pre_submit_check:
+      - eight_confirmations_done  # R027
+      - svg_quality_passed  # R028
+    optional: false
+
+  # -------- 导入视频分支：第 8 步 视频生成 + 拼接 --------
+  - id: final_video
+    step: 8
+    title: 视频生成+中文男声+拼接
+    branch: intro_video
+    depends_on: [storyboard, intro_video_script]
+    schema: schemas/final_video.schema.json
+    prompts_dir: prompts/node_08_video_generation/
+    provider_override:
+      video: omni_flash_10s
+      tts: TBD
+    pre_submit_check:
+      - workflow_contract_gate_pass  # R015
+      - videogen_batch_validate_pass
+      - workflow_enforcement_gate_pass
+    skip_when: "project_config.needs_intro_video == false"
+    optional: false
+
+  # -------- 第 9 步：最终交付 --------
+  - id: final_delivery
+    step: 9
+    title: 最终交付
+    branch: shared
+    depends_on: [pptx_artifact, final_video]  # final_video skipped 时只看 pptx
+    schema: schemas/final_delivery.schema.json
+    prompts_dir: null
+    final_gate:
+      - script: scripts/final_delivery_gate.py
+        mode: final
+      - script: scripts/audit_student_visible_text.py
+      - script: scripts/audit_six_package_consistency.py
+      - script: scripts/audit_delivery_contracts.py
+    optional: false
+
+# ============================================================
+# 反馈节点（不在主流程 DAG，由事件触发）
+# ============================================================
+feedback_nodes:
+  - id: feedback_on_delivery
+    trigger: on_final_delivery_complete
+    schema: schemas/feedback_record.schema.json
+    timing: on_delivery
+
+  - id: feedback_on_next_session
+    trigger: on_user_second_project_open
+    schema: schemas/feedback_record.schema.json
+    timing: on_next_session_open
+
+# ============================================================
+# 飞轮节点
+# ============================================================
+flywheel:
+  preference_profile_schema: schemas/user_preference_profile.schema.json
+  update_triggers:
+    - event: user_approve
+      action: append_to_approved_samples_top_n
+    - event: user_edit_after_approve
+      action: append_to_post_approve_edits_top_n
+    - event: user_override_rule
+      action: increment_overridden_rules
+  retrieval:
+    when: ai_redo
+    fetch: "last 3 approved_samples of same node by same user"
+    inject_into_prompt: "{{flywheel_samples}}"
+
+# ============================================================
+# 规则的全局触发时机映射
+# ============================================================
+rule_triggers:
+  on_generate:
+    description: 节点 AI 生成完成时
+  on_save:
+    description: 用户保存编辑或字段填写时
+  on_approve_attempt:
+    description: 用户点 approve 按钮时
+  on_submit_to_api:
+    description: 提交外部 API（视频/图片/ppt-master）前
+  on_assembly_attempt:
+    description: 整体方案级别校验（如总装方案 page_type_quota 覆盖度）
+
+# ============================================================
+# 红线 / 硬约束（不可被用户配置覆盖）
+# ============================================================
+hard_constraints:
+  voice:
+    gender: male
+    language: zh-CN
+    english_audio_forbidden: true
+  video:
+    min_clips_for_full_video: 6
+    full_video_duration_range_sec: [60, 120]
+    short_intro_duration_range_sec: [10, 15]
+  character:
+    forbidden_styles: [realistic, photorealistic, real_human_minor]
+    required_banned_keywords: ["真人", "photorealistic", "real child"]
+  delivery:
+    candidate_cannot_pretend_final: true
+    must_pass_final_delivery_gate: true
+  math:
+    must_use_editable_layer: [ppt_text, ppt_shape, ppt_chart]
+    forbidden_layer: [ppt_image, video_overlay]
+
+# ============================================================
+# 已验证比例映射（图片生成）
+# ============================================================
+verified_aspect_ratio_mapping:
+  "16:9":
+    size: "1920x1080"
+    quality: high
+    output_format: png
+  "1:1":
+    size: "1024x1024"
+    quality: high
+    output_format: png
+  "9:16":
+    size: "1080x1920"
+    quality: high
+    output_format: png
+
+# ============================================================
+# 14 类学生动作词表
+# ============================================================
+student_action_vocabulary:
+  - look       # 看一看
+  - touch      # 摸一摸
+  - arrange    # 摆一摆
+  - count      # 数一数
+  - divide     # 分一分
+  - compare    # 比一比
+  - circle     # 圈一圈
+  - link       # 连一连
+  - draw       # 画一画
+  - speak      # 说一说
+  - judge      # 判一判
+  - fill       # 填一填
+  - correct    # 改一改
+  - find       # 找一找
+
+# ============================================================
+# 11 类 PPT 页面类型
+# ============================================================
+page_type_vocabulary:
+  - life_observation     # 生活观察页
+  - role_task            # 角色任务页
+  - inquiry_operation    # 操作探究页
+  - step_reveal          # 分步演示页
+  - dual_image_compare   # 双图对比页
+  - error_judge          # 易错判断页
+  - practice_challenge   # 闯关练习页
+  - evidence_reasoning   # 证据说理页
+  - math_id_card         # 数学身份证/方法卡页
+  - blackboard_summary   # 板书小结页
+  - homework_practice    # 课后实践页
+
+# ============================================================
+# 11 类新课标核心素养
+# ============================================================
+core_competency_vocabulary:
+  - number_sense           # 数感
+  - quantity_sense         # 量感
+  - symbol_awareness       # 符号意识
+  - operation_ability      # 运算能力
+  - geometric_intuition    # 几何直观
+  - spatial_concept        # 空间观念
+  - reasoning_awareness    # 推理意识
+  - data_awareness         # 数据意识
+  - model_awareness        # 模型意识
+  - application_awareness  # 应用意识
+  - innovation_awareness   # 创新意识

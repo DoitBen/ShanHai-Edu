@@ -1,0 +1,14 @@
+rule_id: R045
+title: 视频禁用元素清单非空且包含强制项
+trigger_node: intro_video_script
+trigger_event: on_save
+severity: hard_block
+check:
+  type: jsonpath_assertion
+  expression: |
+    $.banned_elements CONTAINS ALL [
+      "real_minor", "real_classroom",
+      "teacher_questioning", "student_group_activity"
+    ]
+action_message: 视频禁用清单必须包含 real_minor / real_classroom / teacher_questioning / student_group_activity 四项
+executor: builtin

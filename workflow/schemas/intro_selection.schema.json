@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "intro_selection.schema.json",
+  "title": "导入设计选择集",
+  "type": "object",
+  "required": ["selection_mode", "selected_design_ids", "primary_design_id", "downstream_generation_mode", "selection_reason"],
+  "properties": {
+    "selection_mode": {
+      "type": "string",
+      "enum": ["single_best", "same_type_multi", "one_each_type", "all_types_custom", "all_nine"]
+    },
+    "selected_design_ids": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^design_(science|application|story)_\\d{2}$" },
+      "minItems": 1
+    },
+    "primary_design_id": {
+      "type": "string",
+      "pattern": "^design_(science|application|story)_\\d{2}$"
+    },
+    "downstream_generation_mode": {
+      "type": "string",
+      "enum": ["one_script_per_design", "three_variants_for_primary", "compare_selected_designs"]
+    },
+    "selection_reason": { "type": "string", "minLength": 10 }
+  }
+}

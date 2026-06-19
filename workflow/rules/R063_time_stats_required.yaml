@@ -1,0 +1,14 @@
+rule_id: R063
+title: 耗时统计必须产出
+trigger_node: final_delivery
+trigger_event: on_approve_attempt
+severity: warning
+check:
+  type: file_exists_and_has_keywords
+  expression: |
+    file_exists($.time_stats_md_path)
+    AND file_contains($.time_stats_md_path, [
+      "首次完成", "返工", "瓶颈", "出图耗时", "PPT 生成耗时", "视频拼接耗时"
+    ])
+action_message: 耗时统计文件缺失或不完整
+executor: builtin

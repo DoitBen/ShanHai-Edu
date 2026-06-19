@@ -1,0 +1,11 @@
+rule_id: R013
+title: 真实视频片段必须带参考图
+trigger_node: final_video
+trigger_event: on_approve_attempt
+severity: hard_block
+check:
+  type: foreach_clip
+  expression: "LENGTH(clip.reference_image_ids) >= 1"
+action_message: 所有真实视频片段必须带至少一张参考图
+executor: builtin
+legacy_source: 01_执行入口.md「阶段8真实提交前」

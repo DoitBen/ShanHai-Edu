@@ -1,0 +1,27 @@
+rule_id: R026
+title: 学生可见层不得暴露内部信息
+trigger_node: pptx_artifact
+trigger_event: on_approve_attempt
+severity: hard_block
+check:
+  type: text_scan
+  forbidden_patterns:
+    - "准确性提醒"
+    - "QA 检查点"
+    - "阶段[1-9]"
+    - "工作流"
+    - "task_id"
+    - "file_id"
+    - "jobs.jsonl"
+    - "blocked"
+    - "needs_review"
+    - "draft"
+    - "candidate"
+  scan_targets:
+    - slide_text
+    - shape_text
+  exclude_targets:
+    - notes_text   # 备注层不查
+action_message: 最终 PPTX 学生可见层不得出现 QA 提醒/工作流阶段名/API 字段/任务状态等内部信息
+executor: "script:audit_student_visible_text.py"
+legacy_source: PPT探究型页面约束_工作流节点.md「学生可见层检查」

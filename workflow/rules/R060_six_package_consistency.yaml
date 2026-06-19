@@ -1,0 +1,11 @@
+rule_id: R060
+title: 六套一致性审计
+trigger_node: final_delivery
+trigger_event: on_approve_attempt
+severity: hard_block
+check:
+  type: external_script_pass
+  expression: "scripts/audit_six_package_consistency.py exit_code == 0"
+action_message: 六套任务包候选链路不一致
+executor: "script:audit_six_package_consistency.py"
+legacy_source: 01_执行入口.md「收尾阶段」

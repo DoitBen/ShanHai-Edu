@@ -1,0 +1,13 @@
+rule_id: R002
+title: 禁英文配音
+trigger_node: final_video
+trigger_event: on_approve_attempt
+severity: hard_block
+check:
+  type: jsonpath_assertion
+  expression: |
+    $.english_audio_detected == false
+    AND $.model_audio_policy IN ["discarded_or_muted", "verified_chinese", "no_model_audio"]
+action_message: 检测到英文音频或未记录模型音轨处理策略
+executor: builtin
+legacy_source: 04_审查规则/README.md「阶段8」

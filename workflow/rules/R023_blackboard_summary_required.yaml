@@ -1,0 +1,11 @@
+rule_id: R023
+title: 必须包含板书小结页
+trigger_node: ppt_assembly_plan
+trigger_event: on_approve_attempt
+severity: warning
+check:
+  type: jsonpath_assertion
+  expression: "$.page_type_quota.blackboard_summary >= 1"
+action_message: PPT 总装方案必须至少包含 1 页板书小结
+executor: builtin
+legacy_source: PPT探究型页面约束_工作流节点.md

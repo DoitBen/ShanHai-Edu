@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "lesson_plan.schema.json",
+  "title": "公开课教案",
+  "type": "object",
+  "required": [
+    "textbook_anchor", "teaching_objectives", "key_difficulty",
+    "teaching_flow", "blackboard_design", "intro_designs"
+  ],
+  "properties": {
+    "textbook_anchor": { "type": "string", "minLength": 10 },
+    "teaching_objectives": { "type": "string", "minLength": 20 },
+    "key_difficulty": { "type": "string", "minLength": 10 },
+    "teaching_flow": { "type": "string", "minLength": 50 },
+    "blackboard_design": { "type": "string", "minLength": 10 },
+    "intro_designs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/intro_design" },
+      "minItems": 3,
+      "maxItems": 9
+    }
+  },
+  "$defs": {
+    "intro_design": {
+      "type": "object",
+      "required": ["design_id", "type", "title", "hook", "anchor_to_lesson", "recommend_score"],
+      "properties": {
+        "design_id": { "type": "string", "pattern": "^design_(science|application|story)_\\d{2}$" },
+        "type": { "type": "string", "enum": ["science", "application", "story"] },
+        "title": { "type": "string" },
+        "hook": { "type": "string" },
+        "anchor_to_lesson": { "type": "string" },
+        "recommend_score": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "risk_note": { "type": "string" }
+      }
+    }
+  }
+}

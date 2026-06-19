@@ -1,0 +1,21 @@
+rule_id: R014
+title: 视频拼接清单字段完整性
+trigger_node: final_video
+trigger_event: on_approve_attempt
+severity: hard_block
+check:
+  type: concat_manifest_validate
+  required_fields:
+    - status              # 必须 == "final"
+    - clips
+    - task_id
+    - download_path
+    - reference_images
+    - total_duration_seconds
+    - audio_streams       # 必须 >= 1
+    - audio_verified      # 必须 == true
+    - voice_gender        # 必须 == "male"
+    - voice_language      # 必须 == "zh-CN"
+action_message: concat_manifest.json 缺关键字段或字段值不合规
+executor: "script:audit_delivery_contracts.py"
+legacy_source: 01_执行入口.md「事故防复发规则」

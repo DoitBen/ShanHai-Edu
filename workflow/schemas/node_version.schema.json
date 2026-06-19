@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "node_version.schema.json",
+  "title": "节点版本通用结构",
+  "type": "object",
+  "required": ["version_id", "node_id", "project_id", "content", "status", "generated_by", "created_at", "is_current"],
+  "properties": {
+    "version_id": { "type": "string", "pattern": "^v\\d{2,}$" },
+    "node_id": { "type": "string" },
+    "project_id": { "type": "string", "format": "uuid" },
+    "content": {
+      "description": "按对应节点 schema 校验",
+      "type": "object"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["drafted", "needs_review", "approved", "blocked", "skipped"]
+    },
+    "generated_by": { "type": "string", "enum": ["ai", "human_edit"] },
+    "provider": { "type": "string" },
+    "seed_params": {
+      "type": "object",
+      "properties": {
+        "language_style": { "type": "string", "enum": ["academic", "research", "classroom"] },
+        "verbosity": { "type": "string", "enum": ["concise", "moderate", "detailed"] },
+        "example_tendency": { "type": "string", "enum": ["life", "math", "history"] },
+        "inquiry_intensity": { "type": "string", "enum": ["conservative", "balanced", "aggressive"] },
+        "free_text_hint": { "type": "string" }
+      }
+    },
+    "prompt_version": { "type": "string" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "approved_at": { "type": "string", "format": "date-time" },
+    "is_current": { "type": "boolean" }
+  }
+}

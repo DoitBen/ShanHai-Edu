@@ -1,0 +1,13 @@
+rule_id: R020
+title: 每页必须有学生课堂动作
+trigger_node: ppt_page_script
+trigger_event: on_generate
+severity: warning
+check:
+  type: foreach_page
+  expression: |
+    page.student_action IS NOT NULL
+    OR page.page_type IN ["cover", "toc", "video_only"]   # 例外类型需写明
+action_message: 该页未指定学生课堂动作（仅封面/目录/纯视频页可例外）
+executor: "agent:claude"
+legacy_source: PPT探究型页面约束_工作流节点.md

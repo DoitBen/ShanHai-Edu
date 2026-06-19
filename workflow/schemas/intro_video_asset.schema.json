@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "intro_video_asset.schema.json",
+  "title": "导入视频资产",
+  "type": "object",
+  "required": ["assets"],
+  "properties": {
+    "assets": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/asset" }
+    }
+  },
+  "$defs": {
+    "asset": {
+      "type": "object",
+      "required": ["asset_id", "source_prompt_id", "storage_path", "status"],
+      "properties": {
+        "asset_id": { "type": "string" },
+        "source_prompt_id": { "type": "string" },
+        "storage_path": {
+          "type": "string",
+          "pattern": "08B_导入视频资产/",
+          "description": "R012 强约束：必须落在 08B 目录下；禁用 08A_PPT视觉资产 / contact sheet / 候选视频抽帧"
+        },
+        "status": { "type": "string", "enum": ["drafted", "approved", "failed"] },
+        "api_job_id": { "type": "string" },
+        "failed_reason": { "type": "string" }
+      }
+    }
+  }
+}

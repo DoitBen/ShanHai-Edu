@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ppt_assembly_plan.schema.json",
+  "title": "PPT 总装方案",
+  "type": "object",
+  "required": [
+    "persistent_context", "page_count_target", "page_type_quota",
+    "action_chain", "inquiry_path", "ppt_video_division",
+    "material_requirements", "editable_text_rules", "accuracy_warnings"
+  ],
+  "properties": {
+    "persistent_context": { "type": "string", "minLength": 5 },
+    "page_count_target": { "type": "integer", "minimum": 6, "maximum": 30 },
+    "page_type_quota": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "life_observation":    { "type": "integer", "minimum": 0 },
+        "role_task":           { "type": "integer", "minimum": 0 },
+        "inquiry_operation":   { "type": "integer", "minimum": 0 },
+        "step_reveal":         { "type": "integer", "minimum": 0 },
+        "dual_image_compare":  { "type": "integer", "minimum": 0 },
+        "error_judge":         { "type": "integer", "minimum": 0 },
+        "practice_challenge":  { "type": "integer", "minimum": 0 },
+        "evidence_reasoning":  { "type": "integer", "minimum": 0 },
+        "math_id_card":        { "type": "integer", "minimum": 0 },
+        "blackboard_summary":  { "type": "integer", "minimum": 1 },
+        "homework_practice":   { "type": "integer", "minimum": 0 }
+      },
+      "description": "11 类页面类型的配比。R023 要求 blackboard_summary>=1，R024 要求至少覆盖 5 类。"
+    },
+    "action_chain": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["look","touch","arrange","count","divide","compare","circle","link","draw","speak","judge","fill","correct","find"]
+      },
+      "minItems": 4,
+      "description": "动作链必须覆盖导入/探究/练习/小结"
+    },
+    "inquiry_path": { "type": "string", "minLength": 20 },
+    "ppt_video_division": { "type": "string", "minLength": 10 },
+    "material_requirements": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "editable_text_rules": { "type": "string", "minLength": 10 },
+    "accuracy_warnings": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    }
+  }
+}

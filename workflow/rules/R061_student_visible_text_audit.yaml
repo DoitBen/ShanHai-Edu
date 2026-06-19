@@ -1,0 +1,11 @@
+rule_id: R061
+title: 学生可见文本审计
+trigger_node: final_delivery
+trigger_event: on_approve_attempt
+severity: hard_block
+check:
+  type: external_script_pass
+  expression: "scripts/audit_student_visible_text.py exit_code == 0"
+action_message: 学生可见层泄露内部词
+executor: "script:audit_student_visible_text.py"
+legacy_source: 01_执行入口.md「收尾阶段」

@@ -1,0 +1,11 @@
+rule_id: R028
+title: SVG 质检必须通过
+trigger_node: pptx_artifact
+trigger_event: on_approve_attempt
+severity: hard_block
+check:
+  type: jsonpath_assertion
+  expression: "$.svg_quality_passed == true"
+action_message: svg_quality_checker.py 检查失败或未运行
+executor: "script:svg_quality_checker.py"
+legacy_source: 第十步：ppt-master公开课PPT生成_自动化执行规则.md

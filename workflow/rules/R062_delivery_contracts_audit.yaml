@@ -1,0 +1,11 @@
+rule_id: R062
+title: 交付合同审计
+trigger_node: final_delivery
+trigger_event: on_approve_attempt
+severity: hard_block
+check:
+  type: external_script_pass
+  expression: "scripts/audit_delivery_contracts.py exit_code == 0"
+action_message: 候选冒充终版 / 完整教学视频命名越界 / 本地预览缺非终版标记
+executor: "script:audit_delivery_contracts.py"
+legacy_source: 01_执行入口.md「收尾阶段」

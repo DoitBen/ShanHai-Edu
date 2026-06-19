@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "visual_contract.schema.json",
+  "title": "视觉契约",
+  "type": "object",
+  "required": ["palette", "style_keywords"],
+  "properties": {
+    "palette": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+      "minItems": 3,
+      "maxItems": 5
+    },
+    "style_keywords": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "font_preference": { "type": "string" },
+    "template_pptx": {
+      "type": "object",
+      "properties": {
+        "path": { "type": "string" },
+        "extracted_palette": { "type": "array", "items": { "type": "string" } },
+        "extracted_fonts": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

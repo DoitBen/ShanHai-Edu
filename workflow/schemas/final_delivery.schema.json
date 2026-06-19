@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "final_delivery.schema.json",
+  "title": "最终交付",
+  "type": "object",
+  "required": [
+    "pptx_final_path", "video_final_path",
+    "qa_records", "gate_result_json_path", "gate_passed",
+    "time_stats_md_path", "feedback_trigger_at"
+  ],
+  "properties": {
+    "pptx_final_path": { "type": "string" },
+    "video_final_path": { "type": "string" },
+    "qa_records": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "gate_result_json_path": { "type": "string" },
+    "gate_passed": {
+      "type": "boolean",
+      "const": true,
+      "description": "R005 强约束：final_delivery_gate.py --mode final 通过"
+    },
+    "time_stats_md_path": { "type": "string" },
+    "feedback_trigger_at": { "type": "string", "format": "date-time" }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "intro_video_script.schema.json",
+  "title": "导入视频文稿（L1，v1 简版）",
+  "type": "object",
+  "required": ["total_duration_sec", "video_type", "anchor_to_lesson", "narration_full_text", "narration_word_count", "banned_elements"],
+  "properties": {
+    "total_duration_sec": {
+      "type": "integer",
+      "description": "完整短片 60-120 或短导入片 10-15"
+    },
+    "video_type": { "type": "string", "enum": ["science", "application", "story"] },
+    "anchor_to_lesson": { "type": "string", "minLength": 10 },
+    "narration_full_text": { "type": "string", "minLength": 20 },
+    "narration_word_count": { "type": "integer", "minimum": 10 },
+    "banned_elements": {
+      "type": "array",
+      "items": { "type": "string" },
+      "contains": {
+        "enum": ["real_minor", "real_classroom", "teacher_questioning", "student_group_activity"]
+      },
+      "minContains": 4,
+      "description": "R045 强约束"
+    }
+  }
+}

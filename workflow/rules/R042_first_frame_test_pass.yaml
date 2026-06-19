@@ -1,0 +1,11 @@
+rule_id: R042
+title: 首帧测试必须通过才能提交视频 API
+trigger_node: storyboard
+trigger_event: on_submit_to_api
+severity: hard_block
+check:
+  type: foreach_shot
+  expression: "shot.first_frame_test_status == 'passed'"
+action_message: 所有分镜必须先出首帧并审核通过，才能提交视频生成 API
+executor: builtin
+legacy_source: v1 新增：省钱关键机制

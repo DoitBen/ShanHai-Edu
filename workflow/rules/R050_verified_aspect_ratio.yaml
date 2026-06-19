@@ -1,0 +1,17 @@
+rule_id: R050
+title: 已验证比例映射
+trigger_node: "ppt_page_script|storyboard|ppt_visual_asset|intro_video_asset"
+trigger_event: on_save
+severity: hard_block
+check:
+  type: foreach_image_prompt
+  expression: |
+    prompt.aspect_ratio IN ["16:9", "1:1", "9:16"]
+    AND (
+      (prompt.aspect_ratio == "16:9" AND prompt.size == "1920x1080") OR
+      (prompt.aspect_ratio == "1:1"  AND prompt.size == "1024x1024") OR
+      (prompt.aspect_ratio == "9:16" AND prompt.size == "1080x1920")
+    )
+action_message: 必须使用已验证比例 16:9=1920x1080 / 1:1=1024x1024 / 9:16=1080x1920
+executor: builtin
+legacy_source: 00-Promax修改清单.md

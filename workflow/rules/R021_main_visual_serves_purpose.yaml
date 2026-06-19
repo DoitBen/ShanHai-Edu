@@ -1,0 +1,13 @@
+rule_id: R021
+title: 主视觉必须服务教学动作（不得是装饰）
+trigger_node: ppt_page_script
+trigger_event: on_generate
+severity: warning
+check:
+  type: foreach_page
+  expression: |
+    page.main_visual.serves_purpose IS NOT NULL
+    AND page.main_visual.serves_purpose NOT_IN ["装饰", "decoration"]
+action_message: 主视觉必须明确服务于观察/操作/比较/分类/说理/小结，不可为装饰
+executor: "agent:claude"
+legacy_source: PPT探究型页面约束_工作流节点.md

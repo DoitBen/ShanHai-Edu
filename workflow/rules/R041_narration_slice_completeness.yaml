@@ -1,0 +1,11 @@
+rule_id: R041
+title: 分镜旁白切片必须完整还原文稿
+trigger_node: storyboard
+trigger_event: on_approve_attempt
+severity: hard_block
+check:
+  type: cross_node_consistency
+  expression: |
+    CONCAT(storyboard.shots[*].narration_slice) == intro_video_script.narration_full_text
+action_message: 所有分镜的 narration_slice 拼接后必须等于文稿 narration_full_text
+executor: builtin

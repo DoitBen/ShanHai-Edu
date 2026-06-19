@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "user_preference_profile.schema.json",
+  "title": "用户偏好画像（飞轮）",
+  "type": "object",
+  "required": ["user_id"],
+  "properties": {
+    "user_id": { "type": "string" },
+    "style_preference": {
+      "type": "object",
+      "properties": {
+        "life": { "type": "number", "minimum": 0, "maximum": 1 },
+        "math": { "type": "number", "minimum": 0, "maximum": 1 },
+        "history": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "verbosity_preference": {
+      "type": "object",
+      "properties": {
+        "concise": { "type": "number", "minimum": 0, "maximum": 1 },
+        "moderate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "detailed": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "inquiry_intensity_preference": {
+      "type": "object",
+      "properties": {
+        "conservative": { "type": "number", "minimum": 0, "maximum": 1 },
+        "balanced": { "type": "number", "minimum": 0, "maximum": 1 },
+        "aggressive": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "model_usage": {
+      "type": "object",
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    },
+    "topic_domain_preference": {
+      "type": "object",
+      "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 }
+    },
+    "approved_samples_top_n": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["node_id", "version_id", "snippet"],
+        "properties": {
+          "node_id": { "type": "string" },
+          "version_id": { "type": "string" },
+          "snippet": { "type": "string" }
+        }
+      },
+      "maxItems": 10
+    },
+    "post_approve_edits_top_n": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["node_id", "version_id", "diff"],
+        "properties": {
+          "node_id": { "type": "string" },
+          "version_id": { "type": "string" },
+          "diff": { "type": "string" }
+        }
+      },
+      "maxItems": 10
+    },
+    "overridden_rules": {
+      "type": "object",
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    }
+  }
+}

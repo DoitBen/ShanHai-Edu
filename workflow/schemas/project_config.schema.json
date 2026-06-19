@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "project_config.schema.json",
+  "title": "项目配置",
+  "type": "object",
+  "required": ["needs_intro_video", "intro_video_type", "ppt_page_range", "visual_richness", "embed_video_in_ppt", "intro_design_types", "designs_per_type"],
+  "properties": {
+    "needs_intro_video": { "type": "boolean", "default": true },
+    "intro_video_type": { "type": "string", "enum": ["full_60_120s", "short_10_15s"], "default": "full_60_120s" },
+    "ppt_page_range": {
+      "type": "array",
+      "items": { "type": "integer", "minimum": 6, "maximum": 30 },
+      "minItems": 2,
+      "maxItems": 2,
+      "default": [12, 16]
+    },
+    "visual_richness": { "type": "string", "enum": ["low", "mid", "high"], "default": "mid" },
+    "embed_video_in_ppt": { "type": "boolean", "default": false },
+    "intro_design_types": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["science", "application", "story"] },
+      "uniqueItems": true,
+      "minItems": 1,
+      "default": ["science", "application", "story"]
+    },
+    "designs_per_type": { "type": "integer", "minimum": 1, "maximum": 5, "default": 3 }
+  }
+}

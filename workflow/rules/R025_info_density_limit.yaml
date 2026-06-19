@@ -1,0 +1,13 @@
+rule_id: R025
+title: 信息密度限制（认知负荷理论）
+trigger_node: ppt_page_script
+trigger_event: on_generate
+severity: warning
+check:
+  type: foreach_page
+  expression: |
+    page.density_limits.body_text_max <= 25
+    AND page.density_limits.info_chunks_max <= 5
+action_message: 小学每页正文 ≤25 字 / 信息块 ≤5（基于 Sweller 认知负荷理论）
+executor: builtin
+legacy_source: 调研结论（Sweller CLT + 6-12 岁工作记忆容量）

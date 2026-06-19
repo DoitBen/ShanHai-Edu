@@ -1,0 +1,12 @@
+rule_id: R032
+title: 角色引用必须存在于角色字典
+trigger_node: "ppt_page_script|storyboard|intro_video_screenplay"
+trigger_event: on_generate
+severity: hard_block
+check:
+  type: cross_node_reference
+  expression: |
+    FOR EACH char_id IN character_refs:
+      char_id IN character_dict.characters[*].character_id
+action_message: 引用了角色字典中不存在的角色 ID
+executor: builtin

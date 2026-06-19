@@ -90,7 +90,7 @@
   --secondary: #eceae3;
   --secondary-foreground: #3a3f48;
   --muted: #efece5;
-  --muted-foreground: #6b727c;
+  --muted-foreground: #5c636e;
 
   /* 强调：古铜金（仅用于品牌点缀、当前状态指示） */
   --accent: #efece5;
@@ -109,8 +109,8 @@
   --destructive-foreground: #fbf0f0;
 
   /* 边框 / 输入 / 聚焦 */
-  --border: #e4e1d9;
-  --input: #e4e1d9;
+  --border: #ddd9d0;
+  --input: #ddd9d0;
   --ring: #2d4356;
 
   /* 侧栏 */
@@ -125,43 +125,43 @@
 }
 
 .dark {
-  --background: #161a20;
-  --foreground: #e9e7e1;
-  --card: #1d222a;
-  --card-foreground: #e9e7e1;
-  --popover: #1d222a;
-  --popover-foreground: #e9e7e1;
-  --primary: #c9a36a;
+  --background: #0f1318;
+  --foreground: #f0ede6;
+  --card: #1a1f26;
+  --card-foreground: #f0ede6;
+  --popover: #1a1f26;
+  --popover-foreground: #f0ede6;
+  --primary: #d4af76;
   --primary-foreground: #1a1410;
-  --brand: #c9a36a;
+  --brand: #d4af76;
   --brand-foreground: #1a1410;
-  --secondary: #262c35;
-  --secondary-foreground: #d8d5cd;
-  --muted: #232830;
-  --muted-foreground: #9aa0ab;
-  --accent: #262c35;
-  --accent-foreground: #e9e7e1;
-  --bronze: #c9a36a;
+  --secondary: #242a32;
+  --secondary-foreground: #e0ddd5;
+  --muted: #1e2329;
+  --muted-foreground: #b8bec8;
+  --accent: #242a32;
+  --accent-foreground: #f0ede6;
+  --bronze: #d4af76;
   --bronze-foreground: #1a1410;
-  --success: #6f8a78;
-  --success-foreground: #1a201c;
-  --warning: #b98a4e;
-  --warning-foreground: #1f1810;
-  --info: #6f8aa3;
-  --info-foreground: #161c22;
-  --destructive: #b05a5a;
-  --destructive-foreground: #201515;
-  --border: #2a3038;
-  --input: #2a3038;
-  --ring: #c9a36a;
-  --sidebar: #14181e;
-  --sidebar-foreground: #d8d5cd;
-  --sidebar-primary: #c9a36a;
+  --success: #8aaa98;
+  --success-foreground: #0f1318;
+  --warning: #d4a058;
+  --warning-foreground: #1a1408;
+  --info: #8eaac4;
+  --info-foreground: #0f1318;
+  --destructive: #d06868;
+  --destructive-foreground: #1a0e0e;
+  --border: #2e3540;
+  --input: #2e3540;
+  --ring: #d4af76;
+  --sidebar: #0c0f14;
+  --sidebar-foreground: #e8e5dd;
+  --sidebar-primary: #d4af76;
   --sidebar-primary-foreground: #1a1410;
-  --sidebar-accent: #232830;
-  --sidebar-accent-foreground: #e9e7e1;
-  --sidebar-border: #232830;
-  --sidebar-ring: #c9a36a;
+  --sidebar-accent: #1e2329;
+  --sidebar-accent-foreground: #f0ede6;
+  --sidebar-border: #1e2329;
+  --sidebar-ring: #d4af76;
 }
 
 @layer base {

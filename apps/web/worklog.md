@@ -459,3 +459,40 @@ Task: 持续优化第3轮 —— 节点轨键盘切换 + 首页活动时间线 +
 5. 项目工作区节点轨加"返回当前阶段"按钮（长流程时快速定位）
 6. 活动时间线加"查看全部"展开/收起
 7. 暗色主题：对比 Dialog 表格在暗色下行间距可微调
+
+---
+Task ID: 25 (用户反馈 - 深浅色主题修复)
+Agent: 主代理
+Task: 系统性修复深浅色主题对比度和层次问题
+
+## 需求
+用户反馈"深浅色主题都没做好"。VLM 诊断：深色对比度不足、边框太淡、muted-foreground 不清晰、层次扁平。
+
+## 已完成的修改（globals.css token 优化）
+
+### 深色 token 全面提升对比度
+- --background #161a20→#0f1318（更深，卡片层次更突出）
+- --foreground #e9e7e1→#f0ede6（文字更亮）
+- --card #1d222a→#1a1f26（与背景拉开层次）
+- --muted-foreground #9aa0ab→#b8bec8（次文字对比度大幅提升）
+- --border #2a3038→#2e3540（边框更可见）
+- --sidebar #14181e→#0c0f14（更深，与卡片区分）
+- --sidebar-foreground #d8d5cd→#e8e5dd（侧栏文字更亮）
+- --sidebar-border #232830→#1e2329（与背景协调）
+- 状态色全部提亮：success #6f8a78→#8aaa98, warning #b98a4e→#d4a058, info #6f8aa3→#8eaac4, destructive #b05a5a→#d06868
+- primary #c9a36a→#d4af76（金色更亮）
+
+### 浅色 token 微调
+- --muted-foreground #6b727c→#5c636e（次文字更深更清晰）
+- --border #e4e1d9→#ddd9d0（边框更可见）
+
+## 验证结果
+- bun run lint 全绿
+- VLM 评审：8 分（"浅色清晰协调，深色对比度改善，文字/边框/卡片层次清晰"）
+- 390px 移动端无溢出
+- 浅色/深色切换正常
+
+## 核心改善
+- 深色模式：背景更深(#0f1318) + 文字更亮(#f0ede6) + 边框更可见(#2e3540) + 次文字更清晰(#b8bec8)
+- 浅色模式：次文字更深(#5c636e) + 边框更可见(#ddd9d0)
+- 层次：background < sidebar < muted < card < border 五级清晰

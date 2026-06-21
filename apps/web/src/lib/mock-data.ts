@@ -284,7 +284,7 @@ export function buildDemo002Stages(): WorkflowStage[] {
   const stages = buildDemo001Stages().map((s) => ({ ...s, logs: [...s.logs] }));
   // 重置为 demo-002 的实际进度
   return stages.map((s) => {
-    const base = { ...s, evidence: [], logs: [] };
+    const base: WorkflowStage = { ...s, evidence: [], logs: [] };
     if (s.order <= 4) {
       base.status = "approved";
       base.summary = "已完成。";
@@ -316,7 +316,7 @@ export function buildDemo002Stages(): WorkflowStage[] {
 export function buildDemo003Stages(): WorkflowStage[] {
   const stages = buildDemo001Stages().map((s) => ({ ...s, logs: [...s.logs] }));
   return stages.map((s) => {
-    const base = { ...s, evidence: [], logs: [] };
+    const base: WorkflowStage = { ...s, evidence: [], logs: [] };
     if (s.order <= 7) {
       base.status = "approved";
       base.summary = "已完成。";

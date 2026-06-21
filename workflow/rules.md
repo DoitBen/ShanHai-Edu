@@ -434,6 +434,58 @@
 | action | 阻断保存 |
 | executor | builtin |
 
+### R046 每套导入设计必须有具体课程锚点
+
+| 字段 | 值 |
+|---|---|
+| rule_id | R046 |
+| trigger_node | lesson_plan |
+| trigger_event | on_generate |
+| check | `intro_designs` 中每条记录的 `anchor_to_lesson` 非空且字数 ≥ 10；且不得包含"自然引出本课"、"教学目标对应点"、"教案关联点"等抽象套语 |
+| severity | hard_block |
+| action | 阻断生成，提示"每套导入设计必须包含具体课程锚点（15-40字，描述具体现象/物品/冲突/疑问）" |
+| executor | builtin |
+| legacy_source | docs/anchor-lesson-to-video.md R046 |
+
+### R047 用户确认锚点非空
+
+| 字段 | 值 |
+|---|---|
+| rule_id | R047 |
+| trigger_node | intro_selection |
+| trigger_event | on_approve_attempt |
+| check | `selected_anchor` 非空且字数 ≥ 10 |
+| severity | hard_block |
+| action | 阻断确认，提示"课程锚点未填写或过短，请在选择页确认锚点后方可进入视频生成" |
+| executor | builtin |
+| legacy_source | docs/anchor-lesson-to-video.md R047 |
+
+### R048 视频脚本必须接收到课程锚点
+
+| 字段 | 值 |
+|---|---|
+| rule_id | R048 |
+| trigger_node | intro_video_script |
+| trigger_event | on_generate |
+| check | 生成输入中必须包含来自 `intro_selection.selected_anchor` 的非空字段 |
+| severity | hard_block |
+| action | 阻断生成，提示"未传入课程锚点，请先在导入设计选择节点确认锚点" |
+| executor | builtin |
+| legacy_source | docs/anchor-lesson-to-video.md R048 |
+
+### R049 分镜末帧字幕必须体现锚点关键词
+
+| 字段 | 值 |
+|---|---|
+| rule_id | R049 |
+| trigger_node | storyboard |
+| trigger_event | on_approve_attempt |
+| check | `shots[-1].subtitle` 包含 `selected_anchor` 的核心关键词（至少 1 个） |
+| severity | warning |
+| action | UI 红字提示"分镜末帧字幕未体现课程锚点关键词，建议检查是否自然衔接本课" |
+| executor | agent:claude |
+| legacy_source | docs/anchor-lesson-to-video.md R049 |
+
 ---
 
 ## 图片规则（warning，3 条）

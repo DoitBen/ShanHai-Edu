@@ -2,7 +2,6 @@
 
 import { useRef, useState, Fragment } from "react";
 import { useAppStore } from "@/lib/store";
-import { MOCK_TEXTBOOK_PARSE } from "@/lib/mock-data";
 import type { NewProjectDraft, VideoIntroType, TextbookParseResult } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -26,7 +25,6 @@ import {
   Check,
   Upload,
   FileText,
-  Sparkles,
   RefreshCw,
   CheckCircle2,
   Save,
@@ -39,7 +37,7 @@ import { toast } from "sonner";
 
 const STEPS = [
   { key: 1, title: "基本信息", desc: "项目基础字段" },
-  { key: 2, title: "教材上传与内容", desc: "上传与解析" },
+  { key: 2, title: "教材内容准备", desc: "内容准备与预览" },
   { key: 3, title: "视频设计导入", desc: "用途与方向" },
   { key: 4, title: "PPT 配置", desc: "风格与结构" },
   { key: 5, title: "路径与约束", desc: "输出与安全" },
@@ -69,7 +67,10 @@ type StepStatus = "todo" | "current" | "done";
 export function NewProjectScreen() {
   const draft = useAppStore((s) => s.draft);
   const setDraft = useAppStore((s) => s.setDraft);
-  const commitDraftToProject = useAppStore((s) => s.commitDraftToProject);
+  const dataMode = useAppStore((s) => s.dataMode);
+  const createProjectFromDraft = useAppStore((s) => s.createProjectFromDraft);
+  const parseDraftTextbook = useAppStore((s) => s.parseDraftTextbook);
+  const selectDraftKnowledgePoint = useAppStore((s) => s.selectDraftKnowledgePoint);
   const openProject = useAppStore((s) => s.openProject);
   const go = useAppStore((s) => s.go);
 
@@ -77,16 +78,23 @@ export function NewProjectScreen() {
   const [currentStep, setCurrentStep] = useState<number>(initStep);
   const [maxStep, setMaxStep] = useState<number>(initStep);
   const [parseConfirmed, setParseConfirmed] = useState<boolean>(false);
+  const [creating, setCreating] = useState(false);
 
   /* 每步校验 */
   const validateStep = (step: number): { ok: boolean; msg?: string } => {
     if (step === 1) {
       if (!draft.name.trim()) return { ok: false, msg: "请填写项目名称" };
+      if (!draft.characterProfile.trim())
+        return { ok: false, msg: "请填写角色字典描述" };
+      if (!draft.visualPalette.trim())
+        return { ok: false, msg: "请填写视觉契约配色" };
+      if (!draft.complianceNotes.trim())
+        return { ok: false, msg: "请确认合规红线" };
       return { ok: true };
     }
     if (step === 2) {
       if (draft.parseStatus !== "done")
-        return { ok: false, msg: "请先解析教材并等待结果" };
+        return { ok: false, msg: "请先上传教材并完成真实解析" };
       if (!parseConfirmed)
         return { ok: false, msg: "请确认教材解析结果后再继续" };
       return { ok: true };
@@ -152,7 +160,8 @@ export function NewProjectScreen() {
     toast.success("草稿已保存");
   };
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
+    if (creating) return;
     for (let i = 1; i <= 5; i++) {
       const v = validateStep(i);
       if (!v.ok) {
@@ -161,10 +170,17 @@ export function NewProjectScreen() {
         return;
       }
     }
-    const id = commitDraftToProject();
-    toast.success("项目已创建，正在进入工作区");
-    setParseConfirmed(false);
-    setTimeout(() => openProject(id), 220);
+    setCreating(true);
+    try {
+      const id = await createProjectFromDraft();
+      toast.success("项目已创建，正在进入工作区");
+      setParseConfirmed(false);
+      setTimeout(() => openProject(id), 220);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "项目创建失败");
+    } finally {
+      setCreating(false);
+    }
   };
 
   const handleBackToDashboard = () => {
@@ -226,6 +242,9 @@ export function NewProjectScreen() {
                 <Step2Textbook
                   draft={draft}
                   setDraft={setDraft}
+                  dataMode={dataMode}
+                  onParse={parseDraftTextbook}
+                  onSelectKnowledgePoint={selectDraftKnowledgePoint}
                   parseConfirmed={parseConfirmed}
                   setParseConfirmed={setParseConfirmed}
                 />
@@ -281,9 +300,13 @@ export function NewProjectScreen() {
               <ArrowRight className="h-4 w-4" />
             </Button>
           ) : (
-            <Button onClick={handleCreate} className="gap-1.5">
-              <FolderPlus className="h-4 w-4" />
-              创建项目
+            <Button onClick={handleCreate} className="gap-1.5" disabled={creating}>
+              {creating ? (
+                <RefreshCw className="h-4 w-4 animate-spin" />
+              ) : (
+                <FolderPlus className="h-4 w-4" />
+              )}
+              {creating ? "创建中" : "创建项目"}
             </Button>
           )}
         </div>
@@ -604,58 +627,185 @@ function Step1BasicInfo({
           />
         </FieldGroup>
       </div>
+
+      <Separator className="bg-border" />
+
+      <div className="space-y-4">
+        <div>
+          <div className="t-overline text-muted-foreground/70">
+            第 0 步核心配置
+          </div>
+          <p className="mt-1 t-caption text-muted-foreground">
+            角色字典、视觉契约和合规红线会作为 PPT 与导入视频的共同上下文。
+          </p>
+        </div>
+
+        <div className="grid gap-5 lg:grid-cols-2">
+          <FieldGroup label="角色字典描述" htmlFor="np-character">
+            <Textarea
+              id="np-character"
+              value={draft.characterProfile}
+              onChange={(e) => setDraft({ characterProfile: e.target.value })}
+              placeholder="如：主角为非写实卡通学生，锁定服装、发型、配色和多视角描述..."
+              className="min-h-28 bg-card"
+            />
+          </FieldGroup>
+          <FieldGroup label="角色安全规则" htmlFor="np-character-safety">
+            <Textarea
+              id="np-character-safety"
+              value={draft.characterSafetyRule}
+              onChange={(e) =>
+                setDraft({ characterSafetyRule: e.target.value })
+              }
+              placeholder="如：禁真人、photorealistic、真实课堂实拍感..."
+              className="min-h-28 bg-card"
+            />
+          </FieldGroup>
+        </div>
+
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <FieldGroup label="主配色" htmlFor="np-palette">
+            <Input
+              id="np-palette"
+              value={draft.visualPalette}
+              onChange={(e) => setDraft({ visualPalette: e.target.value })}
+              placeholder="如：暖纸白、深青灰、古铜金"
+              className="h-11 bg-card"
+            />
+          </FieldGroup>
+          <FieldGroup label="视觉风格关键词" htmlFor="np-style-keywords">
+            <Input
+              id="np-style-keywords"
+              value={draft.visualStyleKeywords}
+              onChange={(e) =>
+                setDraft({ visualStyleKeywords: e.target.value })
+              }
+              placeholder="如：温润、克制、生活情境"
+              className="h-11 bg-card"
+            />
+          </FieldGroup>
+          <FieldGroup label="字体偏好" htmlFor="np-font">
+            <Input
+              id="np-font"
+              value={draft.fontPreference}
+              onChange={(e) => setDraft({ fontPreference: e.target.value })}
+              placeholder="如：系统无衬线，数学内容可编辑"
+              className="h-11 bg-card"
+            />
+          </FieldGroup>
+        </div>
+
+        <FieldGroup label="合规红线" htmlFor="np-compliance">
+          <Textarea
+            id="np-compliance"
+            value={draft.complianceNotes}
+            onChange={(e) => setDraft({ complianceNotes: e.target.value })}
+            placeholder="如：中文男声、禁英文配音、完整视频必须多分镜拼接、候选不得冒充终版..."
+            className="min-h-24 bg-card"
+          />
+        </FieldGroup>
+      </div>
     </div>
   );
 }
 
-/* ----------------- Step 2 教材上传与内容 ----------------- */
+/* ----------------- Step 2 教材内容准备 ----------------- */
 
 function Step2Textbook({
   draft,
   setDraft,
+  dataMode,
+  onParse,
+  onSelectKnowledgePoint,
   parseConfirmed,
   setParseConfirmed,
 }: {
   draft: NewProjectDraft;
   setDraft: (patch: Partial<NewProjectDraft>) => void;
+  dataMode: "demo" | "api";
+  onParse: (file: File, knowledgePointId?: string) => Promise<{ ok: boolean; msg?: string }>;
+  onSelectKnowledgePoint: (knowledgePointId: string) => Promise<{ ok: boolean; msg?: string }>;
   parseConfirmed: boolean;
   setParseConfirmed: (v: boolean) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const recordFile = (file?: File | null) => {
     if (file) {
-      setDraft({ textbookFileName: file.name });
+      setSelectedFile(file);
+      setDraft({
+        textbookFileName: file.name,
+        parseStatus: "idle",
+        parseResult: null,
+        parseError: null,
+      });
+      setParseConfirmed(false);
     }
   };
 
-  const handleParse = () => {
+  const handleParse = async () => {
     if (draft.parseStatus === "parsing") return;
+    if (!selectedFile) {
+      toast.error("请先选择教材 PDF 文件");
+      return;
+    }
+    if (dataMode !== "api") {
+      toast.error("真实教材解析只在真实 API 模式可用");
+      return;
+    }
     setParseConfirmed(false);
-    setDraft({ parseStatus: "parsing" });
-    window.setTimeout(() => {
-      setDraft({
-        parseStatus: "done",
-        parseResult: MOCK_TEXTBOOK_PARSE,
-      });
-      toast.success("解析完成");
-    }, 1200);
+    const result = await onParse(selectedFile, draft.selectedKnowledgePointId || undefined);
+    if (!result.ok) {
+      toast.error(result.msg || "教材解析失败");
+      return;
+    }
+    toast.success("教材解析完成");
   };
 
   const handleReset = () => {
-    setDraft({ parseStatus: "idle", parseResult: null });
+    setSelectedFile(null);
+    setDraft({
+      apiProjectId: null,
+      textbookFileName: "",
+      textbookContent: "",
+      parseStatus: "idle",
+      parseResult: null,
+      parseError: null,
+      selectedKnowledgePointId: "",
+    });
     setParseConfirmed(false);
   };
 
   const handleConfirm = () => {
     setParseConfirmed(true);
-    toast.success("已确认解析结果，可继续下一步");
+    toast.success("已确认教材解析结果，可继续下一步");
+  };
+
+  const handleKnowledgePointChange = async (value: string) => {
+    if (!value || value === draft.selectedKnowledgePointId) return;
+    setParseConfirmed(false);
+    const result = await onSelectKnowledgePoint(value);
+    if (!result.ok) {
+      toast.error(result.msg || "知识点切换失败");
+      return;
+    }
+    toast.success("知识点 Markdown 已更新");
   };
 
   return (
     <div className="space-y-6">
       <div className="t-overline text-muted-foreground/70">
-        教材上传与内容（整体模块）
+        教材解析（真实后端）
+      </div>
+
+      <div className="rounded-lg border border-bronze/25 bg-bronze/10 p-4">
+        <div className="t-body font-medium text-foreground">
+          上传 PDF 后调用后端解析教材
+        </div>
+        <p className="mt-1.5 t-caption leading-relaxed text-muted-foreground">
+          本步骤会上传教材文件并调用 `textbook_parse/generate`。解析完成后会回填教材字段、展示后端返回的知识点列表，并预览所选知识点 Markdown。
+        </p>
       </div>
 
       {/* 文件上传区 */}
@@ -676,7 +826,7 @@ function Step2Textbook({
             type="file"
             className="hidden"
             onChange={(e) => recordFile(e.target.files?.[0])}
-            accept=".pdf,.docx,.doc,.txt,.png,.jpg,.jpeg"
+            accept=".pdf,.txt,.md"
           />
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground">
             <Upload className="h-5 w-5" />
@@ -686,7 +836,7 @@ function Step2Textbook({
               {draft.textbookFileName || "点击或拖拽上传教材文件"}
             </div>
             <div className="mt-0.5 t-caption text-muted-foreground">
-              支持 PDF / Word / 图片 / 文本，演示环境仅记录文件名
+              本地演示优先使用 fixture PDF；解析结果必须来自后端，不使用固定 mock 知识点。
             </div>
           </div>
           <Button
@@ -707,25 +857,30 @@ function Step2Textbook({
 
       {/* 教材内容文本框 */}
       <div className="space-y-2">
-        <FieldLabel htmlFor="np-content">教材内容</FieldLabel>
+        <FieldLabel htmlFor="np-content">教材内容补充</FieldLabel>
         <Textarea
           id="np-content"
           value={draft.textbookContent}
           onChange={(e) => setDraft({ textbookContent: e.target.value })}
-          placeholder="可粘贴教材原文、章节要点或课题描述，用于辅助解析…"
+          placeholder="可补充教师备注或课题说明；PDF 解析结果以后端返回为准…"
           className="min-h-32 bg-card"
         />
         <div className="t-caption text-muted-foreground">
-          若已上传文件，可留空；解析将基于文件名生成演示结果。
+          这里不再生成本地预览；点击“解析教材”会调用真实后端接口。
         </div>
       </div>
 
       {/* 解析动作行 */}
       <div className="flex flex-wrap items-center gap-3">
         {draft.parseStatus === "idle" && (
-          <Button type="button" onClick={handleParse} className="gap-1.5">
-            <Sparkles className="h-4 w-4" />
-            开始解析
+          <Button
+            type="button"
+            onClick={handleParse}
+            className="gap-1.5"
+            disabled={dataMode !== "api"}
+          >
+            <FileText className="h-4 w-4" />
+            解析教材
           </Button>
         )}
         {draft.parseStatus === "parsing" && (
@@ -748,7 +903,7 @@ function Step2Textbook({
             ) : (
               <span className="inline-flex items-center gap-1.5 t-body text-success">
                 <CheckCircle2 className="h-4 w-4" />
-                已确认，可进入下一步
+                已确认解析结果
               </span>
             )}
             <Button
@@ -758,7 +913,7 @@ function Step2Textbook({
               className="gap-1.5"
             >
               <RefreshCw className="h-4 w-4" />
-              重新解析
+              重新解析教材
             </Button>
             <Button
               type="button"
@@ -772,43 +927,142 @@ function Step2Textbook({
         )}
       </div>
 
+      {dataMode !== "api" && (
+        <div className="rounded-md border border-warning/25 bg-warning/5 px-4 py-3 t-caption text-warning">
+          当前为 demo 模式，真实教材解析需切换到真实 API 模式。
+        </div>
+      )}
+
       {/* 解析进度 */}
       {draft.parseStatus === "parsing" && (
         <div className="rounded-lg border border-border bg-muted/30 p-4">
           <div className="flex items-center justify-between">
             <span className="t-body text-muted-foreground">
-              正在解析教材结构…
+              正在上传教材并调用后端解析…
             </span>
-            <span className="t-caption text-muted-foreground">约 1 秒</span>
+            <span className="t-caption text-muted-foreground">请等待</span>
           </div>
           <Progress value={62} className="mt-2 h-1.5 bg-muted" />
         </div>
       )}
 
-      {/* 解析结果预览 */}
+      {draft.parseStatus === "failed" && (
+        <div className="rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-3 t-body text-destructive">
+          {draft.parseError || "教材解析失败，请确认后端服务和 PDF 文件。"}
+        </div>
+      )}
+
+      {/* 教材解析结果 */}
       {draft.parseStatus === "done" && draft.parseResult && (
-        <ParseResultCard result={draft.parseResult} />
+        <ParseResultCard
+          result={draft.parseResult}
+          selectedKnowledgePointId={draft.selectedKnowledgePointId}
+          onMetaChange={(patch) => {
+            setParseConfirmed(false);
+            setDraft({
+              ...patch,
+              parseResult: draft.parseResult
+                ? { ...draft.parseResult, ...patch }
+                : draft.parseResult,
+            });
+          }}
+          onSelectKnowledgePoint={handleKnowledgePointChange}
+        />
       )}
     </div>
   );
 }
 
-function ParseResultCard({ result }: { result: TextbookParseResult }) {
+function ParseResultCard({
+  result,
+  selectedKnowledgePointId,
+  onMetaChange,
+  onSelectKnowledgePoint,
+}: {
+  result: TextbookParseResult;
+  selectedKnowledgePointId: string;
+  onMetaChange: (patch: Partial<Pick<
+    TextbookParseResult,
+    "subject" | "grade" | "textbookVersion" | "volume"
+  >>) => void;
+  onSelectKnowledgePoint: (value: string) => void;
+}) {
+  const selectedPoint = result.knowledgePoints?.find(
+    (point) => point.id === (selectedKnowledgePointId || result.selectedKnowledgePointId),
+  );
   return (
     <div className="rounded-lg border border-border bg-muted/20 p-5">
-      <div className="flex items-center gap-2">
-        <FileText className="h-4 w-4 text-bronze" />
-        <h4 className="t-module">解析结果预览</h4>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <FileText className="h-4 w-4 text-bronze" />
+          <h4 className="t-module">教材解析结果</h4>
+        </div>
+        <span className="rounded-full border border-success/30 bg-success/10 px-2 py-0.5 t-caption text-success">
+          来自后端解析
+        </span>
       </div>
+      <p className="mt-2 t-caption leading-relaxed text-muted-foreground">
+        以下内容来自后端 `textbook_parse/generate`。知识点下拉只展示后端返回结果，不使用固定 mock。
+      </p>
 
       <div className="mt-4 grid gap-x-6 gap-y-3 sm:grid-cols-2">
-        <MetaField label="学科" value={result.subject} />
-        <MetaField label="年级" value={result.grade} />
-        <MetaField label="教材版本" value={result.textbookVersion} />
-        <MetaField label="册次" value={result.volume} />
+        <MetaField label="教材标题" value={result.textbookTitle || "—"} />
+        <EditableMetaSelect
+          label="学科"
+          value={result.subject}
+          options={SUBJECTS}
+          onChange={(subject) => onMetaChange({ subject })}
+        />
+        <EditableMetaSelect
+          label="年级"
+          value={result.grade}
+          options={GRADES}
+          onChange={(grade) => onMetaChange({ grade })}
+        />
+        <EditableMetaSelect
+          label="教材版本"
+          value={result.textbookVersion}
+          options={VERSIONS}
+          onChange={(textbookVersion) => onMetaChange({ textbookVersion })}
+        />
+        <EditableMetaSelect
+          label="册次"
+          value={result.volume}
+          options={VOLUMES}
+          onChange={(volume) => onMetaChange({ volume })}
+        />
       </div>
       <div className="mt-3">
         <MetaField label="课题" value={result.lesson} />
+      </div>
+
+      <Separator className="my-4 bg-border" />
+
+      <div className="space-y-2">
+        <FieldLabel>知识点选择</FieldLabel>
+        <Select
+          value={selectedKnowledgePointId || result.selectedKnowledgePointId}
+          onValueChange={onSelectKnowledgePoint}
+          disabled={!result.knowledgePoints?.length}
+        >
+          <SelectTrigger className="h-11 bg-card">
+            <SelectValue placeholder="请选择知识点" />
+          </SelectTrigger>
+          <SelectContent>
+            {(result.knowledgePoints || []).map((point) => (
+              <SelectItem key={point.id} value={point.id}>
+                {point.title}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {selectedPoint && (
+          <div className="t-caption text-muted-foreground">
+            {selectedPoint.unit ? `${selectedPoint.unit} · ` : ""}
+            教材页 {selectedPoint.pageStart || "-"}-{selectedPoint.pageEnd || "-"}，
+            PDF 页 {selectedPoint.pdfPageStart || "-"}-{selectedPoint.pdfPageEnd || "-"}
+          </div>
+        )}
       </div>
 
       <Separator className="my-4 bg-border" />
@@ -856,6 +1110,25 @@ function ParseResultCard({ result }: { result: TextbookParseResult }) {
           </ul>
         </div>
       </div>
+
+      <div className="mt-5 rounded-lg border border-border bg-card p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div className="t-module">知识点 Markdown 预览</div>
+            <div className="mt-0.5 t-caption text-muted-foreground">
+              {result.selectedKnowledgePointMarkdownPath || "后端未返回 Markdown 路径"}
+            </div>
+          </div>
+          {result.selectedKnowledgePointPages?.textbookPages && (
+            <span className="rounded-full border border-border px-2 py-0.5 t-caption text-muted-foreground">
+              教材页 {result.selectedKnowledgePointPages.textbookPages}
+            </span>
+          )}
+        </div>
+        <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded-md bg-muted/50 p-3 font-mono text-xs leading-relaxed text-foreground">
+          {result.selectedKnowledgePointMarkdown || "后端未返回所选知识点 Markdown。"}
+        </pre>
+      </div>
     </div>
   );
 }
@@ -865,6 +1138,36 @@ function MetaField({ label, value }: { label: string; value: string }) {
     <div>
       <div className="t-caption text-muted-foreground">{label}</div>
       <div className="mt-0.5 t-body font-medium">{value}</div>
+    </div>
+  );
+}
+
+function EditableMetaSelect({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <div className="t-caption text-muted-foreground">{label}</div>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger className="h-10 bg-card">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((option) => (
+            <SelectItem key={option} value={option}>
+              {option}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }
@@ -1114,6 +1417,18 @@ function ConfigSummary({ draft }: { draft: NewProjectDraft }) {
         />
         <SummaryRow label="课型" value={draft.lessonType} />
         <SummaryRow
+          label="角色字典"
+          value={draft.characterProfile ? "已配置" : "未配置"}
+        />
+        <SummaryRow
+          label="视觉契约"
+          value={draft.visualPalette || "未配置"}
+        />
+        <SummaryRow
+          label="合规红线"
+          value={draft.complianceNotes ? "已确认" : "未确认"}
+        />
+        <SummaryRow
           label="课题"
           value={draft.parseResult?.lesson || "—"}
         />
@@ -1153,17 +1468,20 @@ function getSummary(
 ): string {
   if (step === 1) {
     if (!draft.name) return "未填写项目名称";
-    return `${draft.name} · ${draft.subject} · ${draft.grade} · ${draft.textbookVersion}${draft.volume} · ${draft.lessonType}`;
+    return `${draft.name} · ${draft.subject} · ${draft.grade} · 角色与视觉契约已配置`;
   }
   if (step === 2) {
     if (draft.parseStatus === "idle")
       return draft.textbookFileName
-        ? `已上传：${draft.textbookFileName}（未解析）`
-        : "尚未上传或解析教材";
-    if (draft.parseStatus === "parsing") return "正在解析教材结构…";
+        ? `已选择文件：${draft.textbookFileName}（未解析）`
+        : "尚未准备教材内容";
+    if (draft.parseStatus === "parsing") return "正在解析教材…";
+    if (draft.parseStatus === "failed") return draft.parseError || "教材解析失败";
     if (draft.parseStatus === "done") {
-      const lesson = draft.parseResult?.lesson || "解析结果";
-      return parseConfirmed ? `已确认：${lesson}` : `已解析：${lesson}（待确认）`;
+      const lesson = draft.parseResult?.lesson || "教材解析结果";
+      return parseConfirmed
+        ? `已确认解析结果：${lesson}`
+        : `已完成解析：${lesson}（待确认）`;
     }
     return "—";
   }

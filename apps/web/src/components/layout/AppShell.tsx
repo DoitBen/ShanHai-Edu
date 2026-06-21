@@ -1,28 +1,95 @@
 "use client";
 
 import { useEffect } from "react";
+import dynamic from "next/dynamic";
 import { useAppStore, initAuth } from "@/lib/store";
+import { DEMO_PASSWORD, isDemoMode } from "@/lib/demo-mode";
 import { useGlobalShortcuts } from "@/hooks/use-global-shortcuts";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 import { LoginScreen } from "@/components/screens/LoginScreen";
-import { DashboardScreen } from "@/components/screens/DashboardScreen";
-import { NewProjectScreen } from "@/components/screens/NewProjectScreen";
-import { ProjectWorkspaceScreen } from "@/components/screens/ProjectWorkspaceScreen";
-import { ConfigScreen } from "@/components/screens/ConfigScreen";
-import { LogsScreen } from "@/components/screens/LogsScreen";
-import { ScriptsScreen } from "@/components/screens/ScriptsScreen";
-import { CommandPalette } from "@/components/command-palette/CommandPalette";
 import { PageTransition } from "@/components/common/PageTransition";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Logo } from "@/components/brand/Logo";
 
+const DashboardScreen = dynamic(
+  () =>
+    import("@/components/screens/DashboardScreen").then(
+      (m) => m.DashboardScreen
+    ),
+  {
+    ssr: false,
+    loading: () => <ScreenLoading label="正在加载首页..." />,
+  }
+);
+
+const NewProjectScreen = dynamic(
+  () =>
+    import("@/components/screens/NewProjectScreen").then(
+      (m) => m.NewProjectScreen
+    ),
+  {
+    ssr: false,
+    loading: () => <ScreenLoading label="正在加载新建项目..." />,
+  }
+);
+
+const ProjectWorkspaceScreen = dynamic(
+  () =>
+    import("@/components/screens/ProjectWorkspaceScreen").then(
+      (m) => m.ProjectWorkspaceScreen
+    ),
+  {
+    ssr: false,
+    loading: () => <ScreenLoading label="正在加载项目工作区..." />,
+  }
+);
+
+const ConfigScreen = dynamic(
+  () =>
+    import("@/components/screens/ConfigScreen").then((m) => m.ConfigScreen),
+  {
+    ssr: false,
+    loading: () => <ScreenLoading label="正在加载配置中心..." />,
+  }
+);
+
+const LogsScreen = dynamic(
+  () => import("@/components/screens/LogsScreen").then((m) => m.LogsScreen),
+  {
+    ssr: false,
+    loading: () => <ScreenLoading label="正在加载日志..." />,
+  }
+);
+
+const ScriptsScreen = dynamic(
+  () =>
+    import("@/components/screens/ScriptsScreen").then((m) => m.ScriptsScreen),
+  {
+    ssr: false,
+    loading: () => <ScreenLoading label="正在加载脚本..." />,
+  }
+);
+
+const CommandPalette = dynamic(
+  () =>
+    import("@/components/command-palette/CommandPalette").then(
+      (m) => m.CommandPalette
+    ),
+  {
+    ssr: false,
+    loading: () => null,
+  }
+);
+
 export function AppShell() {
+  const demoMode = isDemoMode();
   const user = useAppStore((s) => s.user);
   const authReady = useAppStore((s) => s.authReady);
   const screen = useAppStore((s) => s.screen);
   const mobileNavOpen = useAppStore((s) => s.mobileNavOpen);
   const setMobileNavOpen = useAppStore((s) => s.setMobileNavOpen);
+  const commandOpen = useAppStore((s) => s.commandOpen);
 
   useEffect(() => {
     initAuth();
@@ -78,15 +145,34 @@ export function AppShell() {
             <p className="t-caption text-muted-foreground">
               山海教育 · AI幼教ProMax可视化工作台 · 第一阶段演示版
             </p>
-            <p className="t-caption text-muted-foreground/70">
-              按 ⌘K 打开命令面板 · admin / shanhai2026
-            </p>
+            {demoMode ? (
+              <p className="t-caption text-muted-foreground/70">
+                按 ⌘K 打开命令面板 · admin / {DEMO_PASSWORD}
+              </p>
+            ) : (
+              <p className="t-caption text-muted-foreground/70">
+                按 ⌘K 打开命令面板
+              </p>
+            )}
           </div>
         </footer>
       </div>
 
       {/* 命令面板 */}
-      <CommandPalette />
+      {commandOpen && <CommandPalette />}
+    </div>
+  );
+}
+
+function ScreenLoading({ label }: { label: string }) {
+  return (
+    <div className="mx-auto w-full max-w-[1440px] px-4 py-6 lg:px-8 lg:py-8">
+      <div className="rounded-lg border border-border bg-card p-6 shadow-soft">
+        <div className="t-body text-muted-foreground">{label}</div>
+        <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-muted">
+          <div className="h-full w-1/3 rounded-full bg-primary/50" />
+        </div>
+      </div>
     </div>
   );
 }

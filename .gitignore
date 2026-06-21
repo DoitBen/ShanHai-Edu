@@ -9,6 +9,9 @@ env/
 .env
 .env.local
 .env.*.local
+apps/api/.env
+apps/api/.env.local
+apps/api/.env.*.local
 
 # 构建产物
 dist/
@@ -32,12 +35,23 @@ htmlcov/
 coverage/
 *.cover
 
+# 图谱生成物
+graphify-out/
+apps/web/graphify-out/
+
 # 日志
 *.log
 logs/
 errors.log
+provider-logs/
+*.provider.log
+*.provider.jsonl
+provider-*.log
+provider-*.jsonl
 
 # 项目运行时数据（不进 git）
+storage/
+storage-*/
 projects/
 *.db
 *.db-journal
@@ -81,3 +95,14 @@ tmp/
 *.docx
 !docs/**/*.pdf
 !docs/**/*.pptx
+
+# 真实 provider 演示产物（只保留脱敏报告，不提交真实图片/视频/PPT产物）
+output/imagegen/
+docs/qa-audits/imagegen-real-smoke/
+docs/qa-audits/octo-real-video-smoke/
+docs/qa-audits/fullchain-smoke-evidence/
+docs/qa-audits/**/lesson-video-demo.pptx
+docs/qa-audits/**/*real*.png
+docs/qa-audits/**/*real*.jpg
+docs/qa-audits/**/*real*.jpeg
+docs/qa-audits/**/*real*.webp

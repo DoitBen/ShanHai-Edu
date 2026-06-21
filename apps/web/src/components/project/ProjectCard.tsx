@@ -25,6 +25,7 @@ export function ProjectCard({
 }) {
   const openProject = useAppStore((s) => s.openProject);
   const stage = stageDefByKey(project.currentStage);
+  const stageTitle = project.currentStageTitle || stage?.title || project.currentStage;
 
   return (
     <motion.div
@@ -62,8 +63,15 @@ export function ProjectCard({
         <Layers className="h-3.5 w-3.5" />
         <span className="t-body">当前阶段</span>
         <span className="t-body font-medium text-foreground">
-          {stage?.title || project.currentStage}
+          {stageTitle}
         </span>
+      </div>
+
+      <div className="mt-2 rounded-md border border-border bg-muted/35 px-3 py-2">
+        <div className="t-caption text-muted-foreground">下一步动作</div>
+        <div className="mt-0.5 line-clamp-1 t-body font-medium text-foreground">
+          {project.nextAction}
+        </div>
       </div>
 
       <div className="mt-3">
@@ -100,6 +108,7 @@ export function ProjectCard({
 export function ProjectCardMinimal({ project }: { project: ProjectMeta }) {
   const openProject = useAppStore((s) => s.openProject);
   const stage = stageDefByKey(project.currentStage);
+  const stageTitle = project.currentStageTitle || stage?.title || project.currentStage;
   return (
     <button
       type="button"
@@ -110,7 +119,7 @@ export function ProjectCardMinimal({ project }: { project: ProjectMeta }) {
       <div className="min-w-0 flex-1">
         <div className="t-body truncate font-medium">{project.name}</div>
         <div className="t-caption mt-0.5 text-muted-foreground">
-          {stage?.title} · {project.progress}%
+          {stageTitle} · {project.progress}%
         </div>
       </div>
       <ProjectStatusBadge status={project.status} />

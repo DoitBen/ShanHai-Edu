@@ -88,14 +88,29 @@
 
 ### intro_design 子结构
 
+每套策划卡必须有两层结构：层一独立创意（视频本身），层二课堂接入（锚点层）。
+
+**层一：独立创意**
+
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | design_id | string | required | `design_science_01` 形式 |
 | type | enum | required | science / application / story |
-| title | string | required | 方案名 |
-| hook | text | required | 钩子描述 |
-| anchor_to_lesson | text | required | 课程锚点（如何引出本课） |
-| recommend_score | int | required | 推荐分 1-5 |
+| title | string | required | 方案名（10字内） |
+| video_theme | text | required | 视频独立主题（视频讲什么，不必和课堂直接相关） |
+| hook | text | required | 视频开场钩子（50字内，描述开场冲突/悬念/奇妙发现） |
+| eye_catch_tag | string | required | 新奇特标签（3词内，体现差异化） |
+
+**层二：课堂接入（锚点层）**
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| anchor_to_lesson | text | required | **课程锚点**：视频最后通过[具体现象/物品/冲突/疑问]，引出本课核心学习任务（15-40字，必须具体，不得是教学目标描述） |
+| classroom_entry_question | text | required | 课堂落点问题：视频播完后老师第一句话（一个具体问题） |
+| no_pre_teach | text | required | 不提前讲解的内容（列出视频不能碰的知识点） |
+| entry_position | text | required | 接入教案的位置（在哪个教学环节之前播放） |
+| recommend_score | int | required | 推荐分 1-100 |
+| recommend_reason | text | required | 推荐理由（适配度/吸引力/可制作性/接入自然度） |
 | risk_note | text | optional | 适配风险 |
 
 ## 节点 1.5：导入设计选择集（intro_selection）
@@ -105,6 +120,7 @@
 | selection_mode | enum | required | single_best / same_type_multi / one_each_type / all_types_custom / all_nine |
 | selected_design_ids | list<string> | required | 引用 intro_design.design_id |
 | primary_design_id | string | required | 选择集主方案 |
+| selected_anchor | text | required | 用户确认（可编辑）的最终课程锚点；下游 intro_video_script / storyboard / final_video 必须使用此字段，不得自行改写 |
 | downstream_generation_mode | enum | required | one_script_per_design / three_variants_for_primary / compare_selected_designs |
 | selection_reason | text | required | 选择理由 |
 

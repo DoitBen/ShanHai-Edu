@@ -16,22 +16,42 @@
     "intro_designs": {
       "type": "array",
       "items": { "$ref": "#/$defs/intro_design" },
-      "minItems": 3,
+      "minItems": 9,
       "maxItems": 9
     }
   },
   "$defs": {
     "intro_design": {
       "type": "object",
-      "required": ["design_id", "type", "title", "hook", "anchor_to_lesson", "recommend_score"],
+      "required": [
+        "design_id",
+        "type",
+        "title",
+        "video_theme",
+        "hook",
+        "eye_catch_tag",
+        "anchor_to_lesson",
+        "classroom_entry_question",
+        "no_pre_teach",
+        "entry_position",
+        "recommend_score",
+        "recommend_reason",
+        "risk_note"
+      ],
       "properties": {
         "design_id": { "type": "string", "pattern": "^design_(science|application|story)_\\d{2}$" },
         "type": { "type": "string", "enum": ["science", "application", "story"] },
-        "title": { "type": "string" },
-        "hook": { "type": "string" },
-        "anchor_to_lesson": { "type": "string" },
-        "recommend_score": { "type": "integer", "minimum": 1, "maximum": 5 },
-        "risk_note": { "type": "string" }
+        "title": { "type": "string", "minLength": 1 },
+        "video_theme": { "type": "string", "minLength": 5 },
+        "hook": { "type": "string", "minLength": 5 },
+        "eye_catch_tag": { "type": "string", "minLength": 1 },
+        "anchor_to_lesson": { "type": "string", "minLength": 10 },
+        "classroom_entry_question": { "type": "string", "minLength": 5 },
+        "no_pre_teach": { "type": "string", "minLength": 5 },
+        "entry_position": { "type": "string", "minLength": 3 },
+        "recommend_score": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "recommend_reason": { "type": "string", "minLength": 5 },
+        "risk_note": { "type": "string", "minLength": 1 }
       }
     }
   }

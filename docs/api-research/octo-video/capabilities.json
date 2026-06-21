@@ -1,0 +1,191 @@
+{
+  "provider": "章鱼哥 Apifox",
+  "source": {
+    "llms": "https://6l0ket291i.apifox.cn/llms.txt",
+    "raw_markdown_dir": "docs/api-research/octo-video/raw"
+  },
+  "capabilities": [
+    {
+      "provider": "章鱼哥 Apifox",
+      "model": "sora-2-12s",
+      "max_seconds": 12,
+      "resolution": {
+        "supported": ["1920x1080", "1080x1920"],
+        "parameter": "size",
+        "notes": "必须显式传入 size；宽>高为横屏，高>宽为竖屏。"
+      },
+      "reference_image_support": true,
+      "max_reference_images": 1,
+      "first_last_frame": false,
+      "video_edit": false,
+      "extend": false,
+      "endpoint": {
+        "create": "POST /v1/videos",
+        "query": "GET /v1/videos/{task_id}"
+      },
+      "auth": {
+        "type": "bearer",
+        "header": "Authorization: Bearer YOUR_API_KEY"
+      },
+      "query_requires_authorization": true,
+      "recommended_use": "Sora 2 文生视频或单参考图图生视频，适合需要 12 秒横屏/竖屏成片的任务。",
+      "limitations": [
+        "images 与 input_reference 二选一，不能同时使用。",
+        "images URL 必须是可公开访问的图片直链。",
+        "图生视频取第一张参考图。",
+        "异步处理，需轮询 GET /v1/videos/{task_id} 获取结果。"
+      ]
+    },
+    {
+      "provider": "章鱼哥 Apifox",
+      "model": "omni_flash-10s",
+      "max_seconds": 10,
+      "resolution": {
+        "supported": ["1280x720"],
+        "parameter": "size",
+        "notes": "文档示例使用 1280x720；模型名包含时长和分辨率档位信息，size 可用于请求尺寸。"
+      },
+      "reference_image_support": true,
+      "max_reference_images": 7,
+      "first_last_frame": false,
+      "video_edit": true,
+      "extend": false,
+      "endpoint": {
+        "create": "POST /v1/videos",
+        "query": "GET /v1/videos/{task_id}"
+      },
+      "auth": {
+        "type": "bearer",
+        "header": "Authorization: Bearer YOUR_API_KEY"
+      },
+      "query_requires_authorization": true,
+      "recommended_use": "Omni 文生视频、最多 7 张参考图图生视频，或通过视频文件/视频 URL 配合提示词做视频修改。",
+      "limitations": [
+        "暂不支持首尾帧模式。",
+        "参考图/视频上限为 7 项。",
+        "URL 必须是可公网访问的图片或视频直链，不要传需要登录的网页地址。",
+        "JSON 与 multipart/form-data 二选一；JSON 使用 images，表单使用 input_reference。",
+        "异步处理，需轮询 GET /v1/videos/{task_id} 获取结果。"
+      ]
+    },
+    {
+      "provider": "章鱼哥 Apifox",
+      "model": "veo_3_1-fast",
+      "max_seconds": null,
+      "resolution": {
+        "supported": ["1920x1080", "1280x720"],
+        "parameter": "size",
+        "notes": "文档示例包含 1920x1080、1280x720；服务端可能根据尺寸推导分辨率档位。"
+      },
+      "reference_image_support": true,
+      "max_reference_images": 3,
+      "first_last_frame": false,
+      "video_edit": false,
+      "extend": false,
+      "endpoint": {
+        "create": "POST /v1/videos",
+        "query": "GET /v1/videos/{task_id}"
+      },
+      "auth": {
+        "type": "bearer",
+        "header": "Authorization: Bearer YOUR_API_KEY"
+      },
+      "query_requires_authorization": true,
+      "recommended_use": "Veo 3.1 fast 文生视频或最多 3 张参考图图生视频。",
+      "limitations": [
+        "参考图模式最多 3 张图。",
+        "图片 URL 须为图片直链；需要鉴权的链接需带合法 query 或改用文件/Base64。",
+        "JSON 请求图必须用 images 数组；不要在 JSON 中使用 input_reference。",
+        "异步处理，需轮询 GET /v1/videos/{task_id} 获取结果。"
+      ]
+    },
+    {
+      "provider": "章鱼哥 Apifox",
+      "model": "veo_3_1-fast-fl",
+      "max_seconds": null,
+      "resolution": {
+        "supported": ["1280x720", "1920x1080", "1080x1920"],
+        "parameter": "size",
+        "notes": "文档示例包含 1280x720、1920x1080、1080x1920；服务端可能根据尺寸推导分辨率档位。"
+      },
+      "reference_image_support": true,
+      "max_reference_images": 2,
+      "first_last_frame": true,
+      "video_edit": false,
+      "extend": false,
+      "endpoint": {
+        "create": "POST /v1/videos",
+        "query": "GET /v1/videos/{task_id}"
+      },
+      "auth": {
+        "type": "bearer",
+        "header": "Authorization: Bearer YOUR_API_KEY"
+      },
+      "query_requires_authorization": true,
+      "recommended_use": "Veo 3.1 fast 首尾帧图生视频，第 1 张为首帧，第 2 张为尾帧；只传 1 张时表示只指定首帧。",
+      "limitations": [
+        "首尾帧模式仅支持 1 到 2 张图片。",
+        "部分文档示例写作 veo_3_1-fl，模型名以实际网关为准。",
+        "图片 URL 须为图片直链；需要鉴权的链接需带合法 query 或改用文件/Base64。",
+        "异步处理，需轮询 GET /v1/videos/{task_id} 获取结果。"
+      ]
+    },
+    {
+      "provider": "章鱼哥 Apifox",
+      "model": "veo_3_1-fast-extend",
+      "max_seconds": 15,
+      "resolution": {
+        "supported": ["720x720", "720x1280"],
+        "parameter": "size",
+        "notes": "延长接口响应示例包含 720x720、720x1280；请求核心参数是 remix_id，不以 size 控制延长目标。"
+      },
+      "reference_image_support": false,
+      "max_reference_images": 0,
+      "first_last_frame": false,
+      "video_edit": false,
+      "extend": true,
+      "endpoint": {
+        "create": "POST /v1/videos",
+        "query": "GET /v1/videos/{task_id}"
+      },
+      "auth": {
+        "type": "bearer",
+        "header": "Authorization: Bearer YOUR_API_KEY"
+      },
+      "query_requires_authorization": true,
+      "recommended_use": "将已有 Veo 视频通过 remix_id 延长至 15 秒。",
+      "limitations": [
+        "目前仅支持延长至 15 秒。",
+        "必须提供原视频的 video_id/remix_id，不是 task_id。",
+        "建议在原任务提交成功后立即保存 data.remix_id，避免后续状态变化导致字段值改变。",
+        "异步处理，需轮询 GET /v1/videos/{task_id} 获取结果。"
+      ]
+    },
+    {
+      "provider": "章鱼哥 Apifox",
+      "model": "task-query",
+      "max_seconds": null,
+      "resolution": null,
+      "reference_image_support": false,
+      "max_reference_images": 0,
+      "first_last_frame": false,
+      "video_edit": false,
+      "extend": false,
+      "endpoint": {
+        "query": "GET /v1/videos/{task_id}"
+      },
+      "auth": {
+        "type": "bearer",
+        "header": "Authorization: Bearer YOUR_API_KEY"
+      },
+      "query_requires_authorization": true,
+      "recommended_use": "查询通过 /v1/videos 提交的视频或图片任务状态、进度和结果 URL。",
+      "limitations": [
+        "建议每 3 到 5 秒轮询一次，避免过于频繁请求。",
+        "仅 completed 状态返回结果 URL。",
+        "已完成任务只保留一段时间，建议及时下载结果。",
+        "404 表示任务不存在。"
+      ]
+    }
+  ]
+}

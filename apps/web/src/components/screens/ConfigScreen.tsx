@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAppStore } from "@/lib/store";
+import { fetchVideoCapabilities } from "@/lib/api-client";
+import type { VideoCapability } from "@/lib/types";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,6 +36,7 @@ import {
   SlidersHorizontal,
   Eye,
   EyeOff,
+  Film,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -49,9 +52,9 @@ interface ModelRow {
 }
 
 const MOCK_MODELS: ModelRow[] = [
-  { id: "m1", name: "教材解析模型", usage: "解析教材结构、抽取知识点与教学目标", status: "ready" },
-  { id: "m2", name: "视频剧本模型", usage: "生成视频导入方案与分镜脚本", status: "ready" },
-  { id: "m3", name: "视频生成模型", usage: "依据分镜资产生成课堂导入视频", status: "placeholder" },
+  { id: "m1", name: "Minimax M3 大脑层", usage: "教材解析、教案、导入方案、视频文稿、剧本与分镜 JSON", status: "ready" },
+  { id: "m2", name: "章鱼哥视频生成", usage: "依据分镜资产提交 Sora / Omni / Veo 视频任务", status: "ready" },
+  { id: "m3", name: "imagegen-myself 图片资产", usage: "生成参考图、首帧测试图与前端图片素材", status: "ready" },
   { id: "m4", name: "PPT 方案模型", usage: "规划 PPT 结构、风格与页数", status: "ready" },
   { id: "m5", name: "PPTX 生成模型", usage: "组装最终 PPTX 文件并校对排版", status: "placeholder" },
   { id: "m6", name: "教案完善模型", usage: "结合视频与 PPT 反馈完善教案终稿", status: "unconfigured" },
@@ -80,27 +83,27 @@ interface KeyRow {
 const MOCK_KEYS: KeyRow[] = [
   {
     id: "k1",
-    name: "API 密钥",
-    desc: "工作台调度服务调用凭据",
+    name: "Minimax M3",
+    desc: "大脑层文本生成凭据，仅后端使用",
     state: "configured",
-    masked: "••••••••••••3a9f",
-    updatedAt: "2026-06-12 09:10",
+    masked: "已配置",
+    updatedAt: "本机 .env",
   },
   {
     id: "k2",
-    name: "存储密钥",
-    desc: "对象存储读写凭据",
+    name: "章鱼哥视频",
+    desc: "视频提交与任务查询凭据，仅后端使用",
     state: "configured",
-    masked: "••••••••••••7c2d",
-    updatedAt: "2026-06-08 14:42",
+    masked: "已配置",
+    updatedAt: "本机 .env",
   },
   {
     id: "k3",
-    name: "模型密钥",
-    desc: "外部模型服务调用凭据",
-    state: "unconfigured",
-    masked: "—",
-    updatedAt: "—",
+    name: "imagegen-myself",
+    desc: "图片资产生成 skill 凭据，按 skill 私有配置读取",
+    state: "configured",
+    masked: "由 skill 管理",
+    updatedAt: "skill .env.local",
   },
 ];
 
@@ -119,6 +122,25 @@ export function ConfigScreen() {
   const [outputFormat, setOutputFormat] = useState("json");
 
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
+  const [videoCapabilities, setVideoCapabilities] = useState<VideoCapability[]>([]);
+  const [capabilityError, setCapabilityError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    fetchVideoCapabilities()
+      .then((data) => {
+        if (mounted) {
+          setVideoCapabilities(data.models.filter((item) => item.model !== "task-query"));
+          setCapabilityError(null);
+        }
+      })
+      .catch((error) => {
+        if (mounted) setCapabilityError(error.message);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const handleRefresh = () => {
     toast.success("配置已刷新");
@@ -402,6 +424,16 @@ export function ConfigScreen() {
       <section className="mt-10">
         <SectionHeader
           index="04"
+          title="视频模型能力"
+          desc="来自后端 /video/capabilities，前端不硬编码接口能力"
+        />
+        <VideoCapabilityTable capabilities={videoCapabilities} error={capabilityError} />
+      </section>
+
+      {/* 05 密钥状态 */}
+      <section className="mt-10">
+        <SectionHeader
+          index="05"
           title="密钥状态"
           desc="仅显示配置状态与最后更新时间，不展示明文密钥"
         />
@@ -453,7 +485,7 @@ export function ConfigScreen() {
                         >
                           {configured
                             ? isRevealed
-                              ? "shanhai_demo_key"
+                              ? k.masked
                               : k.masked
                             : "—"}
                         </code>
@@ -498,6 +530,89 @@ export function ConfigScreen() {
 
       <div className="h-2" />
     </div>
+  );
+}
+
+function VideoCapabilityTable({
+  capabilities,
+  error,
+}: {
+  capabilities: VideoCapability[];
+  error: string | null;
+}) {
+  if (error) {
+    return (
+      <Card className="border-dashed bg-card p-0">
+        <EmptyState
+          icon={<Film className="h-5 w-5" />}
+          title="视频能力暂不可用"
+          desc={error}
+        />
+      </Card>
+    );
+  }
+  if (capabilities.length === 0) {
+    return (
+      <Card className="border-dashed bg-card p-0">
+        <EmptyState
+          icon={<Film className="h-5 w-5" />}
+          title="正在读取视频能力"
+          desc="后端返回后会显示 Sora、Omni、Veo 的模型限制。"
+        />
+      </Card>
+    );
+  }
+  return (
+    <Card className="border-border bg-card p-0 shadow-soft">
+      <Table>
+        <TableHeader>
+          <TableRow className="border-border">
+            <TableHead className="px-5 py-3 t-caption text-muted-foreground">模型</TableHead>
+            <TableHead className="px-5 py-3 t-caption text-muted-foreground">秒数</TableHead>
+            <TableHead className="px-5 py-3 t-caption text-muted-foreground">参考图</TableHead>
+            <TableHead className="px-5 py-3 t-caption text-muted-foreground">能力</TableHead>
+            <TableHead className="px-5 py-3 t-caption text-muted-foreground">推荐用途</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {capabilities.map((capability) => (
+            <TableRow key={capability.model} className="border-border">
+              <TableCell className="px-5 py-3.5">
+                <div className="t-body font-medium text-foreground">{capability.model}</div>
+                <div className="mt-0.5 t-caption text-muted-foreground">
+                  {capability.resolution?.supported.join(" / ") || "按原视频"}
+                </div>
+              </TableCell>
+              <TableCell className="px-5 py-3.5 t-body text-muted-foreground">
+                {capability.max_seconds ? `${capability.max_seconds}s` : "按模型"}
+              </TableCell>
+              <TableCell className="px-5 py-3.5">
+                <ToneBadge tone={capability.reference_image_support ? "success" : "neutral"}>
+                  {capability.reference_image_support
+                    ? `最多 ${capability.max_reference_images} 张`
+                    : "不支持"}
+                </ToneBadge>
+              </TableCell>
+              <TableCell className="px-5 py-3.5">
+                <div className="flex flex-wrap gap-1.5">
+                  {capability.first_last_frame && <ToneBadge tone="warning">首尾帧</ToneBadge>}
+                  {capability.video_edit && <ToneBadge tone="warning">视频修改</ToneBadge>}
+                  {capability.extend && <ToneBadge tone="warning">延长</ToneBadge>}
+                  <ToneBadge tone={capability.query_requires_authorization ? "success" : "neutral"}>
+                    查询带 token
+                  </ToneBadge>
+                </div>
+              </TableCell>
+              <TableCell className="px-5 py-3.5">
+                <div className="max-w-md t-body text-muted-foreground">
+                  {capability.recommended_use}
+                </div>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </Card>
   );
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAppStore } from "@/lib/store";
 import { MOCK_PENDING_ITEMS, MOCK_SYSTEM_STATUS, MOCK_RECENT_ACTIVITIES } from "@/lib/mock-data";
 import { stageDefByKey } from "@/lib/workflow";
@@ -34,17 +34,26 @@ import {
   Search,
   ArrowDownUp,
   X,
+  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { PendingItem, ProjectStatus, ActivityItem } from "@/lib/types";
 
 export function DashboardScreen() {
   const user = useAppStore((s) => s.user);
+  const dataMode = useAppStore((s) => s.dataMode);
   const projects = useAppStore((s) => s.projects);
+  const projectsStatus = useAppStore((s) => s.projectsStatus);
+  const projectsError = useAppStore((s) => s.projectsError);
+  const loadProjects = useAppStore((s) => s.loadProjects);
   const go = useAppStore((s) => s.go);
   const openProject = useAppStore((s) => s.openProject);
 
   const isAdmin = user?.role === "admin";
+
+  useEffect(() => {
+    void loadProjects();
+  }, [loadProjects]);
 
   // 继续工作：选择最近活跃的进行中/待确认/阻塞项目
   const continueProject =
@@ -53,7 +62,7 @@ export function DashboardScreen() {
     projects.find((p) => p.status === "blocked") ||
     projects[0];
 
-  const pendingItems = MOCK_PENDING_ITEMS;
+  const pendingItems = dataMode === "demo" ? MOCK_PENDING_ITEMS : [];
   const system = MOCK_SYSTEM_STATUS;
 
   const hour = new Date().getHours();
@@ -81,7 +90,27 @@ export function DashboardScreen() {
       {/* 1. 继续工作 —— 首页视觉主角 */}
       <section className="mt-8">
         <SectionHeader index="01" title="继续工作" desc="从上次离开的地方继续推进" />
-        {continueProject ? (
+        {projectsStatus === "loading" ? (
+          <Card className="border-border bg-card p-10 text-center">
+            <Activity className="mx-auto h-8 w-8 animate-pulse text-muted-foreground" />
+            <p className="mt-3 t-module">正在读取真实项目列表</p>
+            <p className="mt-1 t-caption text-muted-foreground">
+              数据来源：GET /projects
+            </p>
+          </Card>
+        ) : projectsStatus === "error" ? (
+          <Card className="border-dashed bg-card p-10 text-center">
+            <AlertTriangle className="mx-auto h-8 w-8 text-destructive" />
+            <p className="mt-3 t-module">项目列表读取失败</p>
+            <p className="mt-1 t-caption text-muted-foreground">
+              {projectsError || "请确认后端 API 已启动"}
+            </p>
+            <Button className="mt-4 gap-2" onClick={() => void loadProjects()}>
+              <RefreshCwIcon />
+              重试
+            </Button>
+          </Card>
+        ) : continueProject ? (
           <ContinueWorkHero
             project={continueProject}
             onEnter={() => openProject(continueProject.id)}
@@ -90,6 +119,11 @@ export function DashboardScreen() {
           <Card className="border-dashed bg-card p-10 text-center">
             <Inbox className="mx-auto h-8 w-8 text-muted-foreground" />
             <p className="mt-3 t-module">暂无进行中的项目</p>
+            {dataMode === "api" && (
+              <p className="mt-1 t-caption text-muted-foreground">
+                当前为真实 API 模式，项目列表不会使用 demo mock 数据。
+              </p>
+            )}
             <Button className="mt-4 gap-2" onClick={() => go("new-project")}>
               <Plus className="h-4 w-4" /> 新建第一个项目
             </Button>
@@ -112,15 +146,23 @@ export function DashboardScreen() {
             desc="需要你确认或处理"
           />
           <Card className="border-border bg-card p-2">
-            <ul className="divide-y divide-border">
-              {pendingItems.map((item) => (
-                <PendingRow
-                  key={item.id}
-                  item={item}
-                  onClick={() => openProject(item.projectId)}
-                />
-              ))}
-            </ul>
+            {pendingItems.length > 0 ? (
+              <ul className="divide-y divide-border">
+                {pendingItems.map((item) => (
+                  <PendingRow
+                    key={item.id}
+                    item={item}
+                    onClick={() => openProject(item.projectId)}
+                  />
+                ))}
+              </ul>
+            ) : (
+              <EmptyState
+                title="暂无真实待办"
+                desc="真实 API 模式下待办事项需等待任务接口接入。"
+                icon={<Inbox className="h-5 w-5" />}
+              />
+            )}
           </Card>
         </section>
       </div>
@@ -220,6 +262,7 @@ function ContinueWorkHero({
   onEnter: () => void;
 }) {
   const stage = stageDefByKey(project.currentStage);
+  const stageTitle = project.currentStageTitle || stage?.title || project.currentStage;
   return (
     <Card className="relative overflow-hidden border-border bg-card p-0">
       <div className="grid gap-0 lg:grid-cols-[1.4fr_1fr]">
@@ -254,7 +297,7 @@ function ContinueWorkHero({
 
           <div className="mt-5">
             <div className="flex items-center justify-between t-caption text-muted-foreground">
-              <span>当前阶段：{stage?.title}</span>
+              <span>当前阶段：{stageTitle}</span>
               <span className="font-medium text-foreground">
                 {project.progress}%
               </span>
@@ -308,13 +351,15 @@ const ACTIVITY_META: Record<
 };
 
 function ActivityTimeline({ projectId }: { projectId?: string }) {
+  const dataMode = useAppStore((s) => s.dataMode);
   const openProject = useAppStore((s) => s.openProject);
   const items = useMemo(() => {
+    if (dataMode === "api") return [];
     const list = projectId
       ? MOCK_RECENT_ACTIVITIES.filter((a) => a.projectId === projectId)
       : MOCK_RECENT_ACTIVITIES;
     return list.slice(0, 5);
-  }, [projectId]);
+  }, [dataMode, projectId]);
 
   if (items.length === 0) {
     return (
@@ -373,6 +418,10 @@ function ActivityTimeline({ projectId }: { projectId?: string }) {
       })}
     </ol>
   );
+}
+
+function RefreshCwIcon() {
+  return <RefreshCw className="h-4 w-4" />;
 }
 
 function StageMiniRail({ currentStageKey }: { currentStageKey: string }) {

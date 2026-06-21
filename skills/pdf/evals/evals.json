@@ -1,0 +1,52 @@
+{
+  "skill_name": "pdf",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "把这个 DOCX 和 PPTX 批量转成 Markdown，给我适合放进 LLM 的文本。",
+      "expected_output": "Routes to markitdown for lightweight multi-format Markdown conversion and does not invoke MinerU unless output fidelity problems appear.",
+      "files": [],
+      "assertions": [
+        "Mentions markitdown as the default route",
+        "Does not recommend MinerU as the first route",
+        "Notes that fidelity should be inspected for complex files"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "在这篇论文 PDF 里定位作者在哪里讨论了 robustness，并告诉我页码和原文位置。",
+      "expected_output": "Routes to MinerU for structure plus PyMuPDF/pdfplumber coordinate extraction, and returns page, section, bbox, excerpt, and match confidence.",
+      "files": [],
+      "assertions": [
+        "Does not stop at Markdown conversion",
+        "Mentions MinerU for paper structure",
+        "Mentions coordinate spans or bbox extraction",
+        "Uses a source-location result format"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "帮我把这个 PDF 拆成每 10 页一个文件，再给第一页加水印。",
+      "expected_output": "Routes to basic PDF operations with pypdf/qpdf/ReportLab and does not invoke MinerU or markitdown.",
+      "files": [],
+      "assertions": [
+        "Mentions pypdf or basic PDF tools",
+        "Does not route to MinerU",
+        "Does not route to markitdown"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "这个扫描版教材 PDF 能 OCR 后建知识库吗？还要能定位回原页。",
+      "expected_output": "Probes OCR/runtime support, prefers MinerU OCR when Tesseract is unavailable, and combines OCR parsing with coordinate-location caveats.",
+      "files": [],
+      "assertions": [
+        "Requires OCR tool probing",
+        "Mentions MinerU OCR route",
+        "Mentions coordinate-location workflow",
+        "Warns about OCR coordinate confidence"
+      ]
+    }
+  ]
+}
+

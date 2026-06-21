@@ -3,7 +3,7 @@
   "$id": "intro_selection.schema.json",
   "title": "导入设计选择集",
   "type": "object",
-  "required": ["selection_mode", "selected_design_ids", "primary_design_id", "downstream_generation_mode", "selection_reason"],
+  "required": ["selection_mode", "selected_design_ids", "primary_design_id", "downstream_generation_mode", "selection_reason", "selected_anchor"],
   "properties": {
     "selection_mode": {
       "type": "string",
@@ -22,6 +22,7 @@
       "type": "string",
       "enum": ["one_script_per_design", "three_variants_for_primary", "compare_selected_designs"]
     },
-    "selection_reason": { "type": "string", "minLength": 10 }
+    "selection_reason": { "type": "string", "minLength": 10 },
+    "selected_anchor": { "type": "string", "minLength": 10 }
   }
 }

@@ -87,6 +87,24 @@ ShanHai-Edu/
 
 2026-06-19 — 完成 v1 规范层 + 产品决策 + 技术路线 + 历程档案全部交付，进入开发阶段。
 
+## 视频闭环 MVP 后端
+
+后端 MVP 位于 `apps/api`，先打通“教材上传 → 节点生成/确认 → 视频任务记录”的本地闭环。当前默认使用 fake provider 跑通状态机和 SQLite 落盘；真实 MinMax 调用只允许放在服务端环境变量中配置。
+
+```powershell
+cd E:\desktop\AI\02_Agents\lab\ShanHaiEdu
+uvicorn apps.api.app.main:app --reload --port 8000
+python -m pytest apps\api\tests -q
+```
+
+真实 provider 接入约定：
+
+- `PROVIDER_MODE=fake`：本地演示和测试模式，不调用外部 API。
+- `PROVIDER_MODE=minimax`：文本大脑层使用 Minimax M3，视频生成使用章鱼哥 NewAPI。
+- `GET /video/capabilities`：读取 `docs\api-research\octo-video\capabilities.json`，向前端返回 Sora、Omni、Veo、Veo Extend 能力矩阵。
+- 章鱼哥视频任务提交和查询都必须由后端携带 bearer token；前端只显示配置状态和模型能力，不保存密钥。
+- 默认视频生成只跑 1 段 smoke clip；完整 6 段生成需请求 `full_run=true`。
+
 ## License
 
 私有项目，未公开授权。

@@ -5,26 +5,45 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/lib/store";
 import {
+  exportProjectPpt,
+  fetchVideoCapabilities,
+  resolveApiDownloadUrl,
+} from "@/lib/api-client";
+import {
   STAGE_DEFS,
   stageDefByKey,
   nextStageKey,
   BRANCH_LABEL,
-  makeEmptyStages,
 } from "@/lib/workflow";
 import { MOCK_VIDEO_PLANS } from "@/lib/mock-data";
 import type {
+  ApiPptExport,
+  ApiTask,
+  LoadStatus,
   ProjectMeta,
   VideoIntroPlan,
   VideoIntroType,
+  VideoCapability,
+  VideoModelOption,
   WorkflowStage,
 } from "@/lib/types";
 import { StatusBadge, ProjectStatusBadge } from "@/components/common/StatusBadge";
+import { ToneBadge } from "@/components/common/StatusBadge";
 import { EmptyState, LoadingState } from "@/components/common/StateViews";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -38,6 +57,7 @@ import {
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
+  ChevronDown,
   Loader2,
   AlertTriangle,
   Clock,
@@ -58,6 +78,8 @@ import {
   FileImage,
   FileType2,
   Maximize2,
+  Film,
+  ListChecks,
 } from "lucide-react";
 
 /* ---------------- 常量 ---------------- */
@@ -79,6 +101,15 @@ const LOG_LEVEL_META = {
 } as const;
 
 type TabKey = "input" | "run" | "result" | "evidence" | "logs";
+
+const API_EDITABLE_STAGE_KEYS = new Set([
+  "open-lesson-plan",
+  "video-design-import",
+  "video-script",
+  "video-screenplay",
+  "video-assets",
+  "storyboard",
+]);
 
 /* ============================================================
  * 主组件 —— 项目工作区指挥台
@@ -120,8 +151,26 @@ function EmptyWorkspace({ onBack }: { onBack: () => void }) {
 }
 
 function ProjectWorkspace({ project }: { project: ProjectMeta }) {
+  const dataMode = useAppStore((s) => s.dataMode);
   const stagesByProject = useAppStore((s) => s.stagesByProject);
   const videoPlansByProject = useAppStore((s) => s.videoPlansByProject);
+  const manifestStatus = useAppStore((s) => s.manifestStatusByProject[project.id] || "idle");
+  const manifestError = useAppStore((s) => s.manifestErrorByProject[project.id]);
+  const nodeStatusByProject = useAppStore((s) => s.nodeStatusByProject);
+  const nodeErrorByProject = useAppStore((s) => s.nodeErrorByProject);
+  const stageActionStatusByProject = useAppStore((s) => s.stageActionStatusByProject);
+  const stageActionErrorByProject = useAppStore((s) => s.stageActionErrorByProject);
+  const tasksByProject = useAppStore((s) => s.tasksByProject);
+  const tasksStatusByProject = useAppStore((s) => s.tasksStatusByProject);
+  const tasksErrorByProject = useAppStore((s) => s.tasksErrorByProject);
+  const loadProjectManifest = useAppStore((s) => s.loadProjectManifest);
+  const loadProjectNode = useAppStore((s) => s.loadProjectNode);
+  const loadProjectTasks = useAppStore((s) => s.loadProjectTasks);
+  const refreshProjectTask = useAppStore((s) => s.refreshProjectTask);
+  const retryProjectTask = useAppStore((s) => s.retryProjectTask);
+  const generateStage = useAppStore((s) => s.generateStage);
+  const approveStageRemote = useAppStore((s) => s.approveStageRemote);
+  const editStageRemote = useAppStore((s) => s.editStageRemote);
   const go = useAppStore((s) => s.go);
   const approveStage = useAppStore((s) => s.approveStage);
   const rejectStage = useAppStore((s) => s.rejectStage);
@@ -133,19 +182,48 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
   const liveProject =
     useAppStore((s) => s.projects.find((p) => p.id === project.id)) || project;
 
-  const stages = stagesByProject[project.id] || makeEmptyStages();
+  const stages = stagesByProject[project.id] || [];
 
   const [selectedKey, setSelectedKey] = useState<string>(project.currentStage);
   const [tab, setTab] = useState<TabKey>("input");
   const [inputDraft, setInputDraft] = useState<string>(
     () => stages.find((s) => s.key === project.currentStage)?.input || "",
   );
+  const [resultDraft, setResultDraft] = useState<string>(
+    () => stages.find((s) => s.key === project.currentStage)?.result || "",
+  );
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [compareOpen, setCompareOpen] = useState(false);
   const [previewFile, setPreviewFile] = useState<string | null>(null);
+  const [videoCapabilities, setVideoCapabilities] = useState<VideoCapability[]>([]);
+  const [videoOption, setVideoOption] = useState<VideoModelOption>({
+    provider: "octo",
+    model: "veo_3_1-fast",
+    size: "1280x720",
+    mode: "reference",
+    fullRun: true,
+  });
+  const [pptExportStatus, setPptExportStatus] = useState<LoadStatus>("idle");
+  const [pptExportError, setPptExportError] = useState<string | null>(null);
+  const [pptExportResult, setPptExportResult] = useState<ApiPptExport | null>(null);
 
   const selectedStage =
     stages.find((s) => s.key === selectedKey) || stages[0];
+  const selectedNodeStatus = selectedStage
+    ? nodeStatusByProject[project.id]?.[selectedStage.key] || "idle"
+    : "idle";
+  const selectedNodeError = selectedStage
+    ? nodeErrorByProject[project.id]?.[selectedStage.key]
+    : null;
+  const selectedActionStatus = selectedStage
+    ? stageActionStatusByProject[project.id]?.[selectedStage.key] || "idle"
+    : "idle";
+  const selectedActionError = selectedStage
+    ? stageActionErrorByProject[project.id]?.[selectedStage.key]
+    : null;
+  const projectTasks = tasksByProject[project.id] || [];
+  const projectTasksStatus = tasksStatusByProject[project.id] || "idle";
+  const projectTasksError = tasksErrorByProject[project.id];
 
   // 按 order 排序的阶段 key 列表（用于键盘 ←/→ 切换）
   const orderedStageKeys = stages
@@ -154,7 +232,7 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
     .map((s) => s.key);
   const currentIndex = Math.max(
     0,
-    orderedStageKeys.indexOf(selectedStage.key),
+    orderedStageKeys.indexOf(selectedStage?.key || ""),
   );
 
   /* ---------- handlers ---------- */
@@ -167,39 +245,167 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
     setSelectedKey(key);
     setTab("input");
     setInputDraft(newStage?.input || "");
+    setResultDraft(newStage?.result || "");
+    if (dataMode === "api") {
+      void loadProjectNode(project.id, key);
+    }
   }
 
   function handleSelectStage(key: string) {
     syncToStage(key);
   }
 
-  function handleSave(text?: string) {
+  async function handleSave(text?: string) {
+    if (dataMode === "api") {
+      if (!selectedStage) return;
+      if (!API_EDITABLE_STAGE_KEYS.has(selectedStage.key)) {
+        toast.info("真实 API 模式下当前节点不开放手工编辑保存");
+        return;
+      }
+      const value =
+        typeof text === "string"
+          ? text
+          : resultDraft;
+      if (selectedStage.key === "video-design-import") {
+        const anchorError = validateIntroSelectionAnchor(value);
+        if (anchorError) {
+          toast.warning(anchorError);
+          setTab("result");
+          return;
+        }
+      }
+      if (!value.trim()) {
+        toast.warning("请先填写要保存的内容");
+        return;
+      }
+      const payload = parseEditableNodeContent(value);
+      const res = await editStageRemote(project.id, selectedStage.key, payload);
+      if (!res.ok) {
+        toast.error(res.msg || "保存到后端失败");
+        return;
+      }
+      toast.success("已保存到后端");
+      setResultDraft(value);
+      setTab("result");
+      return;
+    }
     const value = typeof text === "string" ? text : inputDraft;
     saveStageInput(project.id, selectedStage.key, value);
     setInputDraft(value);
     toast.success("已保存");
   }
 
-  function handleRegenerate() {
-    runStage(project.id, selectedStage.key);
+  async function handleRegenerate() {
     setTab("run");
-    toast.info("正在生成…");
+    if (dataMode === "api") {
+      const res = await generateStage(project.id, selectedStage.key, videoOption);
+      if (!res.ok) {
+        toast.error(res.msg || "节点生成失败");
+        return;
+      }
+      toast.success("后端生成完成，已刷新节点状态");
+      const latestStage = useAppStore
+        .getState()
+        .stagesByProject[project.id]?.find((item) => item.key === selectedStage.key);
+      setResultDraft(latestStage?.result || "");
+      if (["video-assets", "video-generation"].includes(selectedStage.key)) {
+        await loadProjectTasks(project.id);
+      }
+      setTab("result");
+      return;
+    }
+    runStage(project.id, selectedStage.key);
+    toast.info("正在生成...");
   }
 
-  function handleApproveAndNext() {
+  async function handleExportPpt() {
+    if (dataMode !== "api") {
+      toast.info("演示模式不导出真实 PPT，请切换真实 API 模式");
+      return;
+    }
+    if (pptExportStatus === "loading") return;
+
+    setPptExportStatus("loading");
+    setPptExportError(null);
+    try {
+      const result = await exportProjectPpt(project.id);
+      setPptExportResult(result);
+      setPptExportStatus("ready");
+      toast.success("PPT 已导出，可下载查看");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "PPT 导出失败";
+      setPptExportResult(null);
+      setPptExportStatus("error");
+      setPptExportError(message);
+      toast.error(message);
+    }
+  }
+
+  async function handleApproveAndNext() {
+    if (dataMode === "api") {
+      if (selectedStage?.key === "video-design-import") {
+        const value = resultDraft || selectedStage.result;
+        const anchorError = validateIntroSelectionAnchor(value);
+        if (anchorError) {
+          toast.warning(anchorError);
+          setTab("result");
+          return;
+        }
+      }
+      const res = await approveStageRemote(project.id, selectedStage.key);
+      if (!res.ok) {
+        toast.error(res.msg || "节点确认失败");
+        return;
+      }
+      toast.success("已确认，后端 manifest 已刷新");
+      const next = orderedStageKeys[currentIndex + 1];
+      if (next) syncToStage(next);
+      return;
+    }
     approveStage(project.id, selectedStage.key);
     toast.success("已确认，进入下一阶段");
     const next = nextStageKey(selectedStage.key);
     if (next) syncToStage(next);
   }
 
+  async function handleRefreshStage() {
+    if (dataMode !== "api") {
+      toast.info("演示模式使用本地状态，无需刷新后端");
+      return;
+    }
+    await loadProjectManifest(project.id);
+    if (selectedStage) {
+      await loadProjectNode(project.id, selectedStage.key);
+      const latestStage = useAppStore
+        .getState()
+        .stagesByProject[project.id]?.find((item) => item.key === selectedStage.key);
+      setResultDraft(latestStage?.result || "");
+      if (["video-assets", "video-generation"].includes(selectedStage.key)) {
+        await loadProjectTasks(project.id);
+      }
+    }
+    toast.success("已刷新后端状态");
+  }
+
   function handleReject() {
+    if (dataMode === "api") {
+      toast.info("真实 API 模式下退回编辑待接 /nodes/{node_id}/edit");
+      return;
+    }
     rejectStage(project.id, selectedStage.key);
     setTab("input");
     toast.success("已退回修改");
   }
 
   function handleNextStep() {
+    if (dataMode === "api") {
+      const next = orderedStageKeys[currentIndex + 1];
+      if (next) {
+        syncToStage(next);
+        toast.success("已切换到下一节点");
+      }
+      return;
+    }
     if (selectedStage.status !== "approved") {
       approveStage(project.id, selectedStage.key);
     }
@@ -213,6 +419,10 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
   }
 
   function handleAcceptVideoPlan(planId: string) {
+    if (dataMode === "api") {
+      toast.info("真实 API 模式下视频方案采纳待接后端接口");
+      return;
+    }
     acceptVideoPlan(project.id, planId);
     toast.success("已采纳该方案");
   }
@@ -250,11 +460,66 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
     return () => window.removeEventListener("keydown", handler);
   }, [currentIndex, orderedStageKeys, compareOpen, previewFile]);
 
+  useEffect(() => {
+    if (dataMode !== "api") return;
+    if (manifestStatus === "idle" || manifestStatus === "error") {
+      void loadProjectManifest(project.id);
+    }
+  }, [dataMode, loadProjectManifest, manifestStatus, project.id]);
+
+  useEffect(() => {
+    if (dataMode !== "api" || !selectedStage) return;
+    if (selectedNodeStatus === "idle") {
+      void loadProjectNode(project.id, selectedStage.key);
+    }
+  }, [dataMode, loadProjectNode, project.id, selectedNodeStatus, selectedStage]);
+
+  useEffect(() => {
+    if (dataMode !== "api" || !selectedStage) return;
+    if (!["video-assets", "video-generation"].includes(selectedStage.key)) return;
+    if (projectTasksStatus === "idle" || projectTasksStatus === "error") {
+      void loadProjectTasks(project.id);
+    }
+  }, [dataMode, loadProjectTasks, project.id, projectTasksStatus, selectedStage]);
+
+  useEffect(() => {
+    if (dataMode !== "api" || selectedStage?.key !== "video-design-import") return;
+    const lessonPlanStage = stages.find((item) => item.key === "open-lesson-plan");
+    if (lessonPlanStage && !lessonPlanStage.result) {
+      void loadProjectNode(project.id, lessonPlanStage.key);
+    }
+  }, [dataMode, loadProjectNode, project.id, selectedStage?.key, stages]);
+
+  useEffect(() => {
+    if (dataMode !== "api" || selectedStage?.key !== "storyboard") return;
+    for (const dependencyKey of ["video-design-import", "video-script"]) {
+      const dependency = stages.find((item) => item.key === dependencyKey);
+      if (dependency && !dependency.result) {
+        void loadProjectNode(project.id, dependency.key);
+      }
+    }
+  }, [dataMode, loadProjectNode, project.id, selectedStage?.key, stages]);
+
+  useEffect(() => {
+    let mounted = true;
+    fetchVideoCapabilities()
+      .then((data) => {
+        if (mounted) setVideoCapabilities(data.models.filter((item) => item.model !== "task-query"));
+      })
+      .catch(() => {
+        if (mounted) setVideoCapabilities([]);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   /* ---------- 按钮启用规则 ---------- */
   const status = selectedStage?.status;
-  const isRunning = status === "running";
+  const isFinalVideoStage = selectedStage?.key === "video-generation";
+  const isRunning = status === "running" && !isFinalVideoStage;
   const canSave = !!status && status !== "running";
-  const canRegenerate = !!status && status !== "running";
+  const canRegenerate = !!status && (status !== "running" || isFinalVideoStage);
   const canApprove =
     !!status &&
     ["ready", "pending_confirm", "approved"].includes(status) &&
@@ -266,19 +531,87 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
     !["not_started", "input_required", "running"].includes(status);
 
   const stageDef = stageDefByKey(selectedStage?.key || "");
-  const videoPlans = videoPlansByProject[project.id] || MOCK_VIDEO_PLANS;
+  const videoPlans =
+    dataMode === "demo" ? videoPlansByProject[project.id] || MOCK_VIDEO_PLANS : [];
+
+  if (dataMode === "api" && (manifestStatus === "idle" || manifestStatus === "loading")) {
+    return (
+      <div className="mx-auto w-full max-w-[1440px] px-4 py-6 lg:px-8 lg:py-8">
+        <WorkspaceHeader
+          project={liveProject}
+          stages={stages}
+          onBack={() => go("dashboard")}
+        />
+        <Card className="mt-6 border-border bg-card p-10">
+          <LoadingState label="正在读取项目 manifest..." />
+        </Card>
+      </div>
+    );
+  }
+
+  if (dataMode === "api" && manifestStatus === "error") {
+    return (
+      <div className="mx-auto w-full max-w-[1440px] px-4 py-6 lg:px-8 lg:py-8">
+        <WorkspaceHeader
+          project={liveProject}
+          stages={stages}
+          onBack={() => go("dashboard")}
+        />
+        <Card className="mt-6 border-dashed bg-card p-10">
+          <EmptyState
+            title="manifest 读取失败"
+            desc={manifestError || "请确认后端 API 状态后重试。"}
+            icon={<AlertTriangle className="h-5 w-5" />}
+          />
+          <div className="flex justify-center pb-2">
+            <Button className="gap-2" onClick={() => void loadProjectManifest(project.id)}>
+              <RefreshCw className="h-4 w-4" />
+              重新读取
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  if (stages.length === 0) {
+    return (
+      <div className="mx-auto w-full max-w-[1440px] px-4 py-6 lg:px-8 lg:py-8">
+        <WorkspaceHeader
+          project={liveProject}
+          stages={stages}
+          onBack={() => go("dashboard")}
+        />
+        <Card className="mt-6 border-dashed bg-card p-10">
+          <EmptyState
+            title="暂无流程节点"
+            desc="后端 manifest 未返回节点，当前不使用 mock 节点补齐。"
+            icon={<FileText className="h-5 w-5" />}
+          />
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto w-full max-w-[1440px] px-4 py-6 lg:px-8 lg:py-8">
       {/* ===== 顶部 Header ===== */}
-      <WorkspaceHeader project={liveProject} onBack={() => go("dashboard")} />
+      <WorkspaceHeader
+        project={liveProject}
+        stages={stages}
+        onBack={() => go("dashboard")}
+      />
 
       {/* ===== 工作流节点轨 ===== */}
       <section className="mt-6">
         <SectionLabel
           index="01"
           title="流程节点"
-          desc="14 个阶段按顺序推进，点击节点切换详情"
+          desc={
+            dataMode === "api"
+              ? `${stages.length} 个后端 manifest 节点，点击节点读取详情`
+              : "14 个阶段按顺序推进，点击节点切换详情"
+          }
           right={<KeyboardHint keys={["←", "→"]} label="切换节点" />}
         />
         <Card className="border-border bg-card p-3 shadow-soft">
@@ -298,6 +631,8 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
           desc={
             stageDef
               ? `${stageDef.title} · ${stageDef.desc}`
+              : selectedStage
+              ? `${selectedStage.title} · ${selectedStage.summary}`
               : "选择一个节点查看详情"
           }
           right={
@@ -310,7 +645,7 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-6">
               <div className="flex min-w-0 items-center gap-3">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary t-body font-semibold">
-                  {stageDef?.order}
+                  {stageDef?.order || selectedStage.order}
                 </span>
                 <div className="min-w-0">
                   <div className="t-module truncate">{selectedStage.title}</div>
@@ -361,6 +696,15 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
 
             <div className="px-4 pb-5 pt-4 sm:px-6">
               <TabsContent value="input" className="mt-0">
+                {dataMode === "api" && (
+                  <>
+                    <ApiNodeNotice status={selectedNodeStatus} error={selectedNodeError} />
+                    <ApiActionNotice
+                      status={selectedActionStatus}
+                      error={selectedActionError}
+                    />
+                  </>
+                )}
                 <InputTab
                   stage={selectedStage}
                   value={inputDraft}
@@ -369,10 +713,38 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
                 />
               </TabsContent>
               <TabsContent value="run" className="mt-0">
-                <RunTab stage={selectedStage} onRegenerate={handleRegenerate} />
+                {dataMode === "api" && (
+                  <>
+                    <ApiNodeNotice status={selectedNodeStatus} error={selectedNodeError} />
+                    <ApiActionNotice
+                      status={selectedActionStatus}
+                      error={selectedActionError}
+                    />
+                  </>
+                )}
+                {selectedStage?.key === "video-generation" ? (
+                  <VideoGenerationRunTab
+                    stage={selectedStage}
+                    capabilities={videoCapabilities}
+                    option={videoOption}
+                    onChange={setVideoOption}
+                    onRegenerate={handleRegenerate}
+                  />
+                ) : (
+                  <RunTab stage={selectedStage} onRegenerate={handleRegenerate} />
+                )}
               </TabsContent>
               <TabsContent value="result" className="mt-0">
-                {selectedStage?.key === "video-script" ? (
+                {dataMode === "api" && (
+                  <>
+                    <ApiNodeNotice status={selectedNodeStatus} error={selectedNodeError} />
+                    <ApiActionNotice
+                      status={selectedActionStatus}
+                      error={selectedActionError}
+                    />
+                  </>
+                )}
+                {dataMode === "demo" && selectedStage?.key === "video-script" ? (
                   <VideoPlanGrid
                     plans={videoPlans}
                     selectedIds={compareIds}
@@ -395,6 +767,57 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
                       setCompareOpen(true);
                     }}
                     onRegenerate={handleRegenerate}
+                  />
+                ) : dataMode === "api" && selectedStage?.key === "video-design-import" ? (
+                  <IntroSelectionResult
+                    stage={selectedStage}
+                    value={resultDraft || selectedStage.result}
+                    lessonPlanResult={
+                      stages.find((item) => item.key === "open-lesson-plan")?.result || ""
+                    }
+                    onChange={setResultDraft}
+                    onSave={() => handleSave(resultDraft || selectedStage.result)}
+                    saving={selectedActionStatus === "loading"}
+                    actionError={selectedActionError}
+                  />
+                ) : dataMode === "api" && selectedStage?.key === "video-generation" ? (
+                  <FinalVideoResult
+                    projectId={project.id}
+                    stage={selectedStage}
+                    tasks={projectTasks}
+                    tasksStatus={projectTasksStatus}
+                    tasksError={projectTasksError}
+                    actionError={selectedActionError}
+                    pptExportStatus={pptExportStatus}
+                    pptExportError={pptExportError}
+                    pptExportResult={pptExportResult}
+                    onRefresh={() => void loadProjectTasks(project.id)}
+                    onRefreshTask={refreshProjectTask}
+                    onRetryTask={retryProjectTask}
+                    onExportPpt={() => void handleExportPpt()}
+                  />
+                ) : dataMode === "api" && selectedStage?.key === "video-assets" ? (
+                  <VideoAssetResult
+                    projectId={project.id}
+                    stage={selectedStage}
+                    value={resultDraft || selectedStage.result}
+                    tasks={projectTasks}
+                    tasksStatus={projectTasksStatus}
+                    tasksError={projectTasksError}
+                    onChange={setResultDraft}
+                    onSave={() => handleSave(resultDraft || selectedStage.result)}
+                    saving={selectedActionStatus === "loading"}
+                    onRefresh={() => void loadProjectTasks(project.id)}
+                    onRetryTask={retryProjectTask}
+                  />
+                ) : dataMode === "api" && selectedStage && API_EDITABLE_STAGE_KEYS.has(selectedStage.key) ? (
+                  <EditableNodeResult
+                    stage={selectedStage}
+                    value={resultDraft || selectedStage.result}
+                    courseAnchor={resolveCourseAnchorForStage(selectedStage.key, stages)}
+                    onChange={setResultDraft}
+                    onSave={() => handleSave(resultDraft || selectedStage.result)}
+                    saving={selectedActionStatus === "loading"}
                   />
                 ) : (
                   <ResultTab stage={selectedStage} />
@@ -421,7 +844,13 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
               canReject={canReject}
               canNext={canNext}
               isRunning={isRunning}
+              taskCreated={isFinalVideoStage && status === "running"}
+              regenerateLabel={isFinalVideoStage ? "重新创建任务" : undefined}
+              primaryRegenerateLabel={isFinalVideoStage ? "创建视频任务" : undefined}
+              actionLoading={selectedActionStatus === "loading"}
+              showRefresh={dataMode === "api"}
               onSave={() => handleSave()}
+              onRefresh={handleRefreshStage}
               onRegenerate={handleRegenerate}
               onApprove={handleApproveAndNext}
               onReject={handleReject}
@@ -486,16 +915,85 @@ function SectionLabel({
   );
 }
 
+function ApiNodeNotice({
+  status,
+  error,
+}: {
+  status: "idle" | "loading" | "ready" | "error";
+  error?: string | null;
+}) {
+  if (status === "loading") {
+    return (
+      <div className="mb-3 flex items-start gap-2 rounded-md border border-info/25 bg-info/5 px-3 py-2">
+        <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-info" />
+        <p className="t-body text-info">正在读取后端节点详情...</p>
+      </div>
+    );
+  }
+  if (status === "error") {
+    return (
+      <div className="mb-3 flex items-start gap-2 rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+        <p className="t-body text-destructive">{error || "节点详情读取失败"}</p>
+      </div>
+    );
+  }
+  if (status === "ready") {
+    return (
+      <div className="mb-3 flex items-start gap-2 rounded-md border border-success/25 bg-success/5 px-3 py-2">
+        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+        <p className="t-body text-success">已同步后端节点详情。</p>
+      </div>
+    );
+  }
+  return null;
+}
+
+function ApiActionNotice({
+  status,
+  error,
+}: {
+  status: "idle" | "loading" | "ready" | "error";
+  error?: string | null;
+}) {
+  if (status === "loading") {
+    return (
+      <div className="mb-3 flex items-start gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2">
+        <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-primary" />
+        <p className="t-body text-primary">正在执行后端节点动作...</p>
+      </div>
+    );
+  }
+  if (status === "error") {
+    return (
+      <div className="mb-3 flex items-start gap-2 rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+        <div>
+          <p className="t-body font-medium text-destructive">后端动作执行失败</p>
+          <p className="mt-0.5 t-caption text-destructive/90">
+            {error || "请检查上游节点是否已确认，或确认后端服务状态。"}
+          </p>
+        </div>
+      </div>
+    );
+  }
+  return null;
+}
+
 /* ---------- 顶部 Header ---------- */
 
 function WorkspaceHeader({
   project,
+  stages = [],
   onBack,
 }: {
   project: ProjectMeta;
+  stages?: WorkflowStage[];
   onBack: () => void;
 }) {
-  const stage = stageDefByKey(project.currentStage);
+  const stage =
+    stages.find((item) => item.key === project.currentStage) ||
+    stageDefByKey(project.currentStage);
   return (
     <Card className="border-border bg-card p-0 shadow-soft">
       <div className="p-4 sm:p-6">
@@ -567,13 +1065,13 @@ function WorkflowRail({
   selectedKey: string;
   onSelect: (key: string) => void;
 }) {
+  const orderedStages = stages.slice().sort((a, b) => a.order - b.order);
   return (
     <div className="overflow-x-auto scroll-fine pb-1">
       <div className="flex min-w-max items-stretch px-1 py-1">
-        {STAGE_DEFS.map((def, i) => {
-          const stage = stages.find((s) => s.key === def.key);
-          const status = stage?.status || "not_started";
-          const isSelected = def.key === selectedKey;
+        {orderedStages.map((stage, i) => {
+          const status = stage.status;
+          const isSelected = stage.key === selectedKey;
           const isApproved = status === "approved";
           const isRunning = status === "running";
           const isError = status === "failed" || status === "blocked";
@@ -583,10 +1081,10 @@ function WorkflowRail({
             status === "ready";
 
           return (
-            <div key={def.key} className="flex items-stretch">
+            <div key={stage.key} className="flex items-stretch">
               <button
                 type="button"
-                onClick={() => onSelect(def.key)}
+                onClick={() => onSelect(stage.key)}
                 aria-current={isSelected ? "true" : undefined}
                 className={cn(
                   "relative flex h-[88px] w-[88px] shrink-0 flex-col items-center gap-1 rounded-md border px-2 pt-2.5 pb-2 text-center transition-all focus-ring",
@@ -618,7 +1116,7 @@ function WorkflowRail({
                   ) : isError ? (
                     <AlertTriangle className="h-3.5 w-3.5" />
                   ) : (
-                    def.order
+                    stage.order
                   )}
                 </span>
                 <span
@@ -629,23 +1127,23 @@ function WorkflowRail({
                       : "text-muted-foreground",
                   )}
                 >
-                  {def.short}
+                  {stage.title}
                 </span>
                 <span
                   className={cn(
                     "t-overline text-[0.55rem] leading-none",
-                    def.branch === "common" && "text-muted-foreground/60",
-                    def.branch === "video" && "text-info",
-                    def.branch === "ppt" && "text-bronze",
+                    stage.branch === "common" && "text-muted-foreground/60",
+                    stage.branch === "video" && "text-info",
+                    stage.branch === "ppt" && "text-bronze",
                   )}
                 >
-                  {BRANCH_LABEL[def.branch]}
+                  {BRANCH_LABEL[stage.branch]}
                 </span>
                 {isRunning && (
                   <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
                 )}
               </button>
-              {i < STAGE_DEFS.length - 1 && (
+              {i < orderedStages.length - 1 && (
                 <div className="flex w-3 justify-center pt-6">
                   <span
                     className={cn(
@@ -758,6 +1256,146 @@ function RunTab({
   );
 }
 
+function VideoGenerationRunTab({
+  stage,
+  capabilities,
+  option,
+  onChange,
+  onRegenerate,
+}: {
+  stage?: WorkflowStage;
+  capabilities: VideoCapability[];
+  option: VideoModelOption;
+  onChange: (option: VideoModelOption) => void;
+  onRegenerate: () => void;
+}) {
+  if (!stage) return null;
+  const selectedCapability =
+    capabilities.find((item) => item.model === option.model) || capabilities[0];
+  const sizeOptions = selectedCapability?.resolution?.supported || ["1280x720"];
+  const canUseReference = !!selectedCapability?.reference_image_support;
+  const canUseFirstLast = !!selectedCapability?.first_last_frame;
+  const canUseExtend = !!selectedCapability?.extend;
+
+  return (
+    <div className="space-y-5">
+      <RunTab stage={stage} onRegenerate={onRegenerate} />
+      <div className="rounded-md border border-border bg-muted/20 p-4">
+        <div className="mb-4 flex items-center gap-2">
+          <Film className="h-4 w-4 text-primary" />
+          <div>
+            <div className="t-module">视频模型选择</div>
+            <div className="t-caption text-muted-foreground">
+              fake provider 默认创建 6 个镜头任务；真实 provider 联调时可切换 smoke 范围。
+            </div>
+          </div>
+        </div>
+        <div className="grid gap-4 lg:grid-cols-4">
+          <div className="space-y-2">
+            <Label className="t-caption text-muted-foreground">模型</Label>
+            <Select
+              value={option.model}
+              onValueChange={(model) => {
+                const next = capabilities.find((item) => item.model === model);
+                onChange({
+                  ...option,
+                  model,
+                  size: next?.resolution?.supported[0] || option.size,
+                  mode: next?.first_last_frame ? "first_last_frame" : next?.extend ? "extend" : "reference",
+                });
+              }}
+            >
+              <SelectTrigger className="h-10 bg-card">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {capabilities.map((item) => (
+                  <SelectItem key={item.model} value={item.model}>
+                    {item.model}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label className="t-caption text-muted-foreground">尺寸</Label>
+            <Select
+              value={option.size}
+              onValueChange={(size) => onChange({ ...option, size })}
+            >
+              <SelectTrigger className="h-10 bg-card">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {sizeOptions.map((size) => (
+                  <SelectItem key={size} value={size}>
+                    {size}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label className="t-caption text-muted-foreground">模式</Label>
+            <Select
+              value={option.mode}
+              onValueChange={(mode) =>
+                onChange({ ...option, mode: mode as VideoModelOption["mode"] })
+              }
+            >
+              <SelectTrigger className="h-10 bg-card">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="text">文生视频</SelectItem>
+                {canUseReference && <SelectItem value="reference">参考图</SelectItem>}
+                {canUseFirstLast && <SelectItem value="first_last_frame">首尾帧</SelectItem>}
+                {canUseExtend && <SelectItem value="extend">延长</SelectItem>}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label className="t-caption text-muted-foreground">生成范围</Label>
+            <div className="flex h-10 items-center justify-between rounded-md border border-border bg-card px-3">
+              <span className="t-body text-muted-foreground">
+                {option.fullRun ? "完整 6 段" : "1 段 smoke"}
+              </span>
+              <Switch
+                checked={option.fullRun}
+                onCheckedChange={(fullRun) => onChange({ ...option, fullRun })}
+              />
+            </div>
+          </div>
+        </div>
+        {selectedCapability && (
+          <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1.2fr]">
+            <div className="rounded-md border border-border bg-card p-3">
+              <div className="t-caption text-muted-foreground">能力限制</div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <ToneBadge tone={selectedCapability.reference_image_support ? "success" : "neutral"}>
+                  {selectedCapability.reference_image_support
+                    ? `参考图最多 ${selectedCapability.max_reference_images} 张`
+                    : "无参考图"}
+                </ToneBadge>
+                {selectedCapability.first_last_frame && <ToneBadge tone="warning">首尾帧</ToneBadge>}
+                {selectedCapability.video_edit && <ToneBadge tone="warning">视频修改</ToneBadge>}
+                {selectedCapability.extend && <ToneBadge tone="warning">延长至 15s</ToneBadge>}
+                <ToneBadge tone="success">查询带 token</ToneBadge>
+              </div>
+            </div>
+            <div className="rounded-md border border-border bg-card p-3">
+              <div className="t-caption text-muted-foreground">推荐用途</div>
+              <p className="mt-1 t-body text-foreground/85">
+                {selectedCapability.recommended_use}
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ---------- Tab: 结果 ---------- */
 
 function ResultTab({ stage }: { stage?: WorkflowStage }) {
@@ -779,6 +1417,1401 @@ function ResultTab({ stage }: { stage?: WorkflowStage }) {
       </div>
     </div>
   );
+}
+
+function EditableNodeResult({
+  stage,
+  value,
+  courseAnchor,
+  onChange,
+  onSave,
+  saving,
+}: {
+  stage?: WorkflowStage;
+  value: string;
+  courseAnchor?: string;
+  onChange: (value: string) => void;
+  onSave: () => void;
+  saving: boolean;
+}) {
+  if (!stage) return null;
+  if (!stage.result) {
+    return (
+      <EmptyState
+        title={`暂无${stage.title}`}
+        desc="点击“生成草稿”后将在这里查看并轻量编辑当前节点产出。"
+        icon={<FileText className="h-5 w-5" />}
+      />
+    );
+  }
+  const isLessonPlan = stage.key === "open-lesson-plan";
+  const structuredSummary = !isLessonPlan
+    ? buildEditableNodeSummary(stage, value || stage.result, courseAnchor)
+    : null;
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="t-overline text-muted-foreground/70">
+            {isLessonPlan ? "公开课教案编辑" : `${stage.title}结构化编辑雏形`}
+          </div>
+          <p className="mt-1 t-caption text-muted-foreground">
+            {isLessonPlan
+              ? "本地演示版使用轻量文本/JSON 编辑；保存后会写入后端节点版本，再进行确认通过。"
+              : "上方先用分区摘要说明当前产出，下方保留 JSON 编辑入口；字段级校验提示入口已预留，可继续对接后端 details。"}
+          </p>
+        </div>
+        <Button
+          size="sm"
+          className="gap-1.5"
+          onClick={onSave}
+          disabled={saving || !value.trim()}
+        >
+          {saving ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Save className="h-4 w-4" />
+          )}
+          {saving ? "保存中" : isLessonPlan ? "保存教案" : "保存产出"}
+        </Button>
+      </div>
+
+      {isLessonPlan && <LessonPlanStructureSummary value={value || stage.result} />}
+
+      {structuredSummary && (
+        <div className="grid gap-3 lg:grid-cols-[1.1fr_0.9fr]">
+          <Card className="border-border bg-muted/20 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="t-module">{structuredSummary.title}</div>
+                <p className="mt-1 t-caption text-muted-foreground">
+                  {structuredSummary.desc}
+                </p>
+              </div>
+              <ToneBadge tone="info">{structuredSummary.badge}</ToneBadge>
+            </div>
+            <div className="mt-4 space-y-3">
+              {structuredSummary.items.map((item) => (
+                <div
+                  key={item.label}
+                  className="rounded-md border border-border bg-card px-3 py-2.5"
+                >
+                  <div className="t-caption text-muted-foreground">{item.label}</div>
+                  <div className="mt-1 t-body text-foreground/90">{item.value}</div>
+                </div>
+              ))}
+            </div>
+          </Card>
+          <Card className="border-border bg-card p-4">
+            <div className="t-module">编辑入口说明</div>
+            <div className="mt-3 space-y-2 t-body text-foreground/85">
+              <p>1. 先检查左侧摘要是否符合课堂导入视频意图。</p>
+              <p>2. 需要调整时，在下方 JSON 中改对应字段后保存。</p>
+              <p>3. 保存后再确认通过，系统会推进到下一节点。</p>
+            </div>
+            <div className="mt-4 rounded-md border border-warning/25 bg-warning/5 px-3 py-2 t-caption text-muted-foreground">
+              字段级错误提示入口已预留，后续可把后端 details 映射到具体字段。
+            </div>
+          </Card>
+        </div>
+      )}
+
+      <details className="rounded-md border border-border bg-card" open>
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
+          <span className="t-module">
+            {isLessonPlan ? "教案文本 / JSON" : "JSON 编辑入口"}
+          </span>
+          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+        </summary>
+        <div className="border-t border-border p-4">
+      <Textarea
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="min-h-[360px] bg-card font-mono text-[0.82rem] leading-relaxed"
+        placeholder={`生成${stage.title}后可在这里轻量编辑文本或 JSON...`}
+      />
+        </div>
+      </details>
+    </div>
+  );
+}
+
+function LessonPlanStructureSummary({ value }: { value: string }) {
+  const content = parseJsonObject(value);
+  const introDesigns = getArray(content.intro_designs).filter(isRecord);
+  const requiredFields = [
+    "video_theme",
+    "eye_catch_tag",
+    "anchor_to_lesson",
+    "classroom_entry_question",
+    "no_pre_teach",
+    "entry_position",
+    "recommend_reason",
+  ];
+  const filledIntroFields = introDesigns.reduce((count, design) => {
+    return count + requiredFields.filter((field) => getStringValue(design[field]).trim()).length;
+  }, 0);
+  const totalIntroFields = Math.max(1, introDesigns.length * requiredFields.length);
+
+  return (
+    <div className="grid gap-3 lg:grid-cols-[0.9fr_1.1fr]">
+      <Card className="border-border bg-muted/20 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="t-module">教案主结构</div>
+            <p className="mt-1 t-caption text-muted-foreground">
+              用于确认教案是否已具备后续导入视频链路所需输入。
+            </p>
+          </div>
+          <ToneBadge tone={introDesigns.length >= 9 ? "success" : "warning"}>
+            {introDesigns.length}/9 套
+          </ToneBadge>
+        </div>
+        <div className="mt-4 space-y-3">
+          {[
+            ["教材锚点", getStringValue(content.textbook_anchor)],
+            ["教学目标", getStringValue(content.teaching_objectives)],
+            ["重难点", getStringValue(content.key_difficulty)],
+            ["教学流程", getStringValue(content.teaching_flow)],
+            ["板书设计", getStringValue(content.blackboard_design)],
+          ].map(([label, raw]) => (
+            <div key={label} className="rounded-md border border-border bg-card px-3 py-2.5">
+              <div className="t-caption text-muted-foreground">{label}</div>
+              <div className="mt-1 t-body text-foreground/90">{clipText(raw, 120)}</div>
+            </div>
+          ))}
+        </div>
+      </Card>
+      <Card className="border-border bg-card p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="t-module">导入视频候选方案</div>
+            <p className="mt-1 t-caption text-muted-foreground">
+              重点检查课程锚点、课堂入口问题和“不预教”约束是否已填充。
+            </p>
+          </div>
+          <ToneBadge tone={filledIntroFields === totalIntroFields ? "success" : "warning"}>
+            {filledIntroFields}/{totalIntroFields} 字段
+          </ToneBadge>
+        </div>
+        <div className="mt-4 grid gap-2">
+          {introDesigns.slice(0, 9).map((design, index) => (
+            <div key={getStringValue(design.design_id) || index} className="rounded-md border border-border bg-muted/20 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="t-body font-medium">
+                  {getStringValue(design.title) || `导入方案 ${index + 1}`}
+                </div>
+                <ToneBadge tone="info">
+                  {introTypeLabel(getStringValue(design.type))}
+                </ToneBadge>
+              </div>
+              <div className="mt-2 grid gap-1.5 t-caption text-muted-foreground sm:grid-cols-2">
+                <span>主题：{clipText(getStringValue(design.video_theme), 48)}</span>
+                <span>吸睛点：{clipText(getStringValue(design.eye_catch_tag), 48)}</span>
+                <span>课程锚点：{clipText(getStringValue(design.anchor_to_lesson), 64)}</span>
+                <span>入口问题：{clipText(getStringValue(design.classroom_entry_question), 64)}</span>
+                <span>不预教：{clipText(getStringValue(design.no_pre_teach), 64)}</span>
+                <span>进入位置：{clipText(getStringValue(design.entry_position), 48)}</span>
+              </div>
+            </div>
+          ))}
+          {introDesigns.length === 0 && (
+            <div className="rounded-md border border-dashed border-border bg-muted/20 px-3 py-4 text-center t-caption text-muted-foreground">
+              未解析到 intro_designs，后续视频导入方案会缺少候选来源。
+            </div>
+          )}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function IntroSelectionResult({
+  stage,
+  value,
+  lessonPlanResult,
+  onChange,
+  onSave,
+  saving,
+  actionError,
+}: {
+  stage?: WorkflowStage;
+  value: string;
+  lessonPlanResult: string;
+  onChange: (value: string) => void;
+  onSave: () => void;
+  saving: boolean;
+  actionError?: string | null;
+}) {
+  if (!stage) return null;
+  if (!stage.result) {
+    return (
+      <EmptyState
+        title="暂无视频导入方案"
+        desc="点击“生成草稿”后将在这里展示科普类、应用类、故事类候选方案。"
+        icon={<Film className="h-5 w-5" />}
+      />
+    );
+  }
+  const content = parseJsonObject(value || stage.result);
+  const lessonPlanContent = parseJsonObject(lessonPlanResult);
+  const designs = normalizeIntroDesigns(lessonPlanContent);
+  const selectedIds = getStringArray(content.selected_design_ids);
+  const selectedId = getStringValue(content.primary_design_id) || selectedIds[0] || designs[0]?.id || "";
+  const selectedDesign = designs.find((design) => design.id === selectedId);
+  const selectedAnchor = getStringValue(content.selected_anchor);
+  const anchorError = validateIntroSelectionAnchor(value || stage.result);
+
+  function selectDesign(id: string) {
+    const design = designs.find((item) => item.id === id);
+    const next = {
+      ...content,
+      primary_design_id: id,
+      selected_design_ids: [id],
+      selected_anchor: design?.anchor || getStringValue(content.selected_anchor),
+      selection_reason:
+        getStringValue(content.selection_reason) ||
+        "本地演示选择该方案作为导入视频主线，可继续生成视频剧本。",
+    };
+    onChange(JSON.stringify(next, null, 2));
+  }
+
+  function updateSelectedAnchor(anchor: string) {
+    const next = {
+      ...content,
+      primary_design_id: selectedId,
+      selected_design_ids: selectedId ? [selectedId] : selectedIds,
+      selected_anchor: anchor,
+      selection_reason:
+        getStringValue(content.selection_reason) ||
+        "教师已确认课程锚点，并将其作为导入视频和课堂衔接的硬约束。",
+    };
+    onChange(JSON.stringify(next, null, 2));
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="t-overline text-muted-foreground/70">视频导入候选方案</div>
+          <p className="mt-1 t-caption text-muted-foreground">
+            选择方案后确认课程锚点；该锚点会传给视频脚本，作为视频结尾接回课堂的硬约束。
+          </p>
+        </div>
+        <Button
+          size="sm"
+          className="gap-1.5"
+          onClick={onSave}
+          disabled={saving || !value.trim() || Boolean(anchorError)}
+        >
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          {saving ? "保存中" : "保存选择"}
+        </Button>
+      </div>
+
+      {designs.length > 0 && (
+        <div className="grid gap-3 lg:grid-cols-3">
+          {designs.map((design) => {
+            const selected = design.id === selectedId;
+            return (
+              <button
+                key={design.id}
+                type="button"
+                onClick={() => selectDesign(design.id)}
+                className={cn(
+                  "rounded-md border bg-card p-4 text-left transition-colors focus-ring",
+                  selected
+                    ? "border-primary bg-primary/5"
+                    : "border-border hover:border-primary/30 hover:bg-muted/30",
+                )}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <ToneBadge tone={selected ? "success" : "info"}>
+                    {introTypeLabel(design.type)}
+                  </ToneBadge>
+                  <span className="t-caption text-muted-foreground">
+                    推荐 {design.score}/5
+                  </span>
+                </div>
+                <div className="mt-3 t-module">{design.title}</div>
+                <p className="mt-2 t-body text-foreground/85">{design.hook}</p>
+                <p className="mt-3 t-caption text-muted-foreground">
+                  {design.anchor}
+                </p>
+                {selected && (
+                  <div className="mt-3 inline-flex items-center gap-1.5 t-caption font-medium text-primary">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    已选择
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <Card className="border-border bg-muted/20 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="t-module">课程锚点确认</div>
+            <p className="mt-1 t-caption text-muted-foreground">
+              先从候选方案自动带入，也可以手工改成最终版；保存和确认前必须填写且不少于 10 个字。
+            </p>
+          </div>
+          {selectedDesign && (
+            <ToneBadge tone="info">来自 {selectedDesign.title}</ToneBadge>
+          )}
+        </div>
+        <div className="mt-3">
+          <Label className="t-caption text-muted-foreground">最终课程锚点 selected_anchor</Label>
+          <Textarea
+            value={selectedAnchor}
+            onChange={(event) => updateSelectedAnchor(event.target.value)}
+            className={cn(
+              "mt-1 min-h-24 bg-card text-[0.9rem] leading-relaxed",
+              anchorError && "border-destructive focus-visible:ring-destructive",
+            )}
+            placeholder="例如：小兔子数不清萝卜，引出数清楚才能解决问题"
+          />
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+            <p className={cn("t-caption", anchorError ? "text-destructive" : "text-muted-foreground")}>
+              {anchorError || "该字段会写入 intro_selection.selected_anchor，并作为下游视频脚本锚点。"}
+            </p>
+            <span className="t-caption text-muted-foreground">
+              {selectedAnchor.trim().length} 字
+            </span>
+          </div>
+        </div>
+        {actionError && (
+          <div className="mt-3 rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 t-caption text-destructive">
+            {actionError}
+          </div>
+        )}
+      </Card>
+
+      <details className="rounded-md border border-border bg-card">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
+          <span className="t-module">JSON 高级编辑入口</span>
+          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+        </summary>
+        <div className="border-t border-border p-4">
+          <Textarea
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            className="min-h-[260px] bg-card font-mono text-[0.82rem] leading-relaxed"
+            placeholder="可轻量编辑选择结果 JSON..."
+          />
+        </div>
+      </details>
+    </div>
+  );
+}
+
+function VideoAssetResult({
+  projectId,
+  stage,
+  value,
+  tasks,
+  tasksStatus,
+  tasksError,
+  onChange,
+  onSave,
+  saving,
+  onRefresh,
+  onRetryTask,
+}: {
+  projectId: string;
+  stage?: WorkflowStage;
+  value: string;
+  tasks: ApiTask[];
+  tasksStatus: LoadStatus;
+  tasksError?: string | null;
+  onChange: (value: string) => void;
+  onSave: () => void;
+  saving: boolean;
+  onRefresh: () => void;
+  onRetryTask: (projectId: string, taskId: string) => Promise<{ ok: boolean; msg?: string }>;
+}) {
+  if (!stage) return null;
+  if (!stage.result) {
+    return (
+      <EmptyState
+        title="暂无图片资产"
+        desc="点击“生成草稿”后，这里会展示图片生成任务、预览、失败原因和重试入口。"
+        icon={<FileImage className="h-5 w-5" />}
+      />
+    );
+  }
+
+  const content = parseJsonObject(value || stage.result);
+  const assets = getArray(content.assets).filter(isRecord);
+  const imageTasks = tasks.filter((task) => task.node_id === "intro_video_asset");
+
+  async function retryTask(taskId: string) {
+    const res = await onRetryTask(projectId, taskId);
+    if (!res.ok) {
+      toast.error(safeProviderErrorMessage(res.msg || "图片任务重试失败"));
+      return;
+    }
+    toast.success("已重新提交图片任务");
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="t-overline text-muted-foreground/70">图片资产生成状态</div>
+          <p className="mt-1 t-caption text-muted-foreground">
+            这里展示真实图片 provider 的生成状态、成功预览和失败原因；失败任务可单独重试。
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={onRefresh}
+            disabled={tasksStatus === "loading"}
+          >
+            {tasksStatus === "loading" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
+            刷新任务
+          </Button>
+          <Button
+            size="sm"
+            className="gap-1.5"
+            onClick={onSave}
+            disabled={saving || !value.trim()}
+          >
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            {saving ? "保存中" : "保存资产"}
+          </Button>
+        </div>
+      </div>
+
+      {tasksStatus === "error" && (
+        <ProviderFailureNotice message={tasksError || "任务列表读取失败"} />
+      )}
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        {(assets.length ? assets : imageTasks).map((item, index) => {
+          const asset = isApiTask(item) ? taskToAssetRecord(item) : item;
+          const assetId = getStringValue(asset.asset_id) || `asset_${index + 1}`;
+          const task = imageTasks.find((candidate) => taskAssetId(candidate) === assetId);
+          const imagePath =
+            getStringValue(task?.image_path) ||
+            getStringValue(task?.result.image_path) ||
+            getStringValue(asset.image_path) ||
+            normalizeImagePath(getStringValue(asset.storage_path));
+          const imageHref = imagePath ? resolveProjectImageDownloadUrl(projectId, imagePath) : "";
+          const status = task?.status || getStringValue(asset.status) || "pending";
+          const failed = status === "failed";
+          const providerId = providerTaskId(task);
+          return (
+            <Card key={assetId} className="overflow-hidden border-border bg-card">
+              {imageHref && !failed ? (
+                <div className="aspect-video border-b border-border bg-muted/30">
+                  <img
+                    src={imageHref}
+                    alt={`${assetId} 预览`}
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+              ) : (
+                <div className="flex aspect-video items-center justify-center border-b border-border bg-muted/30">
+                  {statusInProgress(status) ? (
+                    <div className="flex items-center gap-2 t-body text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      生成中
+                    </div>
+                  ) : failed ? (
+                    <div className="flex items-center gap-2 t-body text-destructive">
+                      <AlertTriangle className="h-4 w-4" />
+                      生成失败
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 t-body text-muted-foreground">
+                      <FileImage className="h-4 w-4" />
+                      等待图片
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="space-y-3 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="t-module">{assetId}</div>
+                    <div className="mt-1 break-all t-caption text-muted-foreground">
+                      {getStringValue(asset.source_prompt_id) || getStringValue(task?.payload.prompt) || "素材任务"}
+                    </div>
+                  </div>
+                  <ToneBadge tone={taskStatusTone(status)}>{taskStatusLabel(status)}</ToneBadge>
+                </div>
+                <div className="grid gap-2 t-caption text-muted-foreground sm:grid-cols-2">
+                  <span>任务：{task?.task_id || "未创建"}</span>
+                  <span>Provider：{providerId ? maskProviderTaskId(providerId) : "未返回"}</span>
+                  <span>输出：{imagePath || "待生成"}</span>
+                  <span>{task?.retryable || task?.result.retryable ? "失败可重试" : "按状态处理"}</span>
+                </div>
+                {failed && (
+                  <ProviderFailureNotice
+                    message={taskFailureMessage(task) || "图片 provider 失败，可重试。"}
+                  />
+                )}
+                {failed && task && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => void retryTask(task.task_id)}
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    重试该图片
+                  </Button>
+                )}
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+
+      <details className="rounded-md border border-border bg-card">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
+          <span className="t-module">JSON 高级编辑入口</span>
+          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+        </summary>
+        <div className="border-t border-border p-4">
+          <Textarea
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            className="min-h-[300px] bg-card font-mono text-[0.82rem] leading-relaxed"
+            placeholder="可轻量编辑图片资产 JSON..."
+          />
+        </div>
+      </details>
+    </div>
+  );
+}
+
+function FinalVideoResult({
+  projectId,
+  stage,
+  tasks,
+  tasksStatus,
+  tasksError,
+  actionError,
+  pptExportStatus,
+  pptExportError,
+  pptExportResult,
+  onRefresh,
+  onRefreshTask,
+  onRetryTask,
+  onExportPpt,
+}: {
+  projectId: string;
+  stage?: WorkflowStage;
+  tasks: ApiTask[];
+  tasksStatus: LoadStatus;
+  tasksError?: string | null;
+  actionError?: string | null;
+  pptExportStatus: LoadStatus;
+  pptExportError: string | null;
+  pptExportResult: ApiPptExport | null;
+  onRefresh: () => void;
+  onRefreshTask: (projectId: string, taskId: string) => Promise<{ ok: boolean; msg?: string }>;
+  onRetryTask: (projectId: string, taskId: string) => Promise<{ ok: boolean; msg?: string }>;
+  onExportPpt: () => void;
+}) {
+  if (!stage) return null;
+  const videoPath = getFinalVideoPath(stage, tasks, pptExportResult);
+  const videoDownloadHref = videoPath
+    ? resolveProjectOutputDownloadUrl(projectId, videoPath)
+    : "";
+  const providerUnavailable = isOctoProviderError(actionError);
+
+  if (!stage.result) {
+    return (
+      <div className="space-y-4">
+        {providerUnavailable && <FinalVideoProviderNotice error={actionError} />}
+        <FinalVideoDownloadPanel
+          href={videoDownloadHref}
+          videoPath={videoPath}
+          placeholderReady={Boolean(videoPath)}
+        />
+        <PptExportPanel
+          status={pptExportStatus}
+          error={pptExportError}
+          result={pptExportResult}
+          onExport={onExportPpt}
+        />
+        <EmptyState
+          title="暂无视频生成任务"
+          desc="配置模型、尺寸和生成范围后点击“生成草稿”，这里只承诺创建 fake 视频任务。"
+          icon={<Film className="h-5 w-5" />}
+        />
+      </div>
+    );
+  }
+  const content = parseJsonObject(stage.result);
+  const clips = getArray(content.clips);
+  const placeholderReady = Boolean(videoPath);
+  const videoTasks = tasks.filter((task) => task.node_id === "final_video");
+
+  async function refreshTask(taskId: string) {
+    const res = await onRefreshTask(projectId, taskId);
+    if (!res.ok) {
+      toast.error(safeProviderErrorMessage(res.msg || "clip 状态刷新失败"));
+      return;
+    }
+    toast.success("已刷新 clip 状态");
+  }
+
+  async function retryTask(taskId: string) {
+    const res = await onRetryTask(projectId, taskId);
+    if (!res.ok) {
+      toast.error(safeProviderErrorMessage(res.msg || "clip 重试失败"));
+      return;
+    }
+    toast.success("已重新提交 clip 任务");
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="t-overline text-muted-foreground/70">
+            {placeholderReady ? "演示视频文件已生成" : "视频生成任务"}
+          </div>
+          <p className="mt-1 t-caption text-muted-foreground">
+            {placeholderReady
+              ? "当前产物用于本地演示下载与 PPT 嵌入，不代表真实 AI 视频成片质量。"
+              : "当前只证明已创建视频生成任务和 clip 记录，不承诺真实成片质量。"}
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={onRefresh}
+          disabled={tasksStatus === "loading"}
+        >
+          {tasksStatus === "loading" ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <RefreshCw className="h-4 w-4" />
+          )}
+          刷新任务
+        </Button>
+      </div>
+
+      {tasksStatus === "error" && (
+        <div className="rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 t-body text-destructive">
+          {tasksError || "任务列表读取失败"}
+        </div>
+      )}
+
+      {providerUnavailable && <FinalVideoProviderNotice error={actionError} />}
+
+      <FinalVideoDownloadPanel
+        href={videoDownloadHref}
+        videoPath={videoPath}
+        placeholderReady={placeholderReady}
+      />
+
+      <PptExportPanel
+        status={pptExportStatus}
+        error={pptExportError}
+        result={pptExportResult}
+        onExport={onExportPpt}
+      />
+
+      <FinalVideoAudioPanel content={content} />
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Card className="border-border bg-muted/25 p-4">
+          <div className="t-caption text-muted-foreground">节点状态</div>
+          <div className="mt-1 t-module">{stage.status === "running" ? "任务已创建" : stage.status}</div>
+        </Card>
+        <Card className="border-border bg-muted/25 p-4">
+          <div className="t-caption text-muted-foreground">clip 数量</div>
+          <div className="mt-1 t-module">{formatUnknownCount(content.clip_count, clips.length)}</div>
+        </Card>
+        <Card className="border-border bg-muted/25 p-4">
+          <div className="t-caption text-muted-foreground">任务数量</div>
+          <div className="mt-1 t-module">{videoTasks.length}</div>
+        </Card>
+      </div>
+
+      {videoTasks.length > 0 ? (
+        <div className="space-y-2">
+          {videoTasks.map((task) => {
+            const downloadPath =
+              getStringValue(task.download_path) ||
+              getStringValue(task.result.download_path) ||
+              getStringValue(task.clip_path) ||
+              getStringValue(task.result.clip_path);
+            const providerId = providerTaskId(task);
+            const failed = task.status === "failed";
+            const clipStatus = clipTaskStatusLabel(task);
+            return (
+              <div
+                key={task.task_id}
+                className="rounded-md border border-border bg-card p-3"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <ListChecks className="h-4 w-4 shrink-0 text-primary" />
+                    <span className="t-body font-medium">{task.task_id}</span>
+                  </div>
+                  <ToneBadge tone={taskStatusTone(task.status)}>
+                    {clipStatus}
+                  </ToneBadge>
+                </div>
+                <div className="mt-2 grid gap-2 t-caption text-muted-foreground sm:grid-cols-4">
+                  <span>镜头：{String(task.payload.shot_id || "-")}</span>
+                  <span>模型：{String(task.payload.model || "-")}</span>
+                  <span>尺寸：{String(task.payload.size || "-")}</span>
+                  <span>Provider：{providerId ? maskProviderTaskId(providerId) : "未返回"}</span>
+                </div>
+                {downloadPath && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 t-caption text-muted-foreground">
+                    <span>输出：{downloadPath}</span>
+                    {isMp4Path(downloadPath) && (
+                      <a
+                        className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                        href={resolveProjectOutputDownloadUrl(projectId, downloadPath)}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        下载 MP4
+                      </a>
+                    )}
+                  </div>
+                )}
+                {failed && (
+                  <ProviderFailureNotice
+                    message={taskFailureMessage(task) || "视频 provider 失败，可重试。"}
+                  />
+                )}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => void refreshTask(task.task_id)}
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                    刷新该 clip
+                  </Button>
+                  {failed && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => void retryTask(task.task_id)}
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                      重试该 clip
+                    </Button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <EmptyState
+          title="任务列表为空"
+          desc="如果刚触发生成，请点击刷新任务；fake provider 下通常会立即返回 generated。"
+          icon={<ListChecks className="h-5 w-5" />}
+        />
+      )}
+    </div>
+  );
+}
+
+function FinalVideoAudioPanel({ content }: { content: Record<string, unknown> }) {
+  const audioVerified = content.audio_verified === true;
+  const englishAudioDetected = content.english_audio_detected === true;
+  const narrationAudioPath = getStringValue(content.narration_audio_path);
+  const subtitleSrtPath = getStringValue(content.subtitle_srt_path);
+  const concatManifestPath = getStringValue(content.concat_manifest_path);
+  const voiceGender = getStringValue(content.voice_gender) || "待确认";
+  const voiceLanguage = getStringValue(content.voice_language) || "待确认";
+
+  return (
+    <Card className="border-border bg-card p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <Film className="h-4 w-4 text-primary" />
+            <span className="t-module">旁白与合成状态</span>
+            <ToneBadge tone={audioVerified ? "success" : "warning"}>
+              {audioVerified ? "音频已校验" : "待校验"}
+            </ToneBadge>
+            <ToneBadge tone={englishAudioDetected ? "warning" : "success"}>
+              {englishAudioDetected ? "疑似英文音频" : "中文旁白"}
+            </ToneBadge>
+          </div>
+          <p className="mt-1 t-caption text-muted-foreground">
+            最终视频应使用中文男声旁白，视频原声在合成阶段丢弃或静音。
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <ToneBadge tone={voiceGender === "male" ? "success" : "warning"}>
+            声线：{voiceGender}
+          </ToneBadge>
+          <ToneBadge tone={voiceLanguage === "zh-CN" ? "success" : "warning"}>
+            语言：{voiceLanguage}
+          </ToneBadge>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-2 t-caption text-muted-foreground md:grid-cols-3">
+        <div className="rounded-md border border-border bg-muted/20 px-3 py-2">
+          <div className="font-medium text-foreground/85">旁白音频</div>
+          <div className="mt-1 break-all">{narrationAudioPath || "待生成"}</div>
+        </div>
+        <div className="rounded-md border border-border bg-muted/20 px-3 py-2">
+          <div className="font-medium text-foreground/85">字幕 SRT</div>
+          <div className="mt-1 break-all">{subtitleSrtPath || "待生成"}</div>
+        </div>
+        <div className="rounded-md border border-border bg-muted/20 px-3 py-2">
+          <div className="font-medium text-foreground/85">合成 manifest</div>
+          <div className="mt-1 break-all">{concatManifestPath || "待生成"}</div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function FinalVideoProviderNotice({ error }: { error?: string | null }) {
+  return (
+    <div className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 t-body text-foreground">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+        <div>
+          <div className="font-medium">真实视频服务暂不可用</div>
+          <p className="mt-1 t-caption text-muted-foreground">
+            可切换占位视频模式完成本地演示，也可以稍后重试；错误摘要：
+            {safeProviderErrorMessage(error || "OCTO_REQUEST_FAILED")}。
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProviderFailureNotice({ message }: { message: string }) {
+  return (
+    <div className="mt-2 rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 t-caption text-destructive">
+      {safeProviderErrorMessage(message)} 可重试时请点击当前任务的重试按钮。
+    </div>
+  );
+}
+
+function FinalVideoDownloadPanel({
+  href,
+  videoPath,
+  placeholderReady,
+}: {
+  href: string;
+  videoPath: string;
+  placeholderReady: boolean;
+}) {
+  return (
+    <Card className="border-border bg-muted/20 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <Film className="h-4 w-4 text-primary" />
+            <span className="t-module">
+              {placeholderReady ? "演示视频文件已生成" : "演示视频文件"}
+            </span>
+            {placeholderReady && <ToneBadge tone="success">可下载</ToneBadge>}
+          </div>
+          <p className="mt-1 t-caption text-muted-foreground">
+            {placeholderReady
+              ? "这是本地演示用 MP4 文件，可用于下载检查和 PPT 嵌入验证。"
+              : "生成最终视频后，这里会显示 MP4 下载入口。"}
+          </p>
+          {videoPath && (
+            <div className="mt-2 break-all t-caption text-muted-foreground">
+              路径：{videoPath}
+            </div>
+          )}
+        </div>
+        {href && (
+          <Button asChild size="sm" className="shrink-0 gap-1.5">
+            <a href={href} target="_blank" rel="noreferrer">
+              <Download className="h-4 w-4" />
+              下载 MP4
+            </a>
+          </Button>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function PptExportPanel({
+  status,
+  error,
+  result,
+  onExport,
+}: {
+  status: LoadStatus;
+  error: string | null;
+  result: ApiPptExport | null;
+  onExport: () => void;
+}) {
+  const downloadHref = result?.download_url
+    ? resolveApiDownloadUrl(result.download_url)
+    : "";
+
+  return (
+    <Card className="border-border bg-muted/20 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <FileType2 className="h-4 w-4 text-primary" />
+            <span className="t-module">交付 PPT</span>
+            {status === "ready" && (
+              <ToneBadge tone="success">已生成</ToneBadge>
+            )}
+            {status === "error" && (
+              <ToneBadge tone="danger">导出失败</ToneBadge>
+            )}
+          </div>
+          <p className="mt-1 t-caption text-muted-foreground">
+            基于当前项目产物生成 PPTX，并使用后端返回的下载地址打开文件。
+          </p>
+          {result?.filename && (
+            <div className="mt-2 t-caption text-muted-foreground">
+              文件：{result.filename}
+            </div>
+          )}
+          {error && (
+            <div className="mt-2 rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 t-caption text-destructive">
+              {error}
+            </div>
+          )}
+        </div>
+
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={onExport}
+            disabled={status === "loading"}
+          >
+            {status === "loading" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <FileType2 className="h-4 w-4" />
+            )}
+            {status === "loading" ? "导出中..." : "导出 PPT"}
+          </Button>
+          {downloadHref && (
+            <Button asChild size="sm" className="gap-1.5">
+              <a href={downloadHref} target="_blank" rel="noreferrer">
+                <Download className="h-4 w-4" />
+                下载 PPT
+              </a>
+            </Button>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function parseEditableNodeContent(value: string): unknown {
+  const trimmed = value.trim();
+  if (!trimmed) return { text: "" };
+  try {
+    return JSON.parse(trimmed) as unknown;
+  } catch {
+    return { text: value };
+  }
+}
+
+type EditableSummary = {
+  title: string;
+  desc: string;
+  badge: string;
+  items: Array<{ label: string; value: string }>;
+};
+
+function buildEditableNodeSummary(
+  stage: WorkflowStage,
+  value: string,
+  courseAnchor?: string,
+): EditableSummary {
+  const content = parseJsonObject(value);
+  if (stage.key === "video-script") {
+    const anchor =
+      getStringValue(content.selected_anchor) ||
+      getStringValue(content.anchor_to_lesson);
+    return {
+      title: "视频文稿摘要",
+      desc: "先看导入类型、课程锚点和完整旁白，再决定是否改 JSON。",
+      badge: "文稿",
+      items: [
+        { label: "视频类型", value: introTypeLabel(getStringValue(content.video_type)) },
+        { label: "课程锚点", value: anchor || "待补充" },
+        {
+          label: "旁白正文",
+          value: clipText(getStringValue(content.narration_full_text), 160),
+        },
+        {
+          label: "禁用元素",
+          value: getStringArray(content.banned_elements).join("、") || "待补充",
+        },
+      ],
+    };
+  }
+
+  if (stage.key === "video-screenplay") {
+    const scenes = getArray(content.scenes).filter(isRecord);
+    return {
+      title: "分场剧本摘要",
+      desc: "按场次查看画面、时长和旁白片段，当前仍用 JSON 保存完整结构。",
+      badge: `${scenes.length || 0} 场`,
+      items: scenes.slice(0, 4).map((scene, index) => ({
+        label: getStringValue(scene.scene_id) || `场次 ${index + 1}`,
+        value: [
+          formatSeconds(scene.duration_sec),
+          getStringValue(scene.scene_description),
+          clipText(getStringValue(scene.narration_segment), 72),
+        ]
+          .filter(Boolean)
+          .join(" · ") || "待补充",
+      })),
+    };
+  }
+
+  if (stage.key === "video-assets") {
+    const assets = getArray(content.assets).filter(isRecord);
+    return {
+      title: "视频资产摘要",
+      desc: "检查素材 ID、来源提示和状态，确保后续分镜可引用。",
+      badge: `${assets.length || 0} 项`,
+      items: assets.slice(0, 6).map((asset, index) => ({
+        label: getStringValue(asset.asset_id) || `素材 ${index + 1}`,
+        value: [
+          getStringValue(asset.source_prompt_id),
+          getStringValue(asset.storage_path),
+          getStringValue(asset.status),
+        ]
+          .filter(Boolean)
+          .join(" · ") || "待补充",
+      })),
+    };
+  }
+
+  if (stage.key === "storyboard") {
+    const shots = getArray(content.shots).filter(isRecord);
+    const anchorItem = courseAnchor
+      ? [{ label: "课程锚点", value: courseAnchor }]
+      : [];
+    return {
+      title: "分镜脚本摘要",
+      desc: "按镜头查看主体、时长、旁白和首帧状态，便于教师理解视频结构。",
+      badge: `${shots.length || 0} 镜`,
+      items: [
+        ...anchorItem,
+        ...shots.slice(0, 6).map((shot, index) => ({
+          label: getStringValue(shot.shot_id) || `镜头 ${index + 1}`,
+          value: [
+            formatSeconds(shot.duration_sec),
+            getStringValue(shot.main_subject),
+            clipText(getStringValue(shot.subtitle) || getStringValue(shot.narration_slice), 72),
+            getStringValue(shot.first_frame_test_status),
+          ]
+            .filter(Boolean)
+            .join(" · ") || "待补充",
+        })),
+      ],
+    };
+  }
+
+  return {
+    title: `${stage.title}摘要`,
+    desc: "当前节点暂按通用结构展示，完整内容仍在下方 JSON 中编辑。",
+    badge: "JSON",
+    items: Object.entries(content)
+      .slice(0, 6)
+      .map(([key, raw]) => ({
+        label: key,
+        value: clipText(formatPreviewValue(raw), 96),
+      })),
+  };
+}
+
+function parseJsonObject(value: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function validateIntroSelectionAnchor(value: string): string | null {
+  const content = parseJsonObject(value);
+  const anchor = getStringValue(content.selected_anchor).trim();
+  if (!anchor) return "请先填写课程锚点 selected_anchor";
+  if (anchor.length < 10) return "课程锚点不能少于 10 个字";
+  return null;
+}
+
+function resolveCourseAnchorForStage(stageKey: string, stages: WorkflowStage[]): string {
+  if (!["video-script", "storyboard"].includes(stageKey)) return "";
+  const introSelection = parseJsonObject(
+    stages.find((item) => item.key === "video-design-import")?.result || "",
+  );
+  const script = parseJsonObject(
+    stages.find((item) => item.key === "video-script")?.result || "",
+  );
+  return (
+    getStringValue(introSelection.selected_anchor) ||
+    getStringValue(script.selected_anchor) ||
+    getStringValue(script.anchor_to_lesson)
+  );
+}
+
+function getFinalVideoPath(
+  stage: WorkflowStage,
+  tasks: ApiTask[],
+  pptExportResult: ApiPptExport | null,
+): string {
+  const content = parseJsonObject(stage.result);
+  const contentVideoPath = getStringValue(content.video_path);
+  if (contentVideoPath) return contentVideoPath;
+
+  const contentDownloadPath = getStringValue(content.download_path);
+  if (isMp4Path(contentDownloadPath)) return contentDownloadPath;
+
+  for (const task of tasks) {
+    const downloadPath = getStringValue(task.result.download_path);
+    if (isMp4Path(downloadPath)) return downloadPath;
+    const videoPath = getStringValue(task.result.video_path);
+    if (isMp4Path(videoPath)) return videoPath;
+  }
+
+  return pptExportResult?.video_path || "";
+}
+
+function resolveProjectOutputDownloadUrl(projectId: string, path: string): string {
+  if (!path) return "";
+  if (/^https?:\/\//i.test(path)) return path;
+  if (path.startsWith("/projects/")) return resolveApiDownloadUrl(path);
+  const normalized = path.replace(/^\/+/, "");
+  const outputsIndex = normalized.indexOf("outputs/");
+  const outputPath = outputsIndex >= 0
+    ? normalized.slice(outputsIndex)
+    : normalized;
+  return resolveApiDownloadUrl(
+    `/projects/${encodeURIComponent(projectId)}/${outputPath}`,
+  );
+}
+
+function resolveProjectImageDownloadUrl(projectId: string, path: string): string {
+  if (!path) return "";
+  if (path.startsWith("/projects/")) return resolveApiDownloadUrl(path);
+  const normalized = path.replace(/^\/+/, "");
+  const filename = normalized.split(/[\\/]/).pop() || normalized;
+  return resolveApiDownloadUrl(
+    `/projects/${encodeURIComponent(projectId)}/images/${encodeURIComponent(filename)}`,
+  );
+}
+
+function isMp4Path(value: string): boolean {
+  return /\.mp4(?:$|\?)/i.test(value);
+}
+
+function isImagePath(value: string): boolean {
+  return /\.(png|jpe?g|webp)(?:$|\?)/i.test(value);
+}
+
+function normalizeImagePath(value: string): string {
+  return isImagePath(value) ? value : "";
+}
+
+function isApiTask(value: unknown): value is ApiTask {
+  return isRecord(value) && typeof value.task_id === "string";
+}
+
+function taskToAssetRecord(task: ApiTask): Record<string, unknown> {
+  return {
+    asset_id: taskAssetId(task),
+    source_prompt_id: task.payload.prompt,
+    image_path: task.image_path || task.result.image_path,
+    status: task.status,
+  };
+}
+
+function taskAssetId(task: ApiTask): string {
+  return getStringValue(task.payload.asset_id) || getStringValue(task.result.asset_id);
+}
+
+function providerTaskId(task?: ApiTask): string {
+  if (!task) return "";
+  return (
+    getStringValue(task.provider_task_id) ||
+    getStringValue(task.result.provider_task_id) ||
+    getStringValue(task.payload.provider_task_id)
+  );
+}
+
+function maskProviderTaskId(value: string): string {
+  if (!value) return "";
+  if (value.length <= 10) return `${value.slice(0, 2)}***${value.slice(-2)}`;
+  return `${value.slice(0, 6)}...${value.slice(-4)}`;
+}
+
+function taskFailureMessage(task?: ApiTask): string {
+  if (!task) return "";
+  const code =
+    getStringValue(task.error_code) ||
+    getStringValue(task.result.error_code) ||
+    "PROVIDER_FAILED";
+  const httpStatus = getStringValue(task.result.http_status);
+  const retryable = task.retryable || task.result.retryable;
+  const message = task.error_message || `${code}${httpStatus ? ` / HTTP ${httpStatus}` : ""}`;
+  return `${code}: ${message}${retryable ? "，可重试" : ""}`;
+}
+
+function safeProviderErrorMessage(message: string): string {
+  const withoutSecrets = message
+    .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer <redacted>")
+    .replace(/sk-[A-Za-z0-9._-]+/gi, "<redacted-key>")
+    .replace(/api[_-]?key[\"'\s:=]+[^,\"'\s}]+/gi, "api_key=<redacted>");
+  const codeMatch = withoutSecrets.match(/\b[A-Z][A-Z0-9_]{4,}\b/);
+  const httpMatch = withoutSecrets.match(/HTTP\s*\d{3}|\b\d{3}\b/);
+  const parts = [
+    codeMatch?.[0],
+    httpMatch?.[0]?.startsWith("HTTP") ? httpMatch[0] : httpMatch ? `HTTP ${httpMatch[0]}` : "",
+  ].filter(Boolean);
+  return parts.length ? parts.join(" / ") : clipText(withoutSecrets, 120);
+}
+
+function statusInProgress(status: string): boolean {
+  return ["submitting", "queued", "processing", "running", "loading"].includes(status);
+}
+
+function taskStatusLabel(status: string): string {
+  const map: Record<string, string> = {
+    submitting: "生成中",
+    queued: "生成中",
+    processing: "生成中",
+    running: "生成中",
+    generated: "已完成",
+    completed: "已完成",
+    downloaded: "已完成",
+    failed: "失败",
+  };
+  return map[status] || status || "未知";
+}
+
+function clipTaskStatusLabel(task: ApiTask): string {
+  const downloadStatus = getStringValue(task.result.download_status);
+  if (downloadStatus === "downloading") return "下载中";
+  if (downloadStatus === "downloaded") return "已完成";
+  if (downloadStatus === "failed") return "失败";
+  return taskStatusLabel(task.status);
+}
+
+function taskStatusTone(status: string) {
+  if (status === "failed") return "danger";
+  if (statusInProgress(status)) return "warning";
+  if (["completed", "downloaded", "generated"].includes(status)) return "success";
+  return "info";
+}
+
+function isOctoProviderError(value?: string | null): boolean {
+  return Boolean(value && value.includes("OCTO_REQUEST_FAILED"));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function getArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function getStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function getStringValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function formatUnknownCount(value: unknown, fallback = 0): string {
+  if (typeof value === "number") return String(value);
+  if (typeof value === "string" && value.trim()) return value;
+  return String(fallback);
+}
+
+function formatSeconds(value: unknown): string {
+  if (typeof value === "number") return `${value} 秒`;
+  if (typeof value === "string" && value.trim()) return `${value} 秒`;
+  return "";
+}
+
+function formatPreviewValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) return `${value.length} 项`;
+  if (isRecord(value)) return JSON.stringify(value);
+  return "—";
+}
+
+function clipText(value: string, length: number): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "待补充";
+  return trimmed.length > length ? `${trimmed.slice(0, length)}...` : trimmed;
+}
+
+function introTypeLabel(value: string): string {
+  const key = value as VideoIntroType;
+  return VIDEO_TYPE_LABEL[key] || value || "方案";
+}
+
+function normalizeIntroDesigns(content: Record<string, unknown>): Array<{
+  id: string;
+  type: string;
+  title: string;
+  hook: string;
+  anchor: string;
+  score: number;
+}> {
+  const rawDesigns = getArray(content.intro_designs);
+  return rawDesigns
+    .map((item, index) => {
+      if (!isRecord(item)) return null;
+      return {
+        id: getStringValue(item.design_id) || `design_${index + 1}`,
+        type: getStringValue(item.type) || "application",
+        title: getStringValue(item.title) || `候选方案 ${index + 1}`,
+        hook: getStringValue(item.hook) || "待补充导入钩子。",
+        anchor: getStringValue(item.anchor_to_lesson) || "待补充课程落点。",
+        score:
+          typeof item.recommend_score === "number"
+            ? item.recommend_score
+            : Number(item.recommend_score) || 0,
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
 }
 
 /* ---------- Tab: 证据 ---------- */
@@ -1440,7 +3473,13 @@ function StageActions({
   canReject,
   canNext,
   isRunning,
+  taskCreated = false,
+  regenerateLabel = "重新生成",
+  primaryRegenerateLabel = "生成草稿",
+  actionLoading,
+  showRefresh,
   onSave,
+  onRefresh,
   onRegenerate,
   onApprove,
   onReject,
@@ -1452,12 +3491,75 @@ function StageActions({
   canReject: boolean;
   canNext: boolean;
   isRunning: boolean;
+  taskCreated?: boolean;
+  regenerateLabel?: string;
+  primaryRegenerateLabel?: string;
+  actionLoading: boolean;
+  showRefresh: boolean;
   onSave: () => void;
+  onRefresh: () => void;
   onRegenerate: () => void;
   onApprove: () => void;
   onReject: () => void;
   onNext: () => void;
 }) {
+  const primaryAction = (() => {
+    if (actionLoading) {
+      return {
+        label: "处理中",
+        icon: <Loader2 className="h-4 w-4 animate-spin" />,
+        onClick: onRegenerate,
+        disabled: true,
+      };
+    }
+    if (isRunning) {
+      return {
+        label: "运行中",
+        icon: <Loader2 className="h-4 w-4 animate-spin" />,
+        onClick: onRegenerate,
+        disabled: true,
+      };
+    }
+    if (taskCreated) {
+      return {
+        label: "查看任务状态",
+        icon: <ListChecks className="h-4 w-4" />,
+        onClick: onRefresh,
+        disabled: actionLoading,
+      };
+    }
+    if (canApprove) {
+      return {
+        label: "确认通过",
+        icon: <Check className="h-4 w-4" />,
+        onClick: onApprove,
+        disabled: false,
+      };
+    }
+    if (canNext) {
+      return {
+        label: "进入下一步",
+        icon: <ArrowRight className="h-4 w-4" />,
+        onClick: onNext,
+        disabled: false,
+      };
+    }
+    if (canRegenerate) {
+      return {
+        label: primaryRegenerateLabel,
+        icon: <RefreshCw className="h-4 w-4" />,
+        onClick: onRegenerate,
+        disabled: false,
+      };
+    }
+    return {
+      label: "等待输入",
+      icon: <Clock className="h-4 w-4" />,
+      onClick: onSave,
+      disabled: true,
+    };
+  })();
+
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex flex-wrap gap-2">
@@ -1466,57 +3568,55 @@ function StageActions({
           size="sm"
           className="gap-1.5"
           onClick={onSave}
-          disabled={!canSave}
+          disabled={!canSave || actionLoading}
         >
           <Save className="h-4 w-4" />
           保存
         </Button>
+        {showRefresh && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={onRefresh}
+            disabled={actionLoading}
+          >
+            <RefreshCw className="h-4 w-4" />
+            刷新状态
+          </Button>
+        )}
         <Button
           variant="outline"
           size="sm"
           className="gap-1.5"
           onClick={onRegenerate}
-          disabled={!canRegenerate}
+          disabled={!canRegenerate || actionLoading}
         >
           <RefreshCw
-            className={cn("h-4 w-4", isRunning && "animate-spin")}
+            className={cn("h-4 w-4", (isRunning || actionLoading) && "animate-spin")}
           />
-          {isRunning ? "运行中" : "重新生成"}
+          {isRunning || actionLoading ? "运行中" : regenerateLabel}
         </Button>
       </div>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Button
           variant="ghost"
           size="sm"
           className="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
           onClick={onReject}
-          disabled={!canReject}
+          disabled={!canReject || actionLoading}
         >
           <RotateCcw className="h-4 w-4" />
           退回修改
         </Button>
         <Button
-          variant="outline"
           size="sm"
-          className="gap-1.5"
-          onClick={onNext}
-          disabled={!canNext}
+          className="min-w-28 gap-1.5"
+          onClick={primaryAction.onClick}
+          disabled={primaryAction.disabled}
         >
-          进入下一步
-          <ArrowRight className="h-4 w-4" />
-        </Button>
-        <Button
-          size="sm"
-          className="gap-1.5"
-          onClick={onApprove}
-          disabled={!canApprove}
-        >
-          {isRunning ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Check className="h-4 w-4" />
-          )}
-          确认通过
+          {primaryAction.icon}
+          {primaryAction.label}
         </Button>
       </div>
     </div>

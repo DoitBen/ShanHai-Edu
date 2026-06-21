@@ -1,0 +1,1124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ShanHaiEdu 工作台 v3</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ══ TOKENS ═══════════════════════════════════════════════════════
+   颜色仅三类：
+   ① 主色  --blue   蓝色强调
+   ② 文字  --tx1/2/3  灰阶文字层次
+   ③ 背景  --bg/bg2/bg3  深色层次
+   状态色：--ok / --warn / --err（绿/黄/红），仅用于状态标记
+═══════════════════════════════════════════════════════════════════ */
+:root {
+  /* layout */
+  --sw: 232px;
+  --th: 56px;
+  --r:  12px;
+
+  /* background layers */
+  --bg:   #0A0F1E;
+  --bg2:  #0F1627;
+  --bg3:  #172036;
+
+  /* primary */
+  --blue:     #4F72F5;
+  --blue-dim: rgba(79,114,245,0.14);
+  --blue-glow:rgba(79,114,245,0.30);
+
+  /* text */
+  --tx1: #E8EEFF;
+  --tx2: #7A8EAD;
+  --tx3: #3A4E6A;
+
+  /* borders / cards */
+  --line:  rgba(255,255,255,0.06);
+  --card:  rgba(255,255,255,0.03);
+  --card2: rgba(255,255,255,0.06);
+
+  /* status (only for badges/dots) */
+  --ok:   #22C55E;
+  --warn: #EAB308;
+  --err:  #EF4444;
+}
+
+/* light theme overrides */
+body.light {
+  --bg:   #F4F6FB;
+  --bg2:  #FFFFFF;
+  --bg3:  #EBF0FA;
+  --blue:     #3B5EF0;
+  --blue-dim: rgba(59,94,240,0.10);
+  --blue-glow:rgba(59,94,240,0.22);
+  --tx1: #0D1526;
+  --tx2: #4A5E7A;
+  --tx3: #9AAABF;
+  --line:  rgba(0,0,0,0.07);
+  --card:  rgba(0,0,0,0.025);
+  --card2: rgba(0,0,0,0.055);
+  --ok:   #16A34A;
+  --warn: #CA8A04;
+  --err:  #DC2626;
+}
+
+/* indigo theme overrides */
+body.indigo {
+  --bg:   #0B0C1E;
+  --bg2:  #10112A;
+  --bg3:  #181A38;
+  --blue:     #7C86FA;
+  --blue-dim: rgba(124,134,250,0.14);
+  --blue-glow:rgba(124,134,250,0.28);
+  --tx1: #E4E7FF;
+  --tx2: #7880C0;
+  --tx3: #353860;
+  --line:  rgba(255,255,255,0.07);
+  --card:  rgba(255,255,255,0.03);
+  --card2: rgba(255,255,255,0.07);
+}
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--tx1);
+  min-height: 100vh;
+  display: flex;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ══ SIDEBAR ══════════════════════════════════════════════════════ */
+.sidebar {
+  width: var(--sw);
+  background: var(--bg2);
+  border-right: 1px solid var(--line);
+  position: fixed; top:0; left:0; bottom:0;
+  display: flex; flex-direction: column;
+  z-index: 300;
+}
+
+.brand-area {
+  padding: 20px 18px 16px;
+  border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; gap: 10px;
+}
+
+.brand-logo {
+  width: 36px; height: 36px; border-radius: 10px;
+  background: var(--blue);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 800; color: #fff;
+  flex-shrink: 0;
+  box-shadow: 0 4px 16px var(--blue-glow);
+}
+
+.brand-name { font-size: 14px; font-weight: 700; color: var(--tx1); letter-spacing: -.3px; }
+.brand-sub  { font-size: 10.5px; color: var(--tx3); margin-top: 1px; }
+
+/* role pill */
+.role-row {
+  padding: 10px 14px 0;
+  display: flex; gap: 4px;
+}
+.role-btn {
+  flex:1; text-align:center;
+  padding: 5px 0; font-size: 11.5px; font-weight: 600;
+  border-radius: 7px; cursor: pointer;
+  color: var(--tx3); transition: all .18s; user-select: none;
+}
+.role-btn.on { background: var(--blue); color: #fff; box-shadow: 0 2px 10px var(--blue-glow); }
+
+/* nav */
+.nav-block { padding: 14px 10px 4px; }
+.nav-sec-label {
+  font-size: 9px; font-weight: 700; letter-spacing: 1.2px;
+  text-transform: uppercase; color: var(--tx3);
+  padding: 0 8px; margin-bottom: 4px;
+}
+.nav-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 8px 10px; border-radius: 8px;
+  cursor: pointer; font-size: 13px; font-weight: 500;
+  color: var(--tx2); transition: all .14s;
+  margin-bottom: 1px; position: relative;
+}
+.nav-item:hover { background: var(--card2); color: var(--tx1); }
+.nav-item.on {
+  background: var(--blue-dim); color: var(--blue);
+}
+.nav-item.on::before {
+  content: ''; position: absolute; left:0; top:7px; bottom:7px;
+  width: 3px; border-radius: 2px; background: var(--blue);
+}
+.nav-icon { font-size: 14px; width: 18px; text-align: center; flex-shrink:0; }
+.nav-badge {
+  margin-left: auto; font-size: 9.5px; font-weight: 700;
+  padding: 1px 6px; border-radius: 20px;
+  background: var(--warn); color: #000;
+}
+
+/* steps list */
+.steps-scroll { flex:1; overflow-y:auto; padding: 4px 10px; }
+.step-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px; border-radius: 8px; cursor: pointer;
+  margin-bottom: 1px; transition: background .14s;
+}
+.step-row:hover { background: var(--card2); }
+.step-row.on    { background: var(--blue-dim); }
+.step-node {
+  width: 26px; height: 26px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10.5px; font-weight: 700; flex-shrink: 0;
+}
+.sn-done   { background: rgba(34,197,94,.14); color: var(--ok); }
+.sn-active { background: var(--blue); color: #fff; box-shadow: 0 0 0 3px var(--blue-dim); }
+.sn-run    { background: rgba(234,179,8,.14); color: var(--warn); animation: pulse 2s infinite; }
+.sn-idle   { background: var(--card2); color: var(--tx3); border: 1px solid var(--line); }
+@keyframes pulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(234,179,8,.25); }
+  50%      { box-shadow: 0 0 0 5px rgba(234,179,8,0); }
+}
+.s-name { font-size: 12px; font-weight: 500; color: var(--tx2); }
+.s-hint { font-size: 10px; color: var(--tx3); margin-top: 1px; }
+.step-row.on .s-name { color: var(--blue); }
+
+/* sidebar foot */
+.side-foot {
+  padding: 10px;
+  border-top: 1px solid var(--line);
+}
+.user-row {
+  display: flex; align-items: center; gap: 9px;
+  padding: 9px 10px; border-radius: 9px;
+  background: var(--card); cursor: pointer;
+  transition: background .14s;
+}
+.user-row:hover { background: var(--card2); }
+.avatar {
+  width: 30px; height: 30px; border-radius: 50%;
+  background: var(--blue); display: flex; align-items: center;
+  justify-content: center; font-size: 12px; font-weight: 700;
+  color: #fff; flex-shrink:0;
+}
+.u-name { font-size: 12px; font-weight: 600; color: var(--tx1); }
+.u-role { font-size: 10px; color: var(--blue); margin-top:1px; }
+
+/* ══ MAIN ═════════════════════════════════════════════════════════ */
+.main { margin-left: var(--sw); flex:1; display:flex; flex-direction:column; min-height:100vh; }
+
+/* topbar */
+.topbar {
+  height: var(--th);
+  background: var(--bg2);
+  border-bottom: 1px solid var(--line);
+  display: flex; align-items: center;
+  padding: 0 32px; gap: 14px;
+  position: sticky; top:0; z-index:200;
+}
+.bc { display:flex; align-items:center; gap:6px; font-size:13px; color: var(--tx2); }
+.bc-sep  { color: var(--tx3); }
+.bc-curr { color: var(--tx1); font-weight: 600; }
+.spacer  { flex:1; }
+
+.sys-pills { display:flex; gap:6px; }
+.pill {
+  display:flex; align-items:center; gap:5px;
+  padding: 4px 10px; border-radius: 20px;
+  background: var(--card); border: 1px solid var(--line);
+  font-size: 11px; color: var(--tx2);
+}
+.dot { width:5px; height:5px; border-radius:50%; flex-shrink:0; }
+.d-ok   { background: var(--ok);   box-shadow: 0 0 5px var(--ok); }
+.d-blue { background: var(--blue); }
+.d-warn { background: var(--warn); }
+
+/* theme switcher */
+.theme-sw {
+  display: flex; align-items: center; gap: 5px;
+  padding: 4px 8px; border-radius: 20px;
+  background: var(--card); border: 1px solid var(--line);
+}
+.th-label { font-size: 10px; font-weight: 600; color: var(--tx3); }
+.th-dot {
+  width: 16px; height: 16px; border-radius: 50%;
+  cursor: pointer; transition: transform .15s;
+  position: relative;
+}
+.th-dot:hover { transform: scale(1.25); }
+.th-dot.on { box-shadow: 0 0 0 2px var(--bg2), 0 0 0 3.5px var(--blue); }
+.th-dark   { background: #0A0F1E; border: 1px solid rgba(255,255,255,.2); }
+.th-light  { background: #F4F6FB; border: 1px solid rgba(0,0,0,.15); }
+.th-indigo { background: linear-gradient(135deg,#0B0C1E,#7C86FA); }
+
+.btn {
+  padding: 7px 16px; border-radius: 8px;
+  font-size: 12.5px; font-weight: 600;
+  cursor: pointer; border: none; font-family: inherit;
+  transition: all .14s;
+}
+.btn-ghost   { background: var(--card2); color: var(--tx2); border: 1px solid var(--line); }
+.btn-ghost:hover { color: var(--tx1); background: var(--card2); filter: brightness(1.3); }
+.btn-primary { background: var(--blue); color: #fff; box-shadow: 0 3px 12px var(--blue-glow); }
+.btn-primary:hover { filter: brightness(1.12); }
+
+/* ══ CONTENT ══════════════════════════════════════════════════════ */
+.content { flex:1; overflow-y:auto; padding: 32px 36px; }
+
+/* hero */
+.hero {
+  background: linear-gradient(125deg, var(--bg3) 0%, var(--bg2) 100%);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 36px 40px;
+  margin-bottom: 28px;
+  position: relative; overflow: hidden;
+}
+.hero::after {
+  content: ''; position: absolute; right:-60px; top:-60px;
+  width: 260px; height: 260px;
+  background: radial-gradient(circle, var(--blue-dim) 0%, transparent 70%);
+  pointer-events: none;
+}
+.hero-tag {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 1.2px;
+  text-transform: uppercase; color: var(--blue); margin-bottom: 10px;
+}
+.hero-title {
+  font-size: 28px; font-weight: 800; color: var(--tx1);
+  letter-spacing: -.8px; line-height: 1.2; margin-bottom: 8px;
+}
+.hero-sub {
+  font-size: 13.5px; color: var(--tx2); line-height: 1.7;
+  max-width: 500px; margin-bottom: 24px;
+}
+.hero-meta { display: flex; align-items: center; gap: 22px; }
+.hstat { }
+.hstat-v {
+  font-size: 28px; font-weight: 800; color: var(--tx1);
+  letter-spacing: -1px; line-height: 1;
+}
+.hstat-l { font-size: 10.5px; color: var(--tx3); margin-top: 3px; }
+.hdiv    { width:1px; height:32px; background: var(--line); }
+.hero-actions { margin-left: auto; display:flex; gap:8px; }
+
+/* stat grid */
+.stat-grid {
+  display: grid; grid-template-columns: repeat(4,1fr);
+  gap: 14px; margin-bottom: 24px;
+}
+.scard {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--r); padding: 22px 24px;
+  position: relative; overflow: hidden;
+  transition: border-color .18s;
+}
+.scard:hover { border-color: var(--line); filter: brightness(1.08); }
+.scard::before {
+  content: ''; position: absolute;
+  top:0; left:0; right:0; height:2px;
+  border-radius: var(--r) var(--r) 0 0;
+}
+.sc-blue::before   { background: var(--blue); }
+.sc-ok::before     { background: var(--ok); }
+.sc-warn::before   { background: var(--warn); }
+.sc-err::before    { background: var(--err); }
+.sc-icon { font-size: 18px; margin-bottom: 12px; }
+.sc-val  { font-size: 34px; font-weight: 800; color: var(--tx1); letter-spacing: -1.5px; line-height:1; margin-bottom: 4px; }
+.sc-lbl  { font-size: 11.5px; color: var(--tx2); }
+.sc-delta {
+  position: absolute; top:20px; right:20px;
+  font-size: 10.5px; font-weight: 600;
+  padding: 2px 7px; border-radius: 5px;
+}
+.d-up   { background: rgba(34,197,94,.12); color: var(--ok); }
+.d-warn { background: rgba(234,179,8,.12);  color: var(--warn); }
+
+/* section head */
+.sec-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px;
+}
+.sec-title { font-size: 15px; font-weight: 700; color: var(--tx1); }
+.sec-link  { font-size: 12px; color: var(--blue); cursor: pointer; font-weight: 500; }
+.sec-link:hover { text-decoration: underline; }
+
+/* two col */
+.two-col { display: grid; grid-template-columns: 1fr 360px; gap: 18px; margin-bottom: 24px; }
+
+/* table card */
+.tcard {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--r); overflow: hidden;
+}
+.tc-head {
+  display: grid; padding: 11px 18px;
+  border-bottom: 1px solid var(--line);
+  font-size: 10.5px; font-weight: 700;
+  color: var(--tx3); text-transform: uppercase; letter-spacing: .5px;
+}
+.tc-row {
+  display: grid; padding: 13px 18px;
+  border-bottom: 1px solid var(--line);
+  align-items: center; font-size: 13px; color: var(--tx2);
+  transition: background .1s; cursor: pointer;
+}
+.tc-row:last-child { border-bottom: none; }
+.tc-row:hover { background: var(--card2); }
+
+/* status badge */
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 9px; border-radius: 20px;
+  font-size: 10.5px; font-weight: 600;
+}
+.b-ok   { background: rgba(34,197,94,.12); color: var(--ok); }
+.b-run  { background: rgba(234,179,8,.12);  color: var(--warn); }
+.b-idle { background: rgba(100,116,139,.10); color: var(--tx3); }
+.b-err  { background: rgba(239,68,68,.12);  color: var(--err); }
+.bdot   { width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
+.blink  { animation: blink 1.4s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
+
+/* queue panel */
+.qpanel {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--r); overflow: hidden;
+}
+.qp-head {
+  padding: 16px 18px; border-bottom: 1px solid var(--line);
+  font-size: 13px; font-weight: 700; color: var(--tx1);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.qcount {
+  background: var(--blue); color: #fff;
+  font-size: 10px; font-weight: 700;
+  padding: 1px 6px; border-radius: 10px;
+}
+.qi { padding: 13px 18px; border-bottom: 1px solid var(--line); }
+.qi:last-child { border-bottom: none; }
+.qi-top { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; }
+.qi-name { font-size: 12.5px; font-weight: 500; color: var(--tx1); flex:1; }
+.qi-track { height: 2px; background: var(--bg3); border-radius: 2px; overflow: hidden; }
+.qi-fill  { height: 100%; border-radius: 2px; transition: width .4s; }
+.qi-fill-blue { background: var(--blue); }
+.qi-fill-warn { background: var(--warn); }
+.qi-fill-ok   { background: var(--ok); }
+.qi-meta { display:flex; justify-content:space-between; margin-top:5px; font-size:10px; color:var(--tx3); }
+
+/* log card */
+.logcard {
+  background: var(--bg); border: 1px solid var(--line);
+  border-radius: var(--r); overflow: hidden; margin-bottom: 18px;
+}
+.log-head {
+  padding: 13px 18px; border-bottom: 1px solid var(--line);
+  font-size: 13px; font-weight: 700; color: var(--tx1);
+  display: flex; align-items: center; gap: 8px;
+}
+.live-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--ok); box-shadow: 0 0 6px var(--ok);
+  animation: blink 2s infinite;
+}
+.log-body {
+  padding: 14px 18px;
+  font-family: 'SF Mono','Fira Code',monospace;
+  font-size: 11.5px; line-height: 1.9;
+  max-height: 180px; overflow-y: auto;
+}
+.ll { display:flex; gap:12px; }
+.lt { color: var(--tx3); flex-shrink:0; }
+.lk { color: var(--ok); }
+.lr { color: var(--warn); }
+.li { color: var(--tx2); }
+.le { color: var(--err); }
+
+/* ══ TEACHER ══════════════════════════════════════════════════════ */
+.step-hero {
+  background: linear-gradient(125deg, var(--bg3), var(--bg2));
+  border: 1px solid var(--line);
+  border-radius: 16px; padding: 36px 42px;
+  margin-bottom: 24px;
+  position: relative; overflow: hidden;
+}
+.step-hero::after {
+  content: ''; position: absolute; right:-70px; top:-70px;
+  width: 280px; height: 280px;
+  background: radial-gradient(circle, var(--blue-dim) 0%, transparent 65%);
+  pointer-events: none;
+}
+.step-tag   { font-size: 10.5px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--blue); margin-bottom: 10px; }
+.step-title { font-size: 30px; font-weight: 800; color: var(--tx1); letter-spacing: -1px; line-height: 1.15; margin-bottom: 8px; }
+.step-desc  { font-size: 13.5px; color: var(--tx2); line-height: 1.7; max-width: 540px; }
+.prog-row   { display:flex; align-items:center; gap:6px; margin-top:22px; }
+.prog-seg   { flex:1; height:3px; border-radius:2px; background: var(--bg); transition: all .3s; }
+.prog-seg.done   { background: var(--ok); }
+.prog-seg.active { background: var(--blue); }
+.prog-seg.run    { background: var(--warn); }
+
+/* main card */
+.mcard {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--r); overflow: hidden; margin-bottom: 18px;
+}
+.mc-head {
+  padding: 18px 26px; border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.mc-title { font-size: 14px; font-weight: 700; color: var(--tx1); }
+.mc-body  { padding: 24px 26px; }
+
+/* form */
+.form-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+.form-row  { display:flex; flex-direction:column; gap:5px; }
+.form-full { grid-column: 1 / -1; }
+.f-lbl { font-size: 10.5px; font-weight: 700; color: var(--tx3); text-transform: uppercase; letter-spacing: .5px; }
+.f-in, .f-sel, .f-ta {
+  width:100%; padding: 10px 13px;
+  background: var(--bg2); border: 1px solid var(--line);
+  border-radius: 8px; color: var(--tx1);
+  font-size: 13.5px; font-family: inherit;
+  outline: none; transition: border-color .18s;
+}
+.f-in:focus, .f-ta:focus { border-color: var(--blue); }
+.f-ta { resize: vertical; min-height: 88px; line-height: 1.7; }
+.f-sel { cursor: pointer; appearance: none; }
+
+/* outline list */
+.ol-item {
+  display: flex; align-items: flex-start; gap: 13px;
+  padding: 14px 0; border-bottom: 1px solid var(--line);
+}
+.ol-item:last-child { border-bottom: none; }
+.ol-num {
+  width: 28px; height: 28px; border-radius: 7px;
+  background: var(--blue-dim); color: var(--blue);
+  font-size: 11.5px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; margin-top: 1px;
+}
+.ol-main { font-size: 13.5px; font-weight: 600; color: var(--tx1); }
+.ol-sub  { font-size: 12px; color: var(--tx2); margin-top: 3px; line-height: 1.6; }
+
+/* slide preview */
+.slide-canvas {
+  background: linear-gradient(135deg, var(--bg3), var(--bg2));
+  border: 1px solid var(--blue-dim);
+  border-radius: 10px; padding: 36px 42px;
+  min-height: 210px;
+  display: flex; flex-direction: column; justify-content: center;
+  position: relative; overflow: hidden;
+}
+.slide-num   { font-size: 10px; font-weight: 700; color: var(--blue); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 12px; }
+.slide-title { font-size: 20px; font-weight: 800; color: var(--tx1); letter-spacing: -.4px; margin-bottom: 14px; }
+.slide-body  { font-size: 14px; color: var(--tx2); line-height: 1.9; }
+.slide-math  { margin-top: 18px; font-size: 28px; font-weight: 800; color: var(--blue); letter-spacing: -1px; }
+
+/* tab bar */
+.tab-bar { display:flex; border-bottom: 1px solid var(--line); margin-bottom: 20px; }
+.tab { padding: 9px 16px; font-size: 13px; font-weight: 500; color: var(--tx3); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all .14s; }
+.tab:hover:not(.on) { color: var(--tx2); }
+.tab.on { color: var(--blue); border-bottom-color: var(--blue); }
+
+/* action bar */
+.act-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 16px 26px; border-top: 1px solid var(--line);
+}
+.act-note { font-size: 11.5px; color: var(--tx3); margin-left: auto; }
+
+/* locked */
+.locked { display:flex; flex-direction:column; align-items:center; justify-content:center; padding: 72px 40px; text-align:center; }
+.lock-icon  { font-size: 42px; margin-bottom: 18px; opacity: .35; }
+.lock-title { font-size: 17px; font-weight: 700; color: var(--tx1); margin-bottom: 6px; }
+.lock-desc  { font-size: 13.5px; color: var(--tx2); line-height: 1.7; max-width: 340px; }
+
+/* misc */
+.monitor-grid { display:grid; grid-template-columns: repeat(3,1fr); gap:14px; margin-bottom: 22px; }
+.mcard-sm { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 20px 22px; }
+.msm-lbl  { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; color: var(--tx3); margin-bottom: 12px; }
+.big-num  { font-size: 40px; font-weight: 800; color: var(--tx1); letter-spacing: -2px; line-height: 1; }
+.big-unit { font-size: 12px; color: var(--tx3); margin-top: 5px; }
+.user-row-grid { grid-template-columns: 36px 1fr 100px 80px 80px 50px; }
+.proj-row-grid { grid-template-columns: 1fr 90px 100px 80px 70px; }
+.task-row-grid { grid-template-columns: 1fr 100px 80px 80px 70px; }
+
+/* scrollbar */
+::-webkit-scrollbar { width: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<!-- ══ SIDEBAR ══════════════════════════════════════════════════ -->
+<aside class="sidebar">
+  <div class="brand-area">
+    <div class="brand-logo">山</div>
+    <div>
+      <div class="brand-name">ShanHaiEdu</div>
+      <div class="brand-sub">公开课资产工作台</div>
+    </div>
+  </div>
+
+  <div class="role-row">
+    <div class="role-btn" id="btnT" onclick="setRole('teacher')">教师</div>
+    <div class="role-btn on"  id="btnA" onclick="setRole('admin')">管理员</div>
+  </div>
+
+  <!-- admin nav -->
+  <div id="adminNav" class="nav-block">
+    <div class="nav-sec-label">总览</div>
+    <div class="nav-item on"  onclick="goAdmin('dashboard')"><span class="nav-icon">◈</span>数据看板</div>
+    <div class="nav-item"     onclick="goAdmin('tasks')">   <span class="nav-icon">⚡</span>任务队列<span class="nav-badge">3</span></div>
+    <div class="nav-sec-label" style="margin-top:10px">管理</div>
+    <div class="nav-item"     onclick="goAdmin('users')">   <span class="nav-icon">👥</span>用户管理</div>
+    <div class="nav-item"     onclick="goAdmin('projects')"><span class="nav-icon">📁</span>项目管理</div>
+    <div class="nav-item"     onclick="goAdmin('logs')">    <span class="nav-icon">📋</span>系统日志</div>
+    <div class="nav-sec-label" style="margin-top:10px">系统</div>
+    <div class="nav-item"     onclick="goAdmin('config')">  <span class="nav-icon">⚙</span>LLM 配置</div>
+    <div class="nav-item"     onclick="goAdmin('rules')">   <span class="nav-icon">🛡</span>红线规则</div>
+  </div>
+
+  <!-- teacher nav -->
+  <div id="teacherNav" style="display:none;flex:1;overflow:hidden;flex-direction:column">
+    <div class="nav-block">
+      <div class="nav-sec-label">课程</div>
+      <div class="nav-item on"><span class="nav-icon">📝</span>当前项目</div>
+      <div class="nav-item"><span class="nav-icon">📚</span>我的课程</div>
+      <div class="nav-sec-label" style="margin-top:10px">制作进度</div>
+    </div>
+    <div class="steps-scroll" id="stepsList"></div>
+  </div>
+
+  <div class="side-foot">
+    <div class="user-row">
+      <div class="avatar" id="ava">管</div>
+      <div>
+        <div class="u-name" id="uName">管理员</div>
+        <div class="u-role" id="uRole">系统管理员</div>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- ══ MAIN ══════════════════════════════════════════════════════ -->
+<div class="main">
+  <header class="topbar">
+    <div class="bc" id="bc">
+      <span>管理中心</span><span class="bc-sep">/</span><span class="bc-curr">数据看板</span>
+    </div>
+    <div class="spacer"></div>
+    <div class="sys-pills">
+      <div class="pill"><div class="dot d-ok"></div>API 正常</div>
+      <div class="pill"><div class="dot d-blue"></div>队列 3 任务</div>
+      <div class="pill"><div class="dot d-warn"></div>余额 ¥128</div>
+    </div>
+    <div class="theme-sw">
+      <span class="th-label">主题</span>
+      <div class="th-dot th-dark on"   id="tdDark"   onclick="applyTheme('dark')"   title="深色"></div>
+      <div class="th-dot th-light"     id="tdLight"  onclick="applyTheme('light')"  title="浅色"></div>
+      <div class="th-dot th-indigo"    id="tdIndigo" onclick="applyTheme('indigo')" title="靛蓝"></div>
+    </div>
+    <button class="btn btn-ghost" style="margin-left:6px">+ 新建项目</button>
+  </header>
+  <div class="content" id="main"></div>
+</div>
+
+<script>
+/* ── data ─────────────────────────────────────── */
+const STEPS = [
+  {id:1,name:'课题录入',  hint:'已完成',  state:'done'},
+  {id:2,name:'知识拆解',  hint:'已完成',  state:'done'},
+  {id:3,name:'结构规划',  hint:'已确认',  state:'done'},
+  {id:4,name:'内容生成',  hint:'AI 生成中',state:'run'},
+  {id:5,name:'PPT 合成',  hint:'等待中',  state:'idle'},
+  {id:6,name:'人工审核',  hint:'等待中',  state:'idle'},
+  {id:7,name:'讲解脚本',  hint:'等待中',  state:'idle'},
+  {id:8,name:'配音合成',  hint:'等待中',  state:'idle'},
+  {id:9,name:'视频输出',  hint:'等待中',  state:'idle'},
+];
+
+let role='admin', adminPage='dashboard', curStep=4;
+
+/* ── theme ────────────────────────────────────── */
+const THEMES = {
+  dark: {
+    '--bg':'#0A0F1E','--bg2':'#0F1627','--bg3':'#172036',
+    '--blue':'#4F72F5','--blue-dim':'rgba(79,114,245,0.14)','--blue-glow':'rgba(79,114,245,0.30)',
+    '--tx1':'#E8EEFF','--tx2':'#7A8EAD','--tx3':'#3A4E6A',
+    '--line':'rgba(255,255,255,0.06)','--card':'rgba(255,255,255,0.03)','--card2':'rgba(255,255,255,0.06)',
+    '--ok':'#22C55E','--warn':'#EAB308','--err':'#EF4444',
+  },
+  light: {
+    '--bg':'#F4F6FB','--bg2':'#FFFFFF','--bg3':'#EBF0FA',
+    '--blue':'#3B5EF0','--blue-dim':'rgba(59,94,240,0.10)','--blue-glow':'rgba(59,94,240,0.22)',
+    '--tx1':'#0D1526','--tx2':'#4A5E7A','--tx3':'#9AAABF',
+    '--line':'rgba(0,0,0,0.07)','--card':'rgba(0,0,0,0.025)','--card2':'rgba(0,0,0,0.055)',
+    '--ok':'#16A34A','--warn':'#CA8A04','--err':'#DC2626',
+  },
+  indigo: {
+    '--bg':'#0B0C1E','--bg2':'#10112A','--bg3':'#181A38',
+    '--blue':'#7C86FA','--blue-dim':'rgba(124,134,250,0.14)','--blue-glow':'rgba(124,134,250,0.28)',
+    '--tx1':'#E4E7FF','--tx2':'#7880C0','--tx3':'#353860',
+    '--line':'rgba(255,255,255,0.07)','--card':'rgba(255,255,255,0.03)','--card2':'rgba(255,255,255,0.07)',
+    '--ok':'#34D399','--warn':'#FBBF24','--err':'#F87171',
+  },
+};
+
+let curTheme = localStorage.getItem('she-theme') || 'dark';
+
+function applyTheme(t) {
+  const v = THEMES[t]; if (!v) return;
+  const r = document.documentElement;
+  Object.entries(v).forEach(([k,val]) => r.style.setProperty(k, val));
+  curTheme = t;
+  localStorage.setItem('she-theme', t);
+  ['dark','light','indigo'].forEach(x => {
+    const el = document.getElementById('td' + x[0].toUpperCase() + x.slice(1));
+    if (el) el.classList.toggle('on', x===t);
+  });
+}
+
+/* ── role ─────────────────────────────────────── */
+function setRole(r) {
+  role = r;
+  document.getElementById('btnT').classList.toggle('on', r==='teacher');
+  document.getElementById('btnA').classList.toggle('on', r==='admin');
+  const an = document.getElementById('adminNav');
+  const tn = document.getElementById('teacherNav');
+  an.style.display = r==='admin' ? 'block' : 'none';
+  tn.style.display = r==='teacher' ? 'flex' : 'none';
+  document.getElementById('ava').textContent   = r==='admin' ? '管' : '张';
+  document.getElementById('uName').textContent = r==='admin' ? '管理员' : '张老师';
+  document.getElementById('uRole').textContent = r==='admin' ? '系统管理员' : '教师';
+  if (r==='teacher') { buildSteps(); renderTeacher(curStep); }
+  else goAdmin(adminPage);
+}
+
+/* ── admin ────────────────────────────────────── */
+function goAdmin(p) {
+  adminPage = p;
+  document.querySelectorAll('#adminNav .nav-item').forEach(el => el.classList.remove('on'));
+  const idx = ['dashboard','tasks','users','projects','logs','config','rules'].indexOf(p);
+  document.querySelectorAll('#adminNav .nav-item')[idx]?.classList.add('on');
+  const labels = {dashboard:'数据看板',tasks:'任务队列',users:'用户管理',projects:'项目管理',logs:'系统日志',config:'LLM 配置',rules:'红线规则'};
+  document.getElementById('bc').innerHTML = `<span>管理中心</span><span class="bc-sep">/</span><span class="bc-curr">${labels[p]}</span>`;
+  const fns = {dashboard:vDashboard,tasks:vTasks,users:vUsers,projects:vProjects,logs:vLogs,config:vConfig,rules:vRules};
+  document.getElementById('main').innerHTML = (fns[p] || vDashboard)();
+}
+
+/* status badge helper */
+function badge(s) {
+  const map = {run:['b-run','进行中',true], done:['b-ok','已完成',false], idle:['b-idle','等待中',false], err:['b-err','重试中',false]};
+  const [cls,txt,blink] = map[s] || map.idle;
+  return `<span class="badge ${cls}"><span class="bdot${blink?' blink':''}"></span>${txt}</span>`;
+}
+
+/* ── admin views ──────────────────────────────── */
+function vDashboard() { return `
+<div class="hero">
+  <div class="hero-tag">系统总览 · 今日实时</div>
+  <div class="hero-title">公开课生产监控中心</div>
+  <div class="hero-sub">实时跟踪所有教师的课程制作进度、LLM 调用量与产出质量，统一管理用户与系统资源。</div>
+  <div class="hero-meta">
+    <div class="hstat"><div class="hstat-v">24</div><div class="hstat-l">今日活跃项目</div></div>
+    <div class="hdiv"></div>
+    <div class="hstat"><div class="hstat-v">138</div><div class="hstat-l">今日 LLM 调用</div></div>
+    <div class="hdiv"></div>
+    <div class="hstat"><div class="hstat-v">11</div><div class="hstat-l">已完成课程</div></div>
+    <div class="hdiv"></div>
+    <div class="hstat"><div class="hstat-v" style="color:var(--warn)">3</div><div class="hstat-l">待处理异常</div></div>
+    <div class="hero-actions">
+      <button class="btn btn-ghost">导出报表</button>
+      <button class="btn btn-primary">查看任务队列 →</button>
+    </div>
+  </div>
+</div>
+
+<div class="stat-grid">
+  <div class="scard sc-blue"><div class="sc-icon">👥</div><div class="sc-val">32</div><div class="sc-lbl">注册教师</div><div class="sc-delta d-up">+4 本月</div></div>
+  <div class="scard sc-ok">  <div class="sc-icon">✅</div><div class="sc-val">87</div><div class="sc-lbl">已完成课程</div><div class="sc-delta d-up">+11 今日</div></div>
+  <div class="scard sc-warn"><div class="sc-icon">⚡</div><div class="sc-val">3</div><div class="sc-lbl">队列任务</div><div class="sc-delta d-warn">2 待审核</div></div>
+  <div class="scard sc-err"> <div class="sc-icon">💰</div><div class="sc-val">¥128</div><div class="sc-lbl">LLM 余额</div><div class="sc-delta d-warn">低余额</div></div>
+</div>
+
+<div class="two-col">
+  <div>
+    <div class="sec-head"><div class="sec-title">近期项目动态</div><span class="sec-link" onclick="goAdmin('projects')">查看全部</span></div>
+    <div class="tcard">
+      <div class="tc-head proj-row-grid"><span>项目名称</span><span>教师</span><span>当前步骤</span><span>状态</span><span>更新</span></div>
+      ${[['万以内加法·进位','张老师','内容生成','run','14:02'],
+         ['认识时间·时分秒','李老师','PPT 合成','run','13:55'],
+         ['分数的意义',     '王老师','人工审核','done','13:40'],
+         ['认识图形·三角形','赵老师','视频输出','done','13:12'],
+         ['100以内减法',   '陈老师','课题录入','idle','13:05'],
+      ].map(([n,t,s,st,tm])=>`
+      <div class="tc-row proj-row-grid">
+        <span style="color:var(--tx1);font-weight:500">${n}</span>
+        <span>${t}</span><span>${s}</span>
+        <span>${badge(st)}</span>
+        <span style="color:var(--tx3)">${tm}</span>
+      </div>`).join('')}
+    </div>
+  </div>
+  <div>
+    <div class="sec-head"><div class="sec-title">Celery 任务队列</div><span class="sec-link">刷新</span></div>
+    <div class="qpanel">
+      <div class="qp-head">运行中 <span class="qcount">3</span></div>
+      ${[{n:'万以内加法 · 内容生成',p:65,c:'qi-fill-blue',t:'~45s'},
+         {n:'认识时间 · PPT 合成',  p:30,c:'qi-fill-warn',t:'~2m'},
+         {n:'认识图形 · 配音合成',  p:88,c:'qi-fill-ok',  t:'~10s'},
+      ].map(q=>`
+      <div class="qi">
+        <div class="qi-top"><span class="qi-name">${q.n}</span>${badge('run')}</div>
+        <div class="qi-track"><div class="qi-fill ${q.c}" style="width:${q.p}%"></div></div>
+        <div class="qi-meta"><span>${q.p}%</span><span>剩余 ${q.t}</span></div>
+      </div>`).join('')}
+    </div>
+  </div>
+</div>
+
+<div class="sec-head"><div class="sec-title">系统实时日志</div><span class="sec-link" onclick="goAdmin('logs')">查看完整日志</span></div>
+<div class="logcard">
+  <div class="log-head"><div class="live-dot"></div>实时输出</div>
+  <div class="log-body">
+    <div class="ll"><span class="lt">14:02:47</span><span class="lr">⟳</span><span class="li">task[content_gen] 张老师/万以内加法 · slide_4 正在生成</span></div>
+    <div class="ll"><span class="lt">14:02:33</span><span class="lk">✓</span><span class="li">task[content_gen] 张老师/万以内加法 · slide_3 完成</span></div>
+    <div class="ll"><span class="lt">14:01:55</span><span class="lr">⟳</span><span class="li">task[ppt_build] 李老师/认识时间 · 合成中 30%</span></div>
+    <div class="ll"><span class="lt">14:01:20</span><span class="lk">✓</span><span class="li">task[tts] 赵老师/认识图形 · audio_7 生成完成</span></div>
+    <div class="ll"><span class="lt">14:00:44</span><span class="lk">✓</span><span class="li">llm[gpt-4o] 王老师/分数意义 · 调用成功 token=1247</span></div>
+    <div class="ll"><span class="lt">13:59:10</span><span class="le">✗</span><span class="li">llm[gpt-4o] 陈老师/100以内减法 · rate_limit retry 1/3</span></div>
+  </div>
+</div>`; }
+
+function vTasks() { return `
+<div class="hero">
+  <div class="hero-tag">Celery 任务队列</div>
+  <div class="hero-title">异步任务监控</div>
+  <div class="hero-sub">实时查看所有 LLM 调用、PPT 合成、配音合成等后台任务的执行状态。</div>
+  <div class="hero-meta">
+    <div class="hstat"><div class="hstat-v">3</div><div class="hstat-l">运行中</div></div>
+    <div class="hdiv"></div>
+    <div class="hstat"><div class="hstat-v">138</div><div class="hstat-l">今日完成</div></div>
+    <div class="hdiv"></div>
+    <div class="hstat"><div class="hstat-v" style="color:var(--warn)">1</div><div class="hstat-l">失败重试</div></div>
+  </div>
+</div>
+<div class="qpanel">
+  <div class="qp-head">任务列表 <span class="qcount">3 运行中</span></div>
+  ${[{n:'张老师 / 万以内加法 · 内容生成',p:65,c:'qi-fill-blue',t:'~45s',s:'run'},
+     {n:'李老师 / 认识时间 · PPT 合成',  p:30,c:'qi-fill-warn',t:'~2m', s:'run'},
+     {n:'赵老师 / 认识图形 · 配音合成',  p:88,c:'qi-fill-ok',  t:'~10s',s:'run'},
+     {n:'陈老师 / 100以内减法 · LLM 重试',p:0,c:'qi-fill-blue',t:'等待', s:'err'},
+  ].map(q=>`
+  <div class="qi">
+    <div class="qi-top"><span class="qi-name">${q.n}</span>${badge(q.s)}</div>
+    <div class="qi-track"><div class="qi-fill ${q.c}" style="width:${q.p}%"></div></div>
+    <div class="qi-meta"><span>${q.p}%</span><span>${q.t}</span></div>
+  </div>`).join('')}
+</div>`; }
+
+function vUsers() { return `
+<div class="hero">
+  <div class="hero-tag">用户管理</div>
+  <div class="hero-title">教师账户管理</div>
+  <div class="hero-sub">统一管理所有教师账户、权限分配与账号状态。</div>
+  <div class="hero-meta">
+    <div class="hstat"><div class="hstat-v">32</div><div class="hstat-l">总用户数</div></div>
+    <div class="hdiv"></div>
+    <div class="hstat"><div class="hstat-v">24</div><div class="hstat-l">今日活跃</div></div>
+    <div class="hero-actions">
+      <button class="btn btn-ghost">批量导入</button>
+      <button class="btn btn-primary">+ 新建用户</button>
+    </div>
+  </div>
+</div>
+<div class="tcard">
+  <div class="tc-head user-row-grid"><span></span><span>姓名 / 邮箱</span><span>角色</span><span>项目数</span><span>状态</span><span>操作</span></div>
+  ${[{a:'张',n:'张老师',e:'zhang@edu.cn',r:'教师',p:12,ok:true},
+     {a:'李',n:'李老师',e:'li@edu.cn',   r:'教师',p:8, ok:true},
+     {a:'王',n:'王老师',e:'wang@edu.cn', r:'教师',p:5, ok:true},
+     {a:'赵',n:'赵主任',e:'zhao@edu.cn', r:'管理员',p:0,ok:true},
+     {a:'陈',n:'陈老师',e:'chen@edu.cn', r:'教师',p:3, ok:false},
+  ].map(u=>`
+  <div class="tc-row user-row-grid">
+    <div class="avatar" style="width:26px;height:26px;font-size:10px">${u.a}</div>
+    <div><div style="color:var(--tx1);font-weight:500">${u.n}</div><div style="font-size:10.5px;color:var(--tx3)">${u.e}</div></div>
+    <span>${badge(u.r==='管理员'?'run':'idle')}</span>
+    <span>${u.p} 个</span>
+    <span>${badge(u.ok?'done':'idle')}</span>
+    <span style="color:var(--blue);cursor:pointer;font-size:12px">编辑</span>
+  </div>`).join('')}
+</div>`; }
+
+function vProjects() { return `
+<div class="hero">
+  <div class="hero-tag">项目管理</div>
+  <div class="hero-title">全部课程项目</div>
+  <div class="hero-sub">查看所有教师的课程制作进度，支持按状态、学科、教师筛选。</div>
+  <div class="hero-meta">
+    <div class="hstat"><div class="hstat-v">156</div><div class="hstat-l">历史项目</div></div>
+    <div class="hdiv"></div>
+    <div class="hstat"><div class="hstat-v">24</div><div class="hstat-l">进行中</div></div>
+    <div class="hdiv"></div>
+    <div class="hstat"><div class="hstat-v">87</div><div class="hstat-l">已完成</div></div>
+  </div>
+</div>
+<div class="tcard">
+  <div class="tc-head task-row-grid"><span>课程名称</span><span>教师</span><span>进度</span><span>状态</span><span>更新</span></div>
+  ${[['万以内加法·进位（一年级）','张老师','4/9','run','14:02'],
+     ['认识时间·时分秒（二年级）','李老师','5/9','run','13:55'],
+     ['分数的意义（三年级）',     '王老师','6/9','done','13:40'],
+     ['认识图形·三角形（一年级）','赵老师','9/9','done','13:12'],
+     ['100以内减法（一年级）',   '陈老师','1/9','idle','13:05'],
+     ['乘法口诀表（二年级）',     '张老师','9/9','done','12:44'],
+  ].map(([n,t,p,s,tm])=>`
+  <div class="tc-row task-row-grid">
+    <span style="color:var(--tx1);font-weight:500">${n}</span>
+    <span>${t}</span>
+    <span style="color:var(--tx2)">${p} 步</span>
+    <span>${badge(s)}</span>
+    <span style="color:var(--tx3)">${tm}</span>
+  </div>`).join('')}
+</div>`; }
+
+function vLogs() { return `
+<div class="hero">
+  <div class="hero-tag">系统日志</div>
+  <div class="hero-title">运行日志中心</div>
+  <div class="hero-sub">查看系统全量日志，支持按级别、模块、时间段筛选。</div>
+</div>
+<div class="logcard" style="margin-bottom:0">
+  <div class="log-head"><div class="live-dot"></div>实时日志流</div>
+  <div class="log-body" style="max-height:420px">
+    <div class="ll"><span class="lt">14:02:47</span><span class="lr">⟳</span><span class="li">[content_gen] 张老师/万以内加法 · slide_4 正在生成</span></div>
+    <div class="ll"><span class="lt">14:02:33</span><span class="lk">✓</span><span class="li">[content_gen] 张老师/万以内加法 · slide_3 完成 token=987</span></div>
+    <div class="ll"><span class="lt">14:01:55</span><span class="lr">⟳</span><span class="li">[ppt_build] 李老师/认识时间 · 合成中 30%</span></div>
+    <div class="ll"><span class="lt">14:01:20</span><span class="lk">✓</span><span class="li">[tts] 赵老师/认识图形 · audio_7 生成完成</span></div>
+    <div class="ll"><span class="lt">14:00:44</span><span class="lk">✓</span><span class="li">[llm] gpt-4o 调用成功 latency=1.2s token=1247</span></div>
+    <div class="ll"><span class="lt">13:59:10</span><span class="le">✗</span><span class="li">[llm] rate_limit hit · retry 1/3 · wait 5s</span></div>
+    <div class="ll"><span class="lt">13:58:42</span><span class="lk">✓</span><span class="li">[knowledge] 张老师/万以内加法 · 知识拆解完成</span></div>
+    <div class="ll"><span class="lt">13:57:30</span><span class="lk">✓</span><span class="li">[state_machine] 项目 proj_0042 · 状态 → content_gen</span></div>
+  </div>
+</div>`; }
+
+function vConfig() { return `
+<div class="hero">
+  <div class="hero-tag">系统配置</div>
+  <div class="hero-title">LLM 服务配置</div>
+  <div class="hero-sub">配置 LiteLLM 路由、模型优先级与 API 密钥，变更后即时生效。</div>
+</div>
+<div class="mcard">
+  <div class="mc-head"><div class="mc-title">主力模型</div>${badge('done')}</div>
+  <div class="mc-body">
+    <div class="form-grid">
+      <div class="form-row"><div class="f-lbl">模型</div><input class="f-in" value="gpt-4o"></div>
+      <div class="form-row"><div class="f-lbl">API Base</div><input class="f-in" value="https://api.openai.com/v1"></div>
+      <div class="form-row"><div class="f-lbl">API Key</div><input class="f-in" type="password" value="sk-••••••••••••••••"></div>
+      <div class="form-row"><div class="f-lbl">Max Tokens</div><input class="f-in" value="4096"></div>
+    </div>
+  </div>
+  <div class="act-bar">
+    <button class="btn btn-ghost">测试连接</button>
+    <button class="btn btn-primary">保存配置</button>
+  </div>
+</div>
+<div class="mcard">
+  <div class="mc-head"><div class="mc-title">备用模型 (Fallback)</div>${badge('idle')}</div>
+  <div class="mc-body">
+    <div class="form-grid">
+      <div class="form-row"><div class="f-lbl">模型</div><input class="f-in" value="claude-sonnet-4-6"></div>
+      <div class="form-row"><div class="f-lbl">API Base</div><input class="f-in" value="https://api.anthropic.com"></div>
+    </div>
+  </div>
+  <div class="act-bar">
+    <button class="btn btn-ghost">测试连接</button>
+    <button class="btn btn-primary">启用备用</button>
+  </div>
+</div>`; }
+
+function vRules() { return `
+<div class="hero">
+  <div class="hero-tag">合规管理</div>
+  <div class="hero-title">红线规则 R001–R006</div>
+  <div class="hero-sub">这些规则由产品委员会制定，不可通过 UI 关闭，违规内容将被系统强制拦截。</div>
+</div>
+<div class="mcard">
+  <div class="mc-body" style="padding-top:8px">
+  ${[['R001','配音语言','必须使用中文男声，禁止英语配音。'],
+     ['R002','角色形象','禁止使用 photorealistic 风格的角色字典图像。'],
+     ['R003','未成年保护','禁止出现真人未成年形象（视频、封面、素材均适用）。'],
+     ['R004','视频结构','完整视频必须由多个分镜剪辑拼合，不得使用单一长镜头。'],
+     ['R005','候选与终版','AI 候选稿不得以终版形式对外展示，必须经人工确认。'],
+     ['R006','数学可编辑','视频中出现的数学公式必须进入可编辑文本层，不得烧入背景。'],
+  ].map(([id,lbl,desc])=>`
+  <div class="ol-item">
+    <div class="ol-num" style="border-radius:7px;font-size:10px">${id}</div>
+    <div><div class="ol-main">${lbl}</div><div class="ol-sub">${desc}</div></div>
+    <span class="badge b-ok" style="margin-left:auto;flex-shrink:0">强制启用</span>
+  </div>`).join('')}
+  </div>
+</div>`; }
+
+/* ── teacher views ────────────────────────────── */
+function buildSteps() {
+  document.getElementById('stepsList').innerHTML = STEPS.map(s=>`
+  <div class="step-row ${s.id===curStep?'on':''}" onclick="goStep(${s.id})">
+    <div class="step-node ${s.id===curStep&&s.state==='run'?'sn-run':s.id===curStep?'sn-active':s.state==='done'?'sn-done':'sn-idle'}">
+      ${s.state==='done'?'✓':s.id}
+    </div>
+    <div><div class="s-name">${s.name}</div><div class="s-hint">${s.hint}</div></div>
+  </div>`).join('');
+}
+
+function goStep(id) {
+  curStep = id;
+  buildSteps();
+  renderTeacher(id);
+}
+
+function renderTeacher(id) {
+  const fns = {1:vT1,2:vT2,3:vT3,4:vT4};
+  document.getElementById('main').innerHTML = (fns[id]||vLocked)(id);
+  document.getElementById('bc').innerHTML = `<span>小学数学 · 加法进位</span><span class="bc-sep">/</span><span class="bc-curr">${STEPS[id-1].name}</span>`;
+}
+
+function progBar(cur) {
+  return STEPS.map(s=>`<div class="prog-seg ${s.id<cur?'done':s.id===cur?'active':''}"></div>`).join('');
+}
+
+function vT1() { return `
+<div class="step-hero">
+  <div class="step-tag">步骤 1 / 9 · 已完成</div>
+  <div class="step-title">课题录入</div>
+  <div class="step-desc">输入课程基础信息，作为后续所有 AI 生成步骤的元数据基础。字段一旦确认，将固化到项目配置中。</div>
+  <div class="prog-row">${progBar(1)}</div>
+</div>
+<div class="mcard">
+  <div class="mc-head"><div class="mc-title">课题基础信息</div>${badge('done')}</div>
+  <div class="mc-body">
+    <div class="form-grid">
+      <div class="form-row"><div class="f-lbl">课程名称</div><input class="f-in" value="万以内的加法（一次进位）" readonly></div>
+      <div class="form-row"><div class="f-lbl">学段 / 年级</div><input class="f-in" value="小学 · 一年级下册" readonly></div>
+      <div class="form-row"><div class="f-lbl">核心素养</div><input class="f-in" value="数感、运算能力" readonly></div>
+      <div class="form-row"><div class="f-lbl">目标时长（分钟）</div><input class="f-in" value="5" readonly></div>
+      <div class="form-row form-full"><div class="f-lbl">补充说明</div>
+        <textarea class="f-ta" readonly>适合刚接触进位概念的学生，强调"满十进一"口诀，配合实物演示建立直觉。课程节奏偏慢，适合班级讲解使用。</textarea></div>
+    </div>
+  </div>
+  <div class="act-bar"><button class="btn btn-ghost">修改信息</button><span class="act-note">已于 13:55 保存</span></div>
+</div>`; }
+
+function vT2() { return `
+<div class="step-hero">
+  <div class="step-tag">步骤 2 / 9 · 已完成</div>
+  <div class="step-title">知识拆解</div>
+  <div class="step-desc">AI 分析课题，识别核心知识点、前置知识、易错点，作为结构规划的依据。</div>
+  <div class="prog-row">${progBar(2)}</div>
+</div>
+<div class="mcard">
+  <div class="mc-head"><div class="mc-title">AI 知识图谱</div>${badge('done')}</div>
+  <div class="mc-body">
+    ${[['前置知识','10 以内加法','学生已掌握不进位加法，本课为关键衔接点'],
+       ['核心概念','满十进一',  '凑十法口诀 + 数位表可视化演示'],
+       ['计算路径','拆数 → 凑十 → 相加','以 9+3 为主例，拆解为 3 帧逐步动画'],
+       ['常见易错','忘记加进位的 1','安排专项辨析练习与对比题'],
+    ].map(([tag,t,d])=>`
+    <div class="ol-item">
+      <div class="ol-num" style="width:56px;font-size:9.5px;border-radius:7px">${tag}</div>
+      <div><div class="ol-main">${t}</div><div class="ol-sub">${d}</div></div>
+    </div>`).join('')}
+  </div>
+  <div class="act-bar"><button class="btn btn-ghost">重新生成</button><span class="act-note">token 消耗：842</span></div>
+</div>`; }
+
+function vT3() { return `
+<div class="step-hero">
+  <div class="step-tag">步骤 3 / 9 · 已确认</div>
+  <div class="step-title">结构规划</div>
+  <div class="step-desc">确认 PPT 章节大纲与视频分镜结构。定稿后此内容将固化，进入内容生成阶段。</div>
+  <div class="prog-row">${progBar(3)}</div>
+</div>
+<div class="mcard">
+  <div class="mc-head"><div class="mc-title">教学大纲（5 节）</div>${badge('done')}</div>
+  <div class="mc-body">
+    ${[[1,'导入：生活场景引入','约 30 秒 · 1 张 PPT · 购物场景情境导入'],
+       [2,'概念讲解：满十进一','约 60 秒 · 2 张 PPT · 数位表 + 口诀演示'],
+       [3,'例题演示：9 + 3 = ?','约 90 秒 · 3 张 PPT · 三步拆解动画'],
+       [4,'巩固练习：8+5、7+6','约 60 秒 · 2 张 PPT · 学生独立练习'],
+       [5,'总结：口诀回顾',     '约 30 秒 · 1 张 PPT · 全课板书回顾'],
+    ].map(([n,t,d])=>`
+    <div class="ol-item"><div class="ol-num">${n}</div><div><div class="ol-main">${t}</div><div class="ol-sub">${d}</div></div></div>`).join('')}
+  </div>
+  <div class="act-bar"><button class="btn btn-ghost">调整大纲</button><button class="btn btn-primary">进入内容生成 →</button></div>
+</div>`; }
+
+function vT4() { return `
+<div class="step-hero">
+  <div class="step-tag">步骤 4 / 9 · AI 生成中</div>
+  <div class="step-title">内容生成</div>
+  <div class="step-desc">AI 根据大纲逐张生成 PPT 文字与说明。生成完成后可逐页编辑，确认后进入 PPT 合成。</div>
+  <div class="prog-row">${progBar(4)}</div>
+</div>
+<div class="mcard">
+  <div class="mc-head"><div class="mc-title">任务进度</div><span class="badge b-run"><span class="bdot blink"></span>生成中 3 / 5</span></div>
+  <div class="mc-body" style="padding-top:0">
+    <div class="log-body" style="background:var(--bg2);border-radius:8px;max-height:130px">
+      <div class="ll"><span class="lt">14:02:11</span><span class="lk">✓</span><span class="li">幻灯片 1 · 生活场景导入 完成</span></div>
+      <div class="ll"><span class="lt">14:02:19</span><span class="lk">✓</span><span class="li">幻灯片 2 · 概念讲解 完成</span></div>
+      <div class="ll"><span class="lt">14:02:33</span><span class="lk">✓</span><span class="li">幻灯片 3 · 例题演示第 1 步 完成</span></div>
+      <div class="ll"><span class="lt">14:02:47</span><span class="lr">⟳</span><span class="li">幻灯片 4 · 例题演示第 2、3 步 生成中…</span></div>
+    </div>
+  </div>
+</div>
+<div class="mcard">
+  <div class="mc-head"><div class="mc-title">已生成内容预览</div></div>
+  <div class="mc-body">
+    <div class="tab-bar">
+      <div class="tab on">幻灯片 1</div>
+      <div class="tab">幻灯片 2</div>
+      <div class="tab">幻灯片 3</div>
+      <div class="tab" style="color:var(--warn)">幻灯片 4 ···</div>
+    </div>
+    <div class="slide-canvas">
+      <div class="slide-num">第 1 张 · 导入</div>
+      <div class="slide-title">生活中的加法</div>
+      <div class="slide-body">🛒 妈妈买了 9 个苹果，又买了 3 个橙子<br>❓ 一共买了多少个水果？</div>
+      <div class="slide-math">9 + 3 = ?</div>
+    </div>
+  </div>
+  <div class="act-bar">
+    <button class="btn btn-ghost">✏ 编辑此页</button>
+    <button class="btn btn-ghost">← 上一页</button>
+    <span class="act-note">3 / 5 张已完成，等待 AI 生成剩余内容</span>
+  </div>
+</div>`; }
+
+function vLocked(id) { return `
+<div class="step-hero">
+  <div class="step-tag">步骤 ${id} / 9 · 等待中</div>
+  <div class="step-title">${STEPS[id-1].name}</div>
+  <div class="step-desc">上游步骤完成后此阶段将自动解锁。</div>
+  <div class="prog-row">${progBar(id)}</div>
+</div>
+<div class="mcard">
+  <div class="locked">
+    <div class="lock-icon">🔒</div>
+    <div class="lock-title">等待前置步骤完成</div>
+    <div class="lock-desc">「${STEPS[id-2]?.name||'上一步'}」完成后，此步骤将自动解锁并进入队列。</div>
+  </div>
+</div>`; }
+
+/* ── init ─────────────────────────────────────── */
+applyTheme(curTheme);
+setRole('admin');
+</script>
+</body>
+</html>

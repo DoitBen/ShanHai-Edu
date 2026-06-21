@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useAppStore } from "@/lib/store";
+import { DEMO_PASSWORD, isDemoMode } from "@/lib/demo-mode";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,8 +22,9 @@ import { cn } from "@/lib/utils";
 export function LoginScreen() {
   const login = useAppStore((s) => s.login);
   const go = useAppStore((s) => s.go);
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("shanhai2026");
+  const demoMode = isDemoMode();
+  const [username, setUsername] = useState(demoMode ? "admin" : "");
+  const [password, setPassword] = useState(demoMode ? DEMO_PASSWORD : "");
   const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,6 +33,10 @@ export function LoginScreen() {
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!demoMode && !username.trim()) {
+      setError("请输入用户名");
+      return;
+    }
     setLoading(true);
     setError(null);
     setTimeout(() => {
@@ -47,7 +53,7 @@ export function LoginScreen() {
 
   const fillDemo = (role: "admin" | "teacher") => {
     setUsername(role);
-    setPassword("shanhai2026");
+    setPassword(DEMO_PASSWORD);
     setError(null);
   };
 
@@ -127,7 +133,9 @@ export function LoginScreen() {
                 登录工作台
               </h2>
               <p className="mt-2 t-body text-slate-400">
-                登录以访问山海教育生产指挥台。
+                {demoMode
+                  ? "登录以访问山海教育生产指挥台。"
+                  : "当前为真实 API 模式，登录后将读取后端项目数据。"}
               </p>
             </div>
 
@@ -155,13 +163,15 @@ export function LoginScreen() {
                   <Label htmlFor="password" className="t-body font-medium text-slate-300">
                     密码
                   </Label>
-                  <button
-                    type="button"
-                    className="rounded t-caption text-slate-400 transition-colors hover:text-amber-300 focus-ring"
-                    onClick={() => toast.info("演示环境暂不支持找回密码")}
-                  >
-                    忘记密码？
-                  </button>
+                  {demoMode && (
+                    <button
+                      type="button"
+                      className="rounded t-caption text-slate-400 transition-colors hover:text-amber-300 focus-ring"
+                      onClick={() => toast.info("演示环境暂不支持找回密码")}
+                    >
+                      忘记密码？
+                    </button>
+                  )}
                 </div>
                 <div className="relative">
                   <Input
@@ -172,7 +182,7 @@ export function LoginScreen() {
                       setPassword(e.target.value);
                       clearError();
                     }}
-                    placeholder="请输入密码"
+                    placeholder={demoMode ? "请输入密码" : "真实 API 模式可留空"}
                     autoComplete="current-password"
                     className="h-12 rounded-lg border-white/[0.12] bg-white/[0.06] pr-12 text-base text-white placeholder:text-slate-500 focus-visible:ring-amber-500/[0.30]"
                   />
@@ -213,29 +223,31 @@ export function LoginScreen() {
               </Button>
             </form>
 
-            <div className="mt-8 rounded-lg border border-white/[0.10] bg-white/[0.045] p-4 backdrop-blur-sm">
-              <div className="mb-3 t-caption font-medium text-slate-400">
-                演示账号
+            {demoMode && (
+              <div className="mt-8 rounded-lg border border-white/[0.10] bg-white/[0.045] p-4 backdrop-blur-sm">
+                <div className="mb-3 t-caption font-medium text-slate-400">
+                  演示账号
+                </div>
+                <div className="grid gap-3">
+                  <DemoAccountButton
+                    label="管理员"
+                    desc="全部功能"
+                    credential={`admin / ${DEMO_PASSWORD}`}
+                    icon={<ShieldCheck className="h-4 w-4" />}
+                    active={username === "admin"}
+                    onClick={() => fillDemo("admin")}
+                  />
+                  <DemoAccountButton
+                    label="教师"
+                    desc="业务流程"
+                    credential={`teacher / ${DEMO_PASSWORD}`}
+                    icon={<UserRound className="h-4 w-4" />}
+                    active={username === "teacher"}
+                    onClick={() => fillDemo("teacher")}
+                  />
+                </div>
               </div>
-              <div className="grid gap-3">
-                <DemoAccountButton
-                  label="管理员"
-                  desc="全部功能"
-                  credential="admin / shanhai2026"
-                  icon={<ShieldCheck className="h-4 w-4" />}
-                  active={username === "admin"}
-                  onClick={() => fillDemo("admin")}
-                />
-                <DemoAccountButton
-                  label="教师"
-                  desc="业务流程"
-                  credential="teacher / shanhai2026"
-                  icon={<UserRound className="h-4 w-4" />}
-                  active={username === "teacher"}
-                  onClick={() => fillDemo("teacher")}
-                />
-              </div>
-            </div>
+            )}
 
             <p className="mt-10 text-center t-caption text-slate-500">
               山海教育工作台 v1.0 · 2026
@@ -333,23 +345,23 @@ function BrandBackground() {
       <div
         className="absolute inset-0"
         style={{
-          background:
-            "linear-gradient(135deg, #081425 0%, #0b1d32 42%, #0f2847 72%, #0a332f 100%)",
-        }}
-      />
-      <div
-        className="absolute inset-0 opacity-[0.045]"
-        style={{
-          backgroundImage:
-            "linear-gradient(rgba(255,255,255,.35) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.35) 1px, transparent 1px)",
-          backgroundSize: "56px 56px",
+          backgroundImage: "url('/login-bg.png')",
+          backgroundPosition: "center",
+          backgroundSize: "cover",
         }}
       />
       <div
         className="absolute inset-0"
         style={{
           background:
-            "radial-gradient(ellipse at 16% 12%, rgba(217,119,6,.16), transparent 34%), radial-gradient(ellipse at 86% 88%, rgba(20,184,166,.16), transparent 38%)",
+            "linear-gradient(90deg, rgba(5,14,28,.22) 0%, rgba(5,14,28,.38) 48%, rgba(5,14,28,.78) 100%)",
+        }}
+      />
+      <div
+        className="absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(ellipse at 18% 24%, rgba(217,119,6,.16), transparent 36%), radial-gradient(ellipse at 82% 88%, rgba(20,184,166,.12), transparent 38%)",
         }}
       />
     </div>

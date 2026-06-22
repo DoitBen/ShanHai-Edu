@@ -57,6 +57,29 @@ def write_current_version(
         return client.app.state.store.write_version(conn, project_id, node_id, content, "fixture", "fixture", status)
 
 
+TEST_DEPENDENCIES = {
+    "lesson_plan": ["textbook_parse"],
+    "ppt_assembly_plan": ["lesson_plan"],
+}
+
+
+def seed_approved_upstreams(client: TestClient, project: dict[str, Any], node_id: str) -> None:
+    store = client.app.state.store
+    project_id = project["project_id"]
+    with store.connect(Path(project["project_dir"])) as conn:
+        def seed(dep_id: str) -> None:
+            for upstream_id in TEST_DEPENDENCIES.get(dep_id, []):
+                seed(upstream_id)
+            state = store.node_state(conn, project_id, dep_id)
+            if state["status"] == "approved":
+                return
+            result = store.write_version(conn, project_id, dep_id, {"seeded": dep_id}, "fixture", "fixture", "approved")
+            store.update_current_version_status(conn, result["version_id"], "approved", approved=True)
+
+        for dependency_id in TEST_DEPENDENCIES.get(node_id, []):
+            seed(dependency_id)
+
+
 def table_rows(project: dict[str, Any], table: str) -> list[dict[str, Any]]:
     with sqlite3.connect(Path(project["project_dir"]) / "project.db") as conn:
         conn.row_factory = sqlite3.Row
@@ -67,6 +90,7 @@ def test_approve_records_approved_sample_and_debug_endpoint_returns_events(tmp_p
     client = make_client(tmp_path)
     project = create_project(client)
     project_id = project["project_id"]
+    seed_approved_upstreams(client, project, "lesson_plan")
     version = write_current_version(
         client,
         project,
@@ -127,6 +151,7 @@ def test_warning_override_records_rule_override_event(tmp_path: Path):
     client = make_client(tmp_path)
     project = create_project(client)
     project_id = project["project_id"]
+    seed_approved_upstreams(client, project, "ppt_assembly_plan")
     warning_content = {
         "page_count_target": 6,
         "page_type_quota": {

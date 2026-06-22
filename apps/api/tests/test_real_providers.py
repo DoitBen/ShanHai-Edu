@@ -1409,7 +1409,7 @@ def test_real_video_submit_success_exposes_provider_task_id(tmp_path: Path):
 
     generated = unwrap(client.post(f"/projects/{project_id}/nodes/final_video/generate", json={}))
 
-    assert generated["status"] == "running"
+    assert generated["status"] == "drafted"
     assert len(generated["tasks"]) == 2
     task = generated["tasks"][0]
     assert task["status"] == "queued"
@@ -1444,7 +1444,7 @@ def test_real_video_generate_respects_video_shot_limit_for_quota_safe_demo(tmp_p
 
     generated = unwrap(client.post(f"/projects/{project_id}/nodes/final_video/generate", json={"video_shot_limit": 1}))
 
-    assert generated["status"] == "running"
+    assert generated["status"] == "drafted"
     assert len(generated["tasks"]) == 1
     assert len(submitted_prompts) == 1
     assert generated["tasks"][0]["payload"]["shot_id"] == "shot_01"
@@ -2465,8 +2465,8 @@ def test_real_video_mode_ppt_export_requires_composed_final_video(tmp_path: Path
 
     response = client.post(f"/projects/{project_id}/export/ppt")
 
-    assert response.status_code == 500
-    assert response.json()["error"]["code"] == "PPT_EXPORT_FAILED"
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "PPT_ARTIFACT_NOT_READY"
     final_video = Path(project["project_dir"]) / "outputs" / "final_video.mp4"
     assert not final_video.exists()
 

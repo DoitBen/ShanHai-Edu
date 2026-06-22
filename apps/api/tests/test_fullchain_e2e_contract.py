@@ -235,6 +235,15 @@ def generate_and_approve(client: TestClient, project_id: str, node_id: str) -> d
     return unwrap_ok(client.get(f"/projects/{project_id}/nodes/{node_id}"))
 
 
+def seed_ppt_artifact_upstreams(client: TestClient, project: dict[str, Any]) -> None:
+    store = client.app.state.store
+    project_id = project["project_id"]
+    with store.connect(Path(project["project_dir"])) as conn:
+        for node_id in ["ppt_page_script", "ppt_visual_asset"]:
+            result = store.write_version(conn, project_id, node_id, {"seeded": node_id}, "fixture", "fixture", "approved")
+            store.update_current_version_status(conn, result["version_id"], "approved", approved=True)
+
+
 def test_real_text_placeholder_video_fullchain_exports_ppt_with_mp4(tmp_path: Path, monkeypatch):
     client = make_client(tmp_path, monkeypatch)
     assert client.app.state.settings.provider_mode == "real"
@@ -270,7 +279,7 @@ def test_real_text_placeholder_video_fullchain_exports_ppt_with_mp4(tmp_path: Pa
             json={"model": "veo_3_1-fast", "size": "1280x720", "mode": "reference", "full_run": True},
         )
     )
-    assert final_video["status"] == "running"
+    assert final_video["status"] == "drafted"
     assert final_video["video_path"] == "outputs/final_video.mp4"
     assert final_video["content"]["video_path"] == "outputs/final_video.mp4"
     assert len(final_video["tasks"]) == 6
@@ -280,10 +289,13 @@ def test_real_text_placeholder_video_fullchain_exports_ppt_with_mp4(tmp_path: Pa
     assert downloaded_mp4.headers["content-type"].startswith("video/mp4")
     assert downloaded_mp4.content.startswith(b"\x00\x00\x00 ftyp")
 
+    seed_ppt_artifact_upstreams(client, project)
+    artifact = unwrap_ok(client.post(f"/projects/{project_id}/nodes/pptx_artifact/generate", json={}))
     exported = unwrap_ok(client.post(f"/projects/{project_id}/export/ppt", json={}))
     assert exported["filename"].endswith(".pptx")
     assert exported["download_url"] == f"/projects/{project_id}/exports/{exported['filename']}"
     assert exported["video_path"] == "outputs/final_video.mp4"
+    assert exported["path"] == artifact["content"]["pptx_path"]
 
     downloaded_ppt = client.get(exported["download_url"])
     assert downloaded_ppt.status_code == 200

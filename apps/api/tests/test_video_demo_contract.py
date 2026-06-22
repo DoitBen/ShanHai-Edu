@@ -252,7 +252,7 @@ def test_fake_video_generation_chain_creates_queryable_tasks(tmp_path: Path):
             json={"model": "veo_3_1-fast", "size": "1280x720", "mode": "reference", "full_run": True},
         )
     )
-    assert video["status"] == "running"
+    assert video["status"] == "drafted"
     assert video["video_path"] == "outputs/final_video.mp4"
     assert video["content"]["clip_count"] == 6
     assert video["content"]["video_path"] == "outputs/final_video.mp4"
@@ -262,7 +262,7 @@ def test_fake_video_generation_chain_creates_queryable_tasks(tmp_path: Path):
     assert final_video_path.read_bytes().startswith(b"\x00\x00\x00 ftyp")
 
     final_node = unwrap_ok(client.get(f"/projects/{project_id}/nodes/final_video"))
-    assert final_node["status"] == "running"
+    assert final_node["status"] == "drafted"
     assert final_node["content"]["clip_count"] == 6
     assert final_node["content"]["video_path"] == "outputs/final_video.mp4"
 

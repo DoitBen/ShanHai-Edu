@@ -161,7 +161,7 @@ def test_video_chain_creates_tasks_without_real_provider(tmp_path: Path):
         unwrap(client.post(f"/projects/{project_id}/nodes/{node_id}/approve"))
 
     video = unwrap(client.post(f"/projects/{project_id}/nodes/final_video/generate"))
-    assert video["status"] == "running"
+    assert video["status"] == "drafted"
     assert len(video["tasks"]) == 6
 
     tasks = unwrap(client.get(f"/projects/{project_id}/tasks"))

@@ -59,6 +59,31 @@ def write_current_version(
         return client.app.state.store.write_version(conn, project_id, node_id, content, "fixture", "fixture", status)
 
 
+TEST_DEPENDENCIES = {
+    "ppt_assembly_plan": ["lesson_plan"],
+    "ppt_page_script": ["ppt_assembly_plan", "character_dict", "visual_contract"],
+    "pptx_artifact": ["ppt_page_script", "ppt_visual_asset"],
+    "final_video": ["storyboard", "intro_video_script"],
+}
+
+
+def seed_approved_upstreams(client: TestClient, project: dict[str, Any], node_id: str) -> None:
+    store = client.app.state.store
+    project_id = project["project_id"]
+    with store.connect(Path(project["project_dir"])) as conn:
+        def seed(dep_id: str) -> None:
+            for upstream_id in TEST_DEPENDENCIES.get(dep_id, []):
+                seed(upstream_id)
+            state = store.node_state(conn, project_id, dep_id)
+            if state["status"] == "approved":
+                return
+            result = store.write_version(conn, project_id, dep_id, {"seeded": dep_id}, "fixture", "fixture", "approved")
+            store.update_current_version_status(conn, result["version_id"], "approved", approved=True)
+
+        for dependency_id in TEST_DEPENDENCIES.get(node_id, []):
+            seed(dependency_id)
+
+
 def write_pptx(project: dict[str, Any], rel_path: str, visible_text: str) -> None:
     pptx_path = Path(project["project_dir"]) / rel_path
     pptx_path.parent.mkdir(parents=True, exist_ok=True)
@@ -128,6 +153,7 @@ def test_r006_blocks_ppt_page_script_approve(tmp_path: Path):
     client = make_client(tmp_path)
     project = create_project(client)
     project_id = project["project_id"]
+    seed_approved_upstreams(client, project, "ppt_page_script")
     broken = {
         "pages": [
             {
@@ -153,6 +179,7 @@ def test_r030_blocks_pptx_artifact_without_visual_assets(tmp_path: Path):
     client = make_client(tmp_path)
     project = create_project(client)
     project_id = project["project_id"]
+    seed_approved_upstreams(client, project, "pptx_artifact")
     write_pptx(project, "exports/no-visual.pptx", "学生可见层干净")
     broken = {
         "pptx_path": "exports/no-visual.pptx",
@@ -175,6 +202,7 @@ def test_r026_blocks_internal_text_in_actual_pptx_visible_shapes(tmp_path: Path)
     client = make_client(tmp_path)
     project = create_project(client)
     project_id = project["project_id"]
+    seed_approved_upstreams(client, project, "pptx_artifact")
     write_pptx(project, "exports/internal-visible.pptx", "这里是学生可见层 QA 检查点")
     clean_json = {
         "pptx_path": "exports/internal-visible.pptx",
@@ -200,6 +228,7 @@ def test_r026_ignores_notes_text_when_actual_pptx_visible_shapes_are_clean(tmp_p
     client = make_client(tmp_path)
     project = create_project(client)
     project_id = project["project_id"]
+    seed_approved_upstreams(client, project, "pptx_artifact")
     write_pptx(project, "exports/clean-visible.pptx", "学生可见层干净")
     clean_visible = {
         "pptx_path": "exports/clean-visible.pptx",
@@ -223,6 +252,7 @@ def test_r026_blocks_pptx_artifact_without_pptx_path(tmp_path: Path):
     client = make_client(tmp_path)
     project = create_project(client)
     project_id = project["project_id"]
+    seed_approved_upstreams(client, project, "pptx_artifact")
     content = {
         "slide_count": 1,
         "notes_count": 0,
@@ -244,6 +274,7 @@ def test_r026_blocks_pptx_artifact_when_file_is_missing(tmp_path: Path):
     client = make_client(tmp_path)
     project = create_project(client)
     project_id = project["project_id"]
+    seed_approved_upstreams(client, project, "pptx_artifact")
     content = {
         "pptx_path": "exports/missing.pptx",
         "slide_count": 1,
@@ -266,6 +297,7 @@ def test_r026_blocks_pptx_artifact_when_path_is_outside_project(tmp_path: Path):
     client = make_client(tmp_path)
     project = create_project(client)
     project_id = project["project_id"]
+    seed_approved_upstreams(client, project, "pptx_artifact")
     content = {
         "pptx_path": "../outside.pptx",
         "slide_count": 1,
@@ -285,6 +317,7 @@ def test_r026_blocks_pptx_artifact_when_path_is_not_pptx(tmp_path: Path):
     client = make_client(tmp_path)
     project = create_project(client)
     project_id = project["project_id"]
+    seed_approved_upstreams(client, project, "pptx_artifact")
     bad_path = Path(project["project_dir"]) / "exports" / "artifact.txt"
     bad_path.parent.mkdir(parents=True, exist_ok=True)
     bad_path.write_text("not a pptx", encoding="utf-8")
@@ -307,6 +340,7 @@ def test_r026_blocks_pptx_artifact_when_pptx_cannot_be_parsed(tmp_path: Path):
     client = make_client(tmp_path)
     project = create_project(client)
     project_id = project["project_id"]
+    seed_approved_upstreams(client, project, "pptx_artifact")
     bad_path = Path(project["project_dir"]) / "exports" / "broken.pptx"
     bad_path.parent.mkdir(parents=True, exist_ok=True)
     bad_path.write_text("not a real pptx", encoding="utf-8")
@@ -329,6 +363,7 @@ def test_r001_blocks_final_video_non_male_zh_voice(tmp_path: Path):
     client = make_client(tmp_path)
     project = create_project(client)
     project_id = project["project_id"]
+    seed_approved_upstreams(client, project, "final_video")
     broken = {
         "clip_count": 1,
         "clips": [],
@@ -351,6 +386,7 @@ def test_warning_requires_override_and_override_is_logged(tmp_path: Path):
     client = make_client(tmp_path)
     project = create_project(client)
     project_id = project["project_id"]
+    seed_approved_upstreams(client, project, "ppt_assembly_plan")
     warning_content = {
         "page_count_target": 6,
         "page_type_quota": {

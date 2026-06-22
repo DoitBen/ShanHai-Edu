@@ -94,6 +94,7 @@ providers:
 nodes:
   # -------- 第 0 步：项目元数据 + 配置 + 视觉契约 + 角色字典 --------
   - id: project_meta
+    runtime_enabled: true
     step: 0
     title: 项目元数据
     branch: shared
@@ -103,6 +104,7 @@ nodes:
     optional: false
 
   - id: project_config
+    runtime_enabled: true
     step: 0
     title: 项目配置
     branch: shared
@@ -112,6 +114,7 @@ nodes:
     optional: false
 
   - id: visual_contract
+    runtime_enabled: true
     step: 0
     title: 视觉契约
     branch: shared
@@ -121,6 +124,7 @@ nodes:
     optional: false
 
   - id: character_dict
+    runtime_enabled: true
     step: 0
     title: 角色字典
     branch: shared
@@ -129,12 +133,25 @@ nodes:
     prompts_dir: null  # 表单填写为主，可选 AI 辅助
     optional: false
 
+  # -------- 第 0.5 步：教材解析桥接节点 --------
+  - id: textbook_parse
+    runtime_enabled: true
+    runtime_role: bridge
+    step: 0.5
+    title: 教材解析与核验
+    branch: shared
+    depends_on: [project_meta]
+    schema: schemas/textbook_parse.schema.json
+    prompts_dir: null
+    optional: false
+
   # -------- 第 1 步：公开课教案 --------
   - id: lesson_plan
+    runtime_enabled: true
     step: 1
     title: 公开课教案
     branch: shared
-    depends_on: [project_meta, project_config]
+    depends_on: [textbook_parse]
     schema: schemas/lesson_plan.schema.json
     prompts_dir: prompts/node_01_lesson_plan/
     hard_stop: true  # 必须 user_approve 后才能继续
@@ -142,6 +159,7 @@ nodes:
 
   # -------- 第 1.5 步：导入设计选择集 --------
   - id: intro_selection
+    runtime_enabled: true
     step: 1.5
     title: 导入设计选择集
     branch: intro_video
@@ -153,6 +171,7 @@ nodes:
 
   # -------- PPT 分支：第 2 步 PPT 总装方案 --------
   - id: ppt_assembly_plan
+    runtime_enabled: true
     step: 2
     title: PPT 总装方案
     branch: ppt
@@ -164,6 +183,7 @@ nodes:
 
   # -------- PPT 分支：第 3 步 PPT 页面脚本 --------
   - id: ppt_page_script
+    runtime_enabled: true
     step: 3
     title: PPT 页面脚本
     branch: ppt
@@ -176,6 +196,7 @@ nodes:
 
   # -------- PPT 分支：第 5A 步 PPT 视觉资产 --------
   - id: ppt_visual_asset
+    runtime_enabled: true
     step: 5
     title: PPT 视觉资产
     branch: ppt
@@ -190,6 +211,7 @@ nodes:
 
   # -------- 导入视频分支：第 4B 步 文稿 --------
   - id: intro_video_script
+    runtime_enabled: true
     step: 4
     title: 导入视频文稿
     branch: intro_video
@@ -202,6 +224,7 @@ nodes:
 
   # -------- 导入视频分支：第 4C 步 剧本 --------
   - id: intro_video_screenplay
+    runtime_enabled: true
     step: 4
     title: 导入视频剧本
     branch: intro_video
@@ -213,6 +236,7 @@ nodes:
 
   # -------- 导入视频分支：第 5B 步 视频资产 --------
   - id: intro_video_asset
+    runtime_enabled: true
     step: 5
     title: 导入视频资产
     branch: intro_video
@@ -231,6 +255,7 @@ nodes:
 
   # -------- 导入视频分支：第 6 步 分镜脚本 --------
   - id: storyboard
+    runtime_enabled: true
     step: 6
     title: 分镜脚本
     branch: intro_video
@@ -244,6 +269,7 @@ nodes:
 
   # -------- PPT 分支：第 7 步 ppt-master 装配 --------
   - id: pptx_artifact
+    runtime_enabled: true
     step: 7
     title: PPT 装配
     branch: ppt
@@ -257,6 +283,7 @@ nodes:
 
   # -------- 导入视频分支：第 8 步 视频生成 + 拼接 --------
   - id: final_video
+    runtime_enabled: true
     step: 8
     title: 视频生成+中文男声+拼接
     branch: intro_video
@@ -275,6 +302,7 @@ nodes:
 
   # -------- 第 9 步：最终交付 --------
   - id: final_delivery
+    runtime_enabled: false
     step: 9
     title: 最终交付
     branch: shared

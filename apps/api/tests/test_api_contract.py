@@ -1,8 +1,10 @@
 from pathlib import Path
+import shutil
 
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.workflow_config import WorkflowConfig
 from app.settings import Settings
 from app.workflow_config import WorkflowConfig
 
@@ -107,6 +109,36 @@ def test_workflow_runtime_nodes_include_yaml_nodes_and_textbook_bridge():
     assert "lesson_plan" in runtime_ids
     assert dependencies["intro_video_script"] == ["intro_selection", "lesson_plan"]
     assert dependencies["lesson_plan"] == ["textbook_parse"]
+
+
+def test_workflow_runtime_nodes_are_selected_by_yaml_runtime_flags(tmp_path: Path):
+    workflow_root = tmp_path / "workflow"
+    shutil.copytree(Path(__file__).resolve().parents[3] / "workflow", workflow_root)
+    workflow_path = workflow_root / "workflow.yaml"
+    text = workflow_path.read_text(encoding="utf-8")
+    text = text.replace(
+        "  - id: pptx_artifact\n    runtime_enabled: true",
+        "  - id: pptx_artifact\n    runtime_enabled: false",
+    )
+    workflow_path.write_text(text, encoding="utf-8")
+
+    workflow = WorkflowConfig(workflow_root)
+
+    assert "pptx_artifact" not in workflow.runtime_node_ids()
+    assert "pptx_artifact" not in workflow.runtime_dependencies()
+    assert "pptx_artifact" in workflow.node_ids()
+
+
+def test_workflow_config_no_longer_uses_python_mvp_runtime_constants():
+    source = (Path(__file__).resolve().parents[1] / "app" / "workflow_config.py").read_text(encoding="utf-8")
+    forbidden_names = [
+        "MVP" + "_RUNTIME_NODE_IDS",
+        "MVP" + "_NODE_IDS",
+        "MVP" + "_DEPENDENCIES",
+    ]
+
+    for name in forbidden_names:
+        assert name not in source
 
 
 def test_environment_variables_override_local_env_files(tmp_path: Path, monkeypatch):

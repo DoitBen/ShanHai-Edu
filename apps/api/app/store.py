@@ -9,7 +9,7 @@ from typing import Any
 
 from fastapi import UploadFile
 
-from .workflow_config import MVP_NODE_IDS, WorkflowConfig
+from .workflow_config import WorkflowConfig
 
 
 def now_iso() -> str:
@@ -58,7 +58,7 @@ class ProjectStore:
                     str(project_dir),
                 ),
             )
-            node_ids = workflow.runtime_node_ids() if workflow else MVP_NODE_IDS
+            node_ids = workflow.runtime_node_ids() if workflow else []
             for node_id in node_ids:
                 status = "approved" if node_id in {"project_meta", "project_config"} else "not_started"
                 conn.execute(

@@ -252,7 +252,7 @@ def test_fake_video_generation_chain_creates_queryable_tasks(tmp_path: Path):
             json={"model": "veo_3_1-fast", "size": "1280x720", "mode": "reference", "full_run": True},
         )
     )
-    assert video["status"] == "drafted"
+    assert video["status"] == "needs_review"
     assert video["video_path"] == "outputs/final_video.mp4"
     assert video["content"]["clip_count"] == 6
     assert video["content"]["video_path"] == "outputs/final_video.mp4"
@@ -262,7 +262,7 @@ def test_fake_video_generation_chain_creates_queryable_tasks(tmp_path: Path):
     assert final_video_path.read_bytes().startswith(b"\x00\x00\x00 ftyp")
 
     final_node = unwrap_ok(client.get(f"/projects/{project_id}/nodes/final_video"))
-    assert final_node["status"] == "drafted"
+    assert final_node["status"] == "needs_review"
     assert final_node["content"]["clip_count"] == 6
     assert final_node["content"]["video_path"] == "outputs/final_video.mp4"
 
@@ -276,6 +276,31 @@ def test_fake_video_generation_chain_creates_queryable_tasks(tmp_path: Path):
     assert downloaded.status_code == 200
     assert downloaded.headers["content-type"].startswith("video/mp4")
     assert downloaded.content == final_video_path.read_bytes()
+
+
+def test_video_branch_generates_each_node_after_previous_node_is_approved(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project(client)
+    project_id = project["project_id"]
+    upload_textbook(client, project_id)
+
+    for node_id in ["textbook_parse", "lesson_plan", "intro_selection"]:
+        generated = unwrap_ok(client.post(f"/projects/{project_id}/nodes/{node_id}/generate", json={}))
+        assert generated["status"] == "needs_review"
+        unwrap_ok(client.post(f"/projects/{project_id}/nodes/{node_id}/approve", json={}))
+    generate_and_approve_shared_visual_context(client, project_id)
+
+    for node_id in ["intro_video_script", "intro_video_screenplay", "intro_video_asset", "storyboard"]:
+        generated = unwrap_ok(client.post(f"/projects/{project_id}/nodes/{node_id}/generate", json={}))
+        assert generated["status"] == "needs_review"
+        assert generated["content"]
+        unwrap_ok(client.post(f"/projects/{project_id}/nodes/{node_id}/approve", json={}))
+
+    final_video = unwrap_ok(client.post(f"/projects/{project_id}/nodes/final_video/generate", json={"full_run": True}))
+    assert final_video["node_id"] == "final_video"
+    assert final_video["status"] == "needs_review"
+    assert final_video["content"]["clip_count"] == 6
+    assert Path(project["project_dir"], final_video["content"]["video_path"]).exists()
 
 
 def test_fake_video_generation_reuses_existing_final_video_output(tmp_path: Path):
@@ -393,7 +418,7 @@ def test_video_node_edit_rejects_invalid_references_and_shapes(tmp_path: Path):
                         "main_subject": "卡通披萨平均分情境",
                         "reference_image_ids": ["missing_asset"],
                         "narration_slice": "这一份是整体的二分之一。",
-                        "model_prompt": "旁白（男声，中文）：这一份是整体的二分之一。禁止英文配音。",
+                        "model_prompt": "中文旁白：这一份是整体的二分之一。禁止英文配音。",
                     }
                 ]
             }

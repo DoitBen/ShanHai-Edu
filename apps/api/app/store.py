@@ -498,7 +498,7 @@ class ProjectStore:
             if dep_row is None or dep_row["status"] not in {"approved", "skipped"}:
                 deps_passable = False
                 break
-        is_artifact = node_id in {"pptx_artifact", "final_video"}
+        is_artifact = node_id in {"pptx_artifact", "final_video", "final_delivery"}
         has_version = bool(state.get("current_version_id"))
         return {
             "can_generate": deps_passable and status in {"not_started", "drafted", "needs_review", "blocked"},
@@ -511,7 +511,19 @@ class ProjectStore:
     def _manifest_artifact(self, content: dict[str, Any] | None) -> dict[str, Any] | None:
         if not isinstance(content, dict):
             return None
-        artifact_keys = ["download_url", "pptx_path", "video_path"]
+        artifact_keys = [
+            "download_url",
+            "pptx_path",
+            "video_path",
+            "lesson_plan_path",
+            "pptx_final_path",
+            "video_final_path",
+            "delivery_manifest_path",
+            "gate_result_json_path",
+            "time_stats_md_path",
+            "error_code",
+            "error_message",
+        ]
         artifact = {key: content[key] for key in artifact_keys if content.get(key)}
         return artifact or None
 

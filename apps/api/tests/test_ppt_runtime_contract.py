@@ -136,7 +136,7 @@ def test_ppt_runtime_manifest_and_artifact_generation(tmp_path: Path):
 
     manifest = unwrap_ok(client.get(f"/projects/{project_id}/manifest"))
     states = {node["node_id"]: node["status"] for node in manifest["nodes"]}
-    assert "final_delivery" not in states
+    assert states["final_delivery"] == "not_started"
     for node_id in PPT_RUNTIME_NODE_IDS:
         assert states[node_id] == "not_started"
 
@@ -191,7 +191,163 @@ def test_ppt_runtime_manifest_and_artifact_generation(tmp_path: Path):
     final_manifest = unwrap_ok(client.get(f"/projects/{project_id}/manifest"))
     final_states = {node["node_id"]: node["status"] for node in final_manifest["nodes"]}
     assert final_states["pptx_artifact"] == "approved"
-    assert "final_delivery" not in final_states
+    assert final_states["final_delivery"] == "not_started"
+
+
+def test_final_delivery_generates_minimal_exports_manifest_with_pptx_and_video(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project(client)
+    project_id = project["project_id"]
+    project_dir = Path(project["project_dir"])
+    with client.app.state.store.connect(project_dir) as conn:
+        pptx_path = project_dir / "exports" / "deck.pptx"
+        pptx_path.write_bytes(b"pptx")
+        video_path = project_dir / "outputs" / "final_video.mp4"
+        video_path.parent.mkdir(parents=True, exist_ok=True)
+        video_path.write_bytes(b"video")
+        lesson = client.app.state.store.write_version(
+            conn,
+            project_id,
+            "lesson_plan",
+            {"lesson_plan_markdown": "# lesson"},
+            "fixture",
+            "fixture",
+            "approved",
+        )
+        pptx = client.app.state.store.write_version(
+            conn,
+            project_id,
+            "pptx_artifact",
+            {"pptx_path": "exports/deck.pptx", "download_url": f"/projects/{project_id}/exports/deck.pptx"},
+            "fixture",
+            "fixture",
+            "approved",
+        )
+        video = client.app.state.store.write_version(
+            conn,
+            project_id,
+            "final_video",
+            {"video_path": "outputs/final_video.mp4", "clip_count": 1},
+            "fixture",
+            "fixture",
+            "approved",
+        )
+
+    generated = unwrap_ok(client.post(f"/projects/{project_id}/nodes/final_delivery/generate", json={}))
+    content = generated["content"]
+
+    assert generated["node_id"] == "final_delivery"
+    assert generated["status"] == "needs_review"
+    assert content["lesson_plan_path"] == "exports/final_delivery/lesson_plan.md"
+    assert content["pptx_final_path"] == "exports/final_delivery/deck.pptx"
+    assert content["video_final_path"] == "exports/final_delivery/final_video.mp4"
+    assert content["delivery_manifest_path"] == "exports/final_delivery/delivery_manifest.json"
+    assert content["gate_passed"] is True
+    assert content["source_versions"] == {
+        "lesson_plan": lesson["version_id"],
+        "pptx_artifact": pptx["version_id"],
+        "final_video": video["version_id"],
+    }
+    assert (project_dir / content["lesson_plan_path"]).exists()
+    assert (project_dir / content["pptx_final_path"]).read_bytes() == b"pptx"
+    assert (project_dir / content["video_final_path"]).read_bytes() == b"video"
+    manifest = json.loads((project_dir / content["delivery_manifest_path"]).read_text(encoding="utf-8"))
+    assert manifest["artifacts"]["lesson_plan"] == content["lesson_plan_path"]
+    assert manifest["artifacts"]["pptx"] == content["pptx_final_path"]
+    assert manifest["artifacts"]["video"] == content["video_final_path"]
+
+
+def test_final_delivery_blocks_when_required_video_missing(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project(client)
+    project_id = project["project_id"]
+    project_dir = Path(project["project_dir"])
+    with client.app.state.store.connect(project_dir) as conn:
+        pptx_path = project_dir / "exports" / "deck.pptx"
+        pptx_path.write_bytes(b"pptx")
+        client.app.state.store.write_version(
+            conn,
+            project_id,
+            "lesson_plan",
+            {"lesson_plan_markdown": "# lesson"},
+            "fixture",
+            "fixture",
+            "approved",
+        )
+        client.app.state.store.write_version(
+            conn,
+            project_id,
+            "pptx_artifact",
+            {"pptx_path": "exports/deck.pptx", "download_url": f"/projects/{project_id}/exports/deck.pptx"},
+            "fixture",
+            "fixture",
+            "approved",
+        )
+
+    response = client.post(f"/projects/{project_id}/nodes/final_delivery/generate", json={})
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["error"]["code"] == "GENERATION_INPUT_INVALID"
+    assert "FINAL_VIDEO_NOT_READY" in payload["error"]["message"]
+    node = unwrap_ok(client.get(f"/projects/{project_id}/nodes/final_delivery"))
+    assert node["status"] == "blocked"
+    assert node["content"]["error_code"] == "FINAL_VIDEO_NOT_READY"
+
+
+def test_final_delivery_allows_skipped_video_when_intro_video_disabled(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = unwrap_ok(
+        client.post(
+            "/projects",
+            json={
+                "name": "关闭导入视频也可交付",
+                "subject": "math",
+                "grade": "2",
+                "textbook_version": "renjiao",
+                "volume": "shang",
+                "lesson_type": "public",
+                "needs_intro_video": False,
+            },
+        )
+    )
+    project_id = project["project_id"]
+    project_dir = Path(project["project_dir"])
+    with client.app.state.store.connect(project_dir) as conn:
+        pptx_path = project_dir / "exports" / "deck.pptx"
+        pptx_path.write_bytes(b"pptx")
+        lesson = client.app.state.store.write_version(
+            conn,
+            project_id,
+            "lesson_plan",
+            {"lesson_plan_markdown": "# lesson"},
+            "fixture",
+            "fixture",
+            "approved",
+        )
+        pptx = client.app.state.store.write_version(
+            conn,
+            project_id,
+            "pptx_artifact",
+            {"pptx_path": "exports/deck.pptx", "download_url": f"/projects/{project_id}/exports/deck.pptx"},
+            "fixture",
+            "fixture",
+            "approved",
+        )
+
+    generated = unwrap_ok(client.post(f"/projects/{project_id}/nodes/final_delivery/generate", json={}))
+    content = generated["content"]
+
+    assert generated["status"] == "needs_review"
+    assert content["video_final_path"] is None
+    assert content["source_versions"] == {
+        "lesson_plan": lesson["version_id"],
+        "pptx_artifact": pptx["version_id"],
+        "final_video": None,
+    }
+    manifest = json.loads((project_dir / content["delivery_manifest_path"]).read_text(encoding="utf-8"))
+    assert manifest["artifacts"]["video"] is None
+    assert manifest["skipped"]["final_video"] is True
 
 
 def test_manifest_exposes_workflow_contract_capabilities_and_artifacts(tmp_path: Path):

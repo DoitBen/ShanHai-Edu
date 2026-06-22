@@ -48,7 +48,7 @@ node_id: storyboard
 **R043 强约束**：每条 model_prompt 必须包含：
 
 ```
-旁白（男声，中文）：[narration_slice 内容]
+中文旁白：[narration_slice 内容]
 画面：[镜头主体描述]
 风格：[visual_contract.style_keywords]
 角色：[引用 character_dict 中的多视角描述]
@@ -58,7 +58,7 @@ node_id: storyboard
 模板示例：
 
 ```
-旁白（男声，中文）：小明站在操场上，看着同学们绕着操场跑步。
+中文旁白：小明站在操场上，看着同学们绕着操场跑步。
 画面：俯视视角，卡通扁平风格，操场是绿色椭圆形跑道，小明在中心位置仰头观察。
 风格：扁平、明亮、低饱和度。
 角色：小明 - 二年级男生，正面：圆脸短发，蓝色T恤白短裤，运动鞋。
@@ -69,7 +69,7 @@ node_id: storyboard
 
 - 引用的 reference_image_ids 必须落在 `08B_导入视频资产/` 目录（R012）
 - 不得引用 PPT 资产 / contact sheet / 候选视频抽帧
-- model_prompt 不含中文男声硬约束句即被 R043 拒
+- model_prompt 不含中文旁白和禁英文配音句即被 R043 拒
 - narration_slice 拼接缺漏会被 R041 拒
 
 {{include shared/output_format_json.md}}

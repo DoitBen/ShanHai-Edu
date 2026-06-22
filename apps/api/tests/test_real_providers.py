@@ -872,7 +872,7 @@ def test_real_provider_mode_generates_video_script_chain_with_shared_llm(tmp_pat
     storyboard = unwrap(client.get(f"/projects/{project_id}/nodes/storyboard"))
     assert len(storyboard["content"]["shots"]) == 6
     assert storyboard["content"]["shots"][0]["shot_id"] == "shot_01"
-    assert "旁白（男声，中文）" in storyboard["content"]["shots"][0]["model_prompt"]
+    assert "中文旁白" in storyboard["content"]["shots"][0]["model_prompt"]
     script = unwrap(client.get(f"/projects/{project_id}/nodes/intro_video_script"))
     assert script["content"]["anchor_to_lesson"] == "用苹果、铅笔等物品引出 1-5 的数量意义。"
     assert script["content"]["narration_full_text"].endswith("用苹果、铅笔等物品引出 1-5 的数量意义。")
@@ -896,7 +896,7 @@ def test_storyboard_prompt_omits_large_data_image_payloads_but_keeps_asset_refs(
                         "reference_image_ids": ["asset_ref_01"],
                         "narration_slice": "认识数字 1。",
                         "subtitle": "认识数字 1",
-                        "model_prompt": "旁白（男声，中文）：认识数字 1。\n画面：卡通桌面数数。\n禁止英文配音。",
+                        "model_prompt": "中文旁白：认识数字 1。\n画面：卡通桌面数数。\n禁止英文配音。",
                         "first_frame_test_status": "passed",
                         "first_frame_asset_id": "asset_ref_01",
                     }
@@ -1036,7 +1036,7 @@ def test_storyboard_normalization_expands_weak_model_prompt_for_video_provider()
                     "duration": 10,
                     "subject": "卡通小羊排队，结绳记录数量",
                     "subtitle": "这个结绳记录了多少只羊？",
-                    "model_prompt": "旁白（男声，中文），禁止英文配音",
+                    "model_prompt": "中文旁白，禁止英文配音",
                 }
             ]
         },
@@ -1051,7 +1051,7 @@ def test_storyboard_normalization_expands_weak_model_prompt_for_video_provider()
 
     prompt = normalized["shots"][0]["model_prompt"]
     assert normalized["shots"][0]["shot_id"] == "shot_01"
-    assert "旁白（男声，中文）：" in prompt
+    assert "中文旁白：" in prompt
     assert "画面：" in prompt
     assert "卡通小羊排队，结绳记录数量" in prompt
     assert "禁止英文配音" in prompt
@@ -1192,7 +1192,7 @@ def _create_project_with_approved_storyboard(client: TestClient, name: str = "�
                 "reference_image_ids": ["asset_ref_01"],
                 "narration_slice": "认识数字 1。",
                 "subtitle": "认识数字 1",
-                "model_prompt": "旁白（男声，中文）：认识数字 1。\n画面：卡通桌面数数。\n禁止英文配音。",
+                "model_prompt": "中文旁白：认识数字 1。\n画面：卡通桌面数数。\n禁止英文配音。",
                 "first_frame_test_status": "passed",
                 "first_frame_asset_id": "asset_ref_01",
             },
@@ -1204,7 +1204,7 @@ def _create_project_with_approved_storyboard(client: TestClient, name: str = "�
                 "reference_image_ids": ["asset_ref_02"],
                 "narration_slice": "认识数字 2。",
                 "subtitle": "认识数字 2",
-                "model_prompt": "旁白（男声，中文）：认识数字 2。\n画面：卡通桌面数数。\n禁止英文配音。",
+                "model_prompt": "中文旁白：认识数字 2。\n画面：卡通桌面数数。\n禁止英文配音。",
                 "first_frame_test_status": "passed",
                 "first_frame_asset_id": "asset_ref_02",
             },
@@ -1566,7 +1566,7 @@ def test_real_video_submit_creates_tasks_for_all_storyboard_shots_and_uses_refer
     assert [task["provider_task_id"] for task in generated["tasks"]] == ["octo_task_001", "octo_task_002"]
     assert [task["download_path"] for task in generated["tasks"]] == ["clips/shot_01.mp4", "clips/shot_02.mp4"]
     assert submitted_payloads[0]["model"] == "omni_flash-10s"
-    assert submitted_payloads[0]["prompt"].startswith("旁白（男声，中文）：认识数字 1")
+    assert submitted_payloads[0]["prompt"].startswith("中文旁白：认识数字 1")
     assert submitted_payloads[0]["images"] == ["https://cdn.example/asset_ref_01.png"]
     assert submitted_payloads[1]["images"] == ["https://cdn.example/asset_ref_02.png"]
 
@@ -1948,7 +1948,7 @@ def test_retry_video_clip_task_resubmits_single_clip(tmp_path: Path):
                 "shot_id": "shot_01",
                 "model": "omni_flash-10s",
                 "size": "1280x720",
-                "prompt": "旁白（男声，中文）：重试镜头",
+                "prompt": "中文旁白：重试镜头",
                 "reference_image_ids": ["asset_ref_01"],
             },
             status="failed",
@@ -1959,7 +1959,7 @@ def test_retry_video_clip_task_resubmits_single_clip(tmp_path: Path):
     class RetryVideoProvider:
         def submit_video(self, payload: dict[str, Any]):
             assert payload["model"] == "omni_flash-10s"
-            assert payload["prompt"] == "旁白（男声，中文）：重试镜头"
+            assert payload["prompt"] == "中文旁白：重试镜头"
             return {
                 "provider_task_id": "octo_retry_001",
                 "status": "queued",
@@ -2191,7 +2191,7 @@ def test_sync_task_composes_final_video_after_all_real_clips_are_downloaded(tmp_
         output.write_bytes(b"real final video")
         return output
 
-    monkeypatch.setattr("app.services.compose_final_video_from_clips", fake_compose)
+    monkeypatch.setattr("app.video_orchestrator.compose_final_video_from_clips", fake_compose)
 
     class StubVideoProvider:
         def query_task(self, provider_task_id: str):
@@ -2254,7 +2254,7 @@ def test_sync_task_composes_final_video_after_single_real_clip_when_limited(tmp_
         output.write_bytes(b"single real final video")
         return output
 
-    monkeypatch.setattr("app.services.compose_final_video_from_clips", fake_compose)
+    monkeypatch.setattr("app.video_orchestrator.compose_final_video_from_clips", fake_compose)
 
     class StubVideoProvider:
         def query_task(self, provider_task_id: str):
@@ -2324,7 +2324,7 @@ def test_sync_task_marks_compose_failure_when_ffmpeg_missing(tmp_path: Path, mon
     def failing_compose(project_dir_arg: Path, clip_rel_paths: list[str]) -> Path:
         raise RuntimeError("缺少 ffmpeg，无法合成真实 final_video.mp4")
 
-    monkeypatch.setattr("app.services.compose_final_video_from_clips", failing_compose)
+    monkeypatch.setattr("app.video_orchestrator.compose_final_video_from_clips", failing_compose)
 
     class StubVideoProvider:
         def query_task(self, provider_task_id: str):

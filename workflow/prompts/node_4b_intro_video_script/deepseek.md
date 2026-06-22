@@ -41,7 +41,7 @@ node_id: intro_video_script
 | `total_duration_sec` | 完整短片选 60-120，短导入片选 10-15 |
 | `video_type` | science / application / story，必须与选择集的 primary_design_id 一致 |
 | `anchor_to_lesson` | 视频结尾如何自然引出本课题（10-20 字一句话） |
-| `narration_full_text` | **完整中文旁白**。这段文字会被切片到分镜、做中文男声 TTS，所以**字数必须精确**：按 280 字/分钟换算（R040） |
+| `narration_full_text` | **完整中文旁白**。这段文字会被切片到分镜、做中文 TTS，所以**字数必须精确**：按 280 字/分钟换算（R040） |
 | `narration_word_count` | 旁白字数（用于校验时长一致性） |
 | `banned_elements` | **必须包含 ["real_minor", "real_classroom", "teacher_questioning", "student_group_activity"]**（R045） |
 

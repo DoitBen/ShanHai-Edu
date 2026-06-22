@@ -196,7 +196,7 @@
 | total_duration_sec | int | required | 60-120 或 10-15 |
 | video_type | enum | required | science / application / story |
 | anchor_to_lesson | text | required | 课程锚点 |
-| narration_full_text | text | required | 完整旁白文本（中文男声 TTS 输入） |
+| narration_full_text | text | required | 完整旁白文本（中文 TTS 输入） |
 | narration_word_count | int | required | 按 280 字/分钟换算检查时长 |
 | banned_elements | list<string> | required | 禁用清单：real_minor / real_classroom / teacher_questioning ... |
 
@@ -275,14 +275,14 @@ v1.x 补：景别、运动、多层元素清单、转场。
 | clips | list<clip_record> | required | 每段独立记录 |
 | audio_streams_count | int | required | 必须 ≥ 1 |
 | audio_verified | bool | required | ffprobe 验证 |
-| voice_gender | enum | required | male（红线） |
-| voice_language | enum | required | zh-CN（红线） |
-| narration_audio_path | path | required | 中文男声 TTS 输出 |
+| voice_gender | enum | optional | 配音配置，不作为硬阻断 |
+| voice_language | enum | required | 建议 zh-CN；缺失或不明确触发 R001 warning |
+| narration_audio_path | path | required | 中文 TTS 输出 |
 | subtitle_srt_path | path | optional | 字幕 |
 | model_audio_policy | enum | required | discarded_or_muted / verified_chinese / no_model_audio |
 | english_audio_detected | bool | required | 必须 false |
 | concat_manifest_path | path | required | concat_manifest.json 路径 |
-| voice_exemption | object | optional | { approved, approver, reason, approved_at } 非男声豁免 |
+| voice_exemption | object | optional | 历史兼容字段；新流程通过 warning override 记录原因 |
 
 ### clip_record 子结构
 
@@ -300,13 +300,17 @@ v1.x 补：景别、运动、多层元素清单、转场。
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
+| lesson_plan_path | path | required | 交付教案 Markdown |
 | pptx_final_path | path | required | 交付 PPTX |
-| video_final_path | path | required | 交付视频 |
-| qa_records | list<path> | required | QA 记录 JSON 路径列表 |
+| video_final_path | path/null | required | 交付视频；`needs_intro_video=false` 时允许为空 |
+| delivery_manifest_path | path | required | 交付 manifest |
+| qa_records | list<text> | required | QA / gate 记录摘要 |
 | gate_result_json_path | path | required | final_delivery_gate.py 输出 |
 | gate_passed | bool | required | 必须 true 才能进交付目录 |
 | time_stats_md_path | path | required | 耗时统计 |
 | feedback_trigger_at | datetime | required | 弹"课件到手反馈"的时间戳 |
+| source_versions | object | required | lesson_plan / pptx_artifact / final_video 源版本 |
+| generated_at | datetime | required | 交付包生成时间 |
 
 ## 反馈记录（feedback_record）
 

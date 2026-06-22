@@ -31,7 +31,7 @@ v1 内测前的优先顺序如下：
 | P1 | Flywheel 最小闭环 | 第 4 周做，先攒数据，不急着智能注入 |
 | P1 | 安全边界收口 | 第 5 周做，外销前移除前端 token 暴露 |
 
-`final_delivery` 暂不在第 0 周假接入。原因是当前最终门禁还没有完整运行时闭环，过早放入主线会让用户误以为已经达到正式交付标准。第 0 周只承诺“PPT 主链路可内测”，不承诺“精品交付完成”。
+第 0 周历史裁决是不把 `final_delivery` 假接入，避免 PPT 主链路内测被误读为精品交付完成。本轮 video-final-delivery 闭环在此基础上升级为最小真实交付包：只有教案、PPTX、视频 artifact 已落盘并通过内置 gate 时，`final_delivery` 才进入运行时并写入交付 manifest。
 
 ### 1.3 当前架构中值得保留的设计
 
@@ -95,7 +95,7 @@ v1 优先做最小闭环：
 |---|---|---|
 | N1 | UI 呈现线性 9 步，降低教研员认知负担 | 前端只展示线性步骤，底层仍可用 DAG |
 | N2 | 教学法负责人可改 prompt、规则、页面类型配额 | `workflow.yaml`、`workflow/rules/*.yaml`、prompts 成为运行时真源 |
-| N3 | 完整三件套：教案 + PPT + 中文男声视频 | PPT 和视频都在主 manifest 中，最终由 `final_delivery` 收口 |
+| N3 | 完整三件套：教案 + PPT + 中文旁白视频 | PPT 和视频都在主 manifest 中，最终由 `final_delivery` 收口 |
 
 ---
 
@@ -169,7 +169,7 @@ flowchart TD
 | 规则 | 原因 |
 |---|---|
 | R010 上游必须 approved/skipped | C1 的基础门禁 |
-| R001 中文男声硬约束 | N3 视频交付红线 |
+| R001 配音质量提醒 | N3 视频交付质量提醒，warning 可 override |
 | R004 角色字典禁真人 | 未成年人合规红线 |
 | R006 数学事实必须可编辑 | PPT 质量和反幻觉红线 |
 | R026 学生可见层不得暴露内部信息 | 成品体验红线 |
@@ -251,7 +251,7 @@ v1 最小 API：
 - 完成 `lesson_plan` approve 后，`ppt_assembly_plan` 可 generate。
 - PPT 分支节点可 generate、edit、approve。
 - `pptx_artifact/generate` 产出 `pptx_path`，文件存在，可下载。
-- 不启用 `final_delivery` 假完成状态。
+- 不启用 `final_delivery` 假完成状态；本轮只允许最小真实交付包进入 `final_delivery`。
 
 ### 4.2 第 1-2 周：实现 StateEngine
 
@@ -300,7 +300,7 @@ v1 最小 API：
 优先规则：
 
 - R010：所有节点 generate 前必须检查上游 passable。
-- R001：final_video approve 前检查中文男声。
+- R001：final_video approve 前检查旁白音频、音频验证和语言明确性，作为 warning。
 - R004：character_dict save 前检查禁真人关键词和非写实风格。
 - R006：ppt_page_script approve 前检查数学事实 editable layer。
 - R026：pptx_artifact approve 前检查学生可见层内部信息。
@@ -557,8 +557,8 @@ v1 最小 API：
 | `intro_video_screenplay` | 是 | 视频剧本 |
 | `intro_video_asset` | 是 | 视频资产 |
 | `storyboard` | 是 | 视频分镜 |
-| `final_video` | 是 | 中文男声视频 |
-| `final_delivery` | 暂不进入第 0 周 | 等最终门禁真实接通 |
+| `final_video` | 是 | 中文旁白视频 |
+| `final_delivery` | 是 | 最小真实交付包：教案 + PPTX + 视频 artifact + delivery manifest |
 
 ---
 
@@ -641,7 +641,7 @@ v1 最小 API：
 
 风险：第 0 周接通的 PPT 主链路可能绕过部分精品门禁。
 
-取舍：接受，但必须在 UI 和文档中明确这是“内测可运行主链路”，不是“正式精品交付完成”。正式交付仍要等 `final_delivery` 和相关门禁接通。
+取舍：接受，但必须在 UI 和文档中明确第 0 周 PPT 主链路只是内测可运行主链路。本轮 video-final-delivery 已接入最小真实 `final_delivery`，仍不等同于外部审计脚本全部阻塞式接入后的精品交付。
 
 ### 8.2 visual_contract 和 character_dict 必须进入运行层
 
@@ -649,11 +649,11 @@ v1 最小 API：
 
 裁决：第 0 周一并纳入运行时。它们可以先是表单型或 fake 默认产物，但必须真实存在于 manifest 和依赖图中。
 
-### 8.3 final_delivery 暂不硬接
+### 8.3 final_delivery 最小真实接入
 
-风险：用户暂时不能看到完整第 9 步最终交付。
+风险：用户看到第 9 步后，可能误以为外部审计脚本和所有人工 QA 已全部接入。
 
-取舍：优先避免“假完成”。第 0 周产出 PPTX artifact 即可，`final_delivery` 等门禁脚本、PPTX、视频、反馈、学生可见层审计全部接通后再进入主线。
+取舍：继续避免“假完成”。`final_delivery` 只在教案、PPTX、视频 artifact 已存在且通过内置 gate 时生成 exports 目录和 delivery manifest；外部审计脚本后续再接为更严格门禁。
 
 ### 8.4 飞轮先攒数据，不急着智能注入
 
@@ -716,7 +716,7 @@ v1 最小 API：
 - 不做 Postgres/SaaS 多租户迁移。
 - 不做 diff 预览和智能影响分析。
 - 不做飞轮智能注入。
-- 不把 `final_delivery` 假装接通。
+- 不把 `final_delivery` 假装接通；当前只接最小真实交付包，缺必要 artifact 时必须 blocked。
 
 本轮必须做：
 
@@ -743,4 +743,4 @@ ShanHaiEdu 不需要推翻重做。它现在最需要的是把已经写在设计
 第 5 周：安全边界收口，准备 v1.x 外销
 ```
 
-这条路线不追求炫技，也不做大而全平台化。它只服务一个目标：让教研员在网页上，按线性步骤，真正产出“教案 + PPT + 中文男声视频”三件套，并且每一步都由用户掌控，越用越懂用户。
+这条路线不追求炫技，也不做大而全平台化。它只服务一个目标：让教研员在网页上，按线性步骤，真正产出“教案 + PPT + 中文旁白视频”三件套，并且每一步都由用户掌控，越用越懂用户。

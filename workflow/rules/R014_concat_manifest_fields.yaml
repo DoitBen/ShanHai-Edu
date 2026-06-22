@@ -14,8 +14,7 @@ check:
     - total_duration_seconds
     - audio_streams       # 必须 >= 1
     - audio_verified      # 必须 == true
-    - voice_gender        # 必须 == "male"
-    - voice_language      # 必须 == "zh-CN"
+    - voice_language      # 建议 == "zh-CN"，不明确时由 R001 warning 提醒
 action_message: concat_manifest.json 缺关键字段或字段值不合规
 executor: "script:audit_delivery_contracts.py"
 legacy_source: 01_执行入口.md「事故防复发规则」

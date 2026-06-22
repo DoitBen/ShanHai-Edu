@@ -25,20 +25,20 @@
 
 ---
 
-## 红线规则（hard_block，6 条，对应产品红线）
+## 红线规则与质量提醒
 
-### R001 中文男声硬约束
+### R001 配音质量提醒
 
 | 字段 | 值 |
 |---|---|
 | rule_id | R001 |
 | trigger_node | final_video |
 | trigger_event | on_approve_attempt |
-| check | `final_video.voice_gender == "male" AND final_video.voice_language == "zh-CN"`，除非 `voice_exemption.approved == true` |
-| severity | hard_block |
-| action | 阻断 approve，提示"必须中文男声或结构化人工豁免" |
+| check | `final_video.audio_verified == true`、旁白音频路径存在且语言明确为中文 |
+| severity | warning |
+| action | UI 提示，允许填写 override reason 后继续 approve |
 | executor | builtin |
-| legacy_source | 01_执行入口.md「事故防复发规则」 |
+| legacy_source | 01_执行入口.md「事故防复发规则」已降级 |
 
 ### R002 禁英文配音
 
@@ -168,7 +168,7 @@
 | rule_id | R014 |
 | trigger_node | final_video |
 | trigger_event | on_approve_attempt |
-| check | concat_manifest.json 必须包含：`status=final`、`clips`、`task_id`、`download_path`、`reference_images`、`final_video_seconds`/`total_duration_seconds`、`audio_streams>=1`、`audio_verified=true`、`voice_gender=male`、`voice_language=zh-CN` |
+| check | concat_manifest.json 必须包含：`status=final`、`clips`、`task_id`、`download_path`、`reference_images`、`final_video_seconds`/`total_duration_seconds`、`audio_streams>=1`、`audio_verified=true`、`voice_language=zh-CN` |
 | severity | hard_block |
 | action | 阻断 approve |
 | executor | script:audit_delivery_contracts.py |
@@ -397,14 +397,14 @@
 | executor | builtin |
 | legacy_source | （v1 新增机制） |
 
-### R043 视频 prompt 包含中文男声硬约束
+### R043 视频 prompt 包含中文旁白与禁英文配音
 
 | 字段 | 值 |
 |---|---|
 | rule_id | R043 |
 | trigger_node | storyboard |
 | trigger_event | on_save |
-| check | `model_prompt` 必须包含"旁白（男声，中文）"和"禁止英文配音"字样 |
+| check | `model_prompt` 必须包含"中文旁白"和"禁止英文配音"字样 |
 | severity | hard_block |
 | action | 阻断保存 |
 | executor | builtin |

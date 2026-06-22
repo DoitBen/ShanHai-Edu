@@ -97,8 +97,8 @@ providers:
     fallback: sora_2_12s
   tts:
     default: TBD  # 待选型
-    voice_gender: male
     voice_language: zh-CN
+    voice_gender: configurable
 
 # ============================================================
 # 节点定义（核心 DAG）
@@ -297,7 +297,7 @@ nodes:
   - id: final_video
     runtime_enabled: true
     step: 8
-    title: 视频生成+中文男声+拼接
+    title: 视频生成+旁白+拼接
     branch: intro_video
     depends_on: [storyboard, intro_video_script]
     schema: schemas/final_video.schema.json
@@ -314,7 +314,7 @@ nodes:
 
   # -------- 第 9 步：最终交付 --------
   - id: final_delivery
-    runtime_enabled: false
+    runtime_enabled: true
     step: 9
     title: 最终交付
     branch: shared
@@ -380,8 +380,8 @@ rule_triggers:
 # ============================================================
 hard_constraints:
   voice:
-    gender: male
     language: zh-CN
+    gender: configurable
     english_audio_forbidden: true
   video:
     min_clips_for_full_video: 6

@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Any
 import json
+import shutil
 
 from .flywheel import FeedbackPayloadError, FeedbackTypeError, FlywheelService
 from .ppt_exporter import export_project_ppt
@@ -10,7 +11,7 @@ from .rule_executor import RuleExecutor
 from .state_engine import NodeSkippedError, StateEngine
 from .store import ProjectStore, now_iso
 from .textbook_parser import TextbookParser, TextbookSource
-from .video_outputs import FINAL_VIDEO_REL_PATH, compose_final_video_from_clips, compose_final_video_with_audio, ensure_final_video_output, write_concat_manifest, write_placeholder_narration_audio, write_subtitle_srt
+from .video_orchestrator import VideoOrchestrator
 
 
 INTRO_DESIGN_TYPES = ("science", "application", "story")
@@ -206,7 +207,7 @@ def _normalize_video_model_prompt(raw: Any, narration: str, subject: str) -> str
     narration = narration.strip() or subject.strip() or "数学导入镜头。"
     subject = subject.strip() or narration
     return (
-        f"旁白（男声，中文）：{narration}\n"
+        f"中文旁白：{narration}\n"
         f"画面：{subject}\n"
         "风格：非写实卡通插画，画面干净明亮，适合小学数学导入短片。\n"
         "禁止英文配音；如平台自动生成英文音频，则该片段判为不合格，需要静音或重合成中文配音。"
@@ -216,7 +217,7 @@ def _normalize_video_model_prompt(raw: Any, narration: str, subject: str) -> str
 def _valid_video_model_prompt(prompt: str) -> bool:
     if len(prompt.strip()) < 40:
         return False
-    required = ("旁白（男声，中文）", "画面", "禁止英文配音")
+    required = ("中文旁白", "画面", "禁止英文配音")
     return all(item in prompt for item in required)
 
 
@@ -448,11 +449,21 @@ class WorkflowService:
         self.state_engine = StateEngine(store, self._dependencies(), workflow)
         self.rule_executor = RuleExecutor(workflow.root / "rules" if workflow else None)
         self.flywheel = FlywheelService()
+        self.video_orchestrator = VideoOrchestrator(
+            store=self.store,
+            text_provider=self.provider,
+            video_provider=self.video_provider,
+            tts_provider=self.tts_provider,
+            video_model=self.video_model,
+            reference_url_resolver=self._video_reference_urls,
+        )
 
     def generate_node(self, project_id: str, node_id: str, options: dict[str, Any] | None = None) -> dict[str, Any]:
         project = self.store.get_project(project_id)
         project_dir = Path(project["project_dir"])
         with self.store.connect(project_dir) as conn:
+            if node_id == "final_delivery":
+                return self._generate_final_delivery(conn, project_id, project, project_dir)
             self._assert_dependencies(conn, project_id, node_id)
             context: dict[str, Any] = {
                 "grade": project["grade"],
@@ -492,7 +503,11 @@ class WorkflowService:
                     return self._write_review_version(conn, project_id, node_id, content, "ai", self.provider.name, "ai_generate_done")
 
             if node_id == "final_video":
-                return self._generate_video_tasks(conn, project_id, project_dir, options or {})
+                self.video_orchestrator.text_provider = self.provider
+                self.video_orchestrator.video_provider = self.video_provider
+                self.video_orchestrator.tts_provider = self.tts_provider
+                self.video_orchestrator.video_model = self.video_model
+                return self.video_orchestrator.generate(conn, project_id, project_dir, options or {})
             if node_id == "pptx_artifact":
                 return self._generate_pptx_artifact(conn, project_id, project, project_dir)
 
@@ -795,7 +810,7 @@ class WorkflowService:
                 "只输出 JSON，字段为 shots；每个 shot 包含 shot_id、duration_sec、main_subject、character_refs、"
                 "reference_image_ids、narration_slice、subtitle、model_prompt、first_frame_test_status、first_frame_asset_id。"
                 "最后一个 shot 的 subtitle 必须体现 intro_selection.selected_anchor 的核心关键词；"
-                "duration_sec 使用 10/12/15；model_prompt 必须包含「旁白（男声，中文）」和「禁止英文配音」；"
+                "duration_sec 使用 10/12/15；model_prompt 必须包含「中文旁白」和「禁止英文配音」；"
                 "first_frame_test_status 使用 passed。"
             ),
         }
@@ -912,126 +927,121 @@ class WorkflowService:
         }
         return self._write_review_version(conn, project_id, "pptx_artifact", content, "artifact", "ppt_exporter", "ai_generate_done")
 
-    def _generate_video_tasks(self, conn, project_id: str, project_dir: Path, options: dict[str, Any]) -> dict[str, Any]:
-        storyboard = self.store.current_content(conn, project_id, "storyboard")
-        if not storyboard:
-            raise PermissionError("Storyboard is not ready")
-        tasks = []
-        clips = []
-        is_fake_video = isinstance(self.provider, FakeProvider) or self.video_provider is None
-        shots = storyboard["shots"] if is_fake_video or self.video_provider is not None or options.get("full_run") else storyboard["shots"][:1]
-        video_shot_limit = self._positive_int_option(options.get("video_shot_limit") or options.get("clip_limit"))
-        if video_shot_limit is not None:
-            shots = shots[:video_shot_limit]
-        model = options.get("model") or self.video_model
-        size = options.get("size", "1280x720")
-        mode = options.get("mode", "reference")
-        reference_urls = self._video_reference_urls(project_id)
-        for shot in shots:
-            clip_name = f"clips/{shot['shot_id']}.mp4"
-            shot_reference_urls = [
-                reference_urls[reference_id]
-                for reference_id in shot.get("reference_image_ids", [])
-                if reference_id in reference_urls
-            ]
-            payload = {
-                "shot_id": shot["shot_id"],
-                "model": model,
-                "size": size,
-                "mode": mode,
-                "prompt": shot["model_prompt"],
-                "reference_image_ids": shot["reference_image_ids"],
-            }
-            if shot_reference_urls:
-                payload["reference_image_urls"] = shot_reference_urls
-            if is_fake_video:
-                task = self.store.create_task(
-                    conn,
-                    project_id,
-                    "final_video",
-                    "video_clip_generation",
-                    {**payload, "model_prompt": shot["model_prompt"]},
-                    status="generated",
-                    result={"download_path": clip_name},
-                )
-            else:
-                task = self.store.create_task(
-                    conn,
-                    project_id,
-                    "final_video",
-                    "video_clip_generation",
-                    payload,
-                    status="submitting",
-                    result={"download_path": clip_name, "provider_phase": "submit"},
-                )
-                try:
-                    submit_payload = {
-                        "model": model,
-                        "prompt": shot["model_prompt"],
-                        "size": size,
-                    }
-                    if shot_reference_urls:
-                        submit_payload["images"] = shot_reference_urls
-                    submitted = self.video_provider.submit_video(
-                        submit_payload
-                    )
-                except ProviderError as exc:
-                    result = {
-                        "download_path": clip_name,
-                        "clip_path": clip_name,
-                        "provider_phase": "submit",
-                        **provider_error_result(exc),
-                    }
-                    task = self.store.update_task(conn, task["task_id"], "failed", result, str(exc))
-                    self.store.record_error(conn, project_id, "final_video", exc.code, str(exc))
-                    failure_content = {
-                        "clip_count": 1,
-                        "clips": [
-                            {
-                                "shot_id": shot["shot_id"],
-                                "api_task_id": task["task_id"],
-                                "download_path": clip_name,
-                                "status": "failed",
-                                "reference_image_ids": shot["reference_image_ids"],
-                            }
-                        ],
-                        "video_path": FINAL_VIDEO_REL_PATH,
-                        "error_code": exc.code,
-                        "error_message": str(exc),
-                        "model_audio_policy": "discarded_or_mute_later",
-                        "english_audio_detected": False,
-                    }
-                    self.store.write_version(conn, project_id, "final_video", failure_content, "ai", self.provider.name, "blocked")
-                    conn.commit()
-                    raise
-                task = self.store.update_task(
-                    conn,
-                    task["task_id"],
-                    submitted["status"] or "queued",
-                    {**submitted, "download_path": clip_name, "provider_phase": "submit"},
-                )
-            tasks.append(task)
-            clips.append(
-                {
-                    "shot_id": shot["shot_id"],
-                    "api_task_id": task["task_id"],
-                    "download_path": clip_name,
-                    "status": task["status"],
-                    "reference_image_ids": shot["reference_image_ids"],
-                }
-            )
-        content = {
-            "clip_count": len(clips),
-            "clips": clips,
-            "video_path": FINAL_VIDEO_REL_PATH,
-            "model_audio_policy": "discarded_or_mute_later",
-            "english_audio_detected": False,
+    def _generate_final_delivery(self, conn, project_id: str, project: dict[str, Any], project_dir: Path) -> dict[str, Any]:
+        lesson_state = self.store.node_state(conn, project_id, "lesson_plan")
+        pptx_state = self.store.node_state(conn, project_id, "pptx_artifact")
+        final_video_state = self.store.node_state(conn, project_id, "final_video")
+        project_config = self.store.current_content(conn, project_id, "project_config") or {}
+        needs_intro_video = not (isinstance(project_config, dict) and project_config.get("needs_intro_video") is False)
+
+        lesson_content = self.store.current_content(conn, project_id, "lesson_plan") or {}
+        pptx_content = self.store.current_content(conn, project_id, "pptx_artifact") or {}
+        final_video_content = self.store.current_content(conn, project_id, "final_video") or {}
+
+        try:
+            if lesson_state["status"] != "approved":
+                raise ProviderError("LESSON_PLAN_NOT_READY", "LESSON_PLAN_NOT_READY: lesson_plan must be approved before final_delivery", retryable=False)
+            if pptx_state["status"] != "approved":
+                raise ProviderError("PPTX_ARTIFACT_NOT_READY", "PPTX_ARTIFACT_NOT_READY: pptx_artifact must be approved before final_delivery", retryable=False)
+            pptx_source = self._resolve_project_file(project_dir, pptx_content.get("pptx_path"), "PPTX_ARTIFACT_NOT_READY")
+            if not pptx_source.exists() or pptx_source.suffix.lower() != ".pptx":
+                raise ProviderError("PPTX_ARTIFACT_NOT_READY", "PPTX_ARTIFACT_NOT_READY: pptx_path file is not available", retryable=False)
+
+            video_source: Path | None = None
+            if needs_intro_video:
+                if final_video_state["status"] != "approved":
+                    raise ProviderError("FINAL_VIDEO_NOT_READY", "FINAL_VIDEO_NOT_READY: final_video must be approved before final_delivery", retryable=False)
+                video_source = self._resolve_project_file(project_dir, final_video_content.get("video_path"), "FINAL_VIDEO_NOT_READY")
+                if not video_source.exists() or video_source.suffix.lower() != ".mp4":
+                    raise ProviderError("FINAL_VIDEO_NOT_READY", "FINAL_VIDEO_NOT_READY: video_path file is not available", retryable=False)
+            elif final_video_state["status"] not in {"skipped", "approved", "not_started"}:
+                raise ProviderError("FINAL_VIDEO_NOT_READY", "FINAL_VIDEO_NOT_READY: final_video is not skipped or approved", retryable=False)
+        except ProviderError as exc:
+            self._record_failed_node(conn, project_id, "final_delivery", exc)
+            raise ValueError(str(exc)) from exc
+
+        delivery_dir = project_dir / "exports" / "final_delivery"
+        delivery_dir.mkdir(parents=True, exist_ok=True)
+        lesson_rel = "exports/final_delivery/lesson_plan.md"
+        pptx_rel = f"exports/final_delivery/{pptx_source.name}"
+        video_rel = f"exports/final_delivery/{video_source.name}" if video_source else None
+        gate_rel = "exports/final_delivery/gate_result.json"
+        manifest_rel = "exports/final_delivery/delivery_manifest.json"
+        time_stats_rel = "exports/final_delivery/time_stats.md"
+
+        lesson_markdown = lesson_content.get("lesson_plan_markdown") if isinstance(lesson_content, dict) else None
+        if not isinstance(lesson_markdown, str) or not lesson_markdown.strip():
+            lesson_markdown = json.dumps(lesson_content, ensure_ascii=False, indent=2)
+        (project_dir / lesson_rel).write_text(lesson_markdown, encoding="utf-8")
+        shutil.copyfile(pptx_source, project_dir / pptx_rel)
+        if video_source and video_rel:
+            shutil.copyfile(video_source, project_dir / video_rel)
+
+        generated_at = now_iso()
+        source_versions = {
+            "lesson_plan": lesson_state.get("current_version_id"),
+            "pptx_artifact": pptx_state.get("current_version_id"),
+            "final_video": final_video_state.get("current_version_id"),
         }
-        if is_fake_video:
-            content = self._finalize_final_video_artifacts(conn, project_id, project_dir, tasks, content)
-        final_status = "needs_review" if is_fake_video and self.tts_provider is not None else "drafted"
-        self.store.write_version(conn, project_id, "final_video", content, "ai", self.provider.name, final_status)
-        return {"node_id": "final_video", "status": final_status, "content": content, "tasks": tasks, "video_path": FINAL_VIDEO_REL_PATH}
+        gate_result = {
+            "mode": "final",
+            "gate_passed": True,
+            "checks": [
+                {"id": "lesson_plan_ready", "passed": True},
+                {"id": "pptx_artifact_ready", "passed": True},
+                {"id": "final_video_ready_or_skipped", "passed": True},
+            ],
+            "generated_at": generated_at,
+        }
+        delivery_manifest = {
+            "project_id": project_id,
+            "project_name": project.get("name"),
+            "generated_at": generated_at,
+            "artifacts": {
+                "lesson_plan": lesson_rel,
+                "pptx": pptx_rel,
+                "video": video_rel,
+            },
+            "skipped": {
+                "final_video": video_rel is None,
+            },
+            "source_versions": source_versions,
+            "gate_result": gate_rel,
+        }
+        (project_dir / gate_rel).write_text(json.dumps(gate_result, ensure_ascii=False, indent=2), encoding="utf-8")
+        (project_dir / manifest_rel).write_text(json.dumps(delivery_manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+        (project_dir / time_stats_rel).write_text(
+            "# Final Delivery Time Stats\n\n"
+            f"- generated_at: {generated_at}\n"
+            "- packager: minimal_delivery_packager\n",
+            encoding="utf-8",
+        )
+
+        content = {
+            "lesson_plan_path": lesson_rel,
+            "pptx_final_path": pptx_rel,
+            "video_final_path": video_rel,
+            "delivery_manifest_path": manifest_rel,
+            "gate_result_json_path": gate_rel,
+            "gate_result_json": gate_result,
+            "gate_passed": True,
+            "qa_records": ["minimal_delivery_gate_passed"],
+            "time_stats_md_path": time_stats_rel,
+            "feedback_trigger_at": generated_at,
+            "source_versions": source_versions,
+            "generated_at": generated_at,
+        }
+        return self._write_review_version(conn, project_id, "final_delivery", content, "artifact", "delivery_packager", "ai_generate_done")
+
+    def _resolve_project_file(self, project_dir: Path, rel_path: Any, error_code: str) -> Path:
+        if not isinstance(rel_path, str) or not rel_path.strip():
+            raise ProviderError(error_code, f"{error_code}: artifact path is missing", retryable=False)
+        resolved = (project_dir / rel_path).resolve()
+        try:
+            resolved.relative_to(project_dir.resolve())
+        except ValueError as exc:
+            raise ProviderError(error_code, f"{error_code}: artifact path is outside project", retryable=False) from exc
+        return resolved
 
     def _video_reference_urls(self, project_id: str) -> dict[str, str]:
         urls: dict[str, str] = {}
@@ -1259,7 +1269,11 @@ class WorkflowService:
         with self.store.connect(project_dir) as conn:
             updated = self.store.update_task(conn, task_id, status, result, error_message)
             conn.commit()
-            compose_result = self._compose_final_video_if_ready(conn, project_id, project_dir)
+            self.video_orchestrator.text_provider = self.provider
+            self.video_orchestrator.video_provider = self.video_provider
+            self.video_orchestrator.tts_provider = self.tts_provider
+            self.video_orchestrator.video_model = self.video_model
+            compose_result = self.video_orchestrator.compose_if_ready(conn, project_id, project_dir)
             if compose_result:
                 merged = {**updated["result"], **compose_result}
                 updated = self.store.update_task(conn, task_id, updated["status"], merged, compose_result.get("compose_error"))
@@ -1320,132 +1334,6 @@ class WorkflowService:
     def _image_path_for_asset(self, asset: dict[str, Any]) -> str:
         asset_id = str(asset.get("asset_id") or "image").replace("/", "_").replace("\\", "_")
         return f"assets/generated_images/{asset_id}.png"
-
-    def _compose_final_video_if_ready(self, conn, project_id: str, project_dir: Path) -> dict[str, Any] | None:
-        tasks = self.store.tasks(project_id)
-        video_tasks = [task for task in tasks if task["node_id"] == "final_video" and task["task_type"] == "video_clip_generation"]
-        if not video_tasks or any(task["status"] != "completed" or task["result"].get("download_status") != "downloaded" for task in video_tasks):
-            return None
-        clip_paths = [task["download_path"] for task in video_tasks if task.get("download_path")]
-        if len(clip_paths) != len(video_tasks):
-            return None
-        try:
-            has_narration_context = bool(self.store.current_content(conn, project_id, "storyboard")) or bool(
-                self.store.current_content(conn, project_id, "intro_video_script")
-            )
-            output_path = None if has_narration_context else compose_final_video_from_clips(project_dir, clip_paths)
-        except RuntimeError as exc:
-            message = sanitize_provider_excerpt(str(exc), 240)
-            self.store.record_error(conn, project_id, "final_video", "FINAL_VIDEO_COMPOSE_FAILED", message)
-            failure_content = {
-                "clip_count": len(video_tasks),
-                "clips": [
-                    {
-                        "shot_id": task["payload"].get("shot_id"),
-                        "api_task_id": task["task_id"],
-                        "download_path": task["download_path"],
-                        "status": "downloaded",
-                        "reference_image_ids": task["payload"].get("reference_image_ids", []),
-                    }
-                    for task in video_tasks
-                ],
-                "video_path": FINAL_VIDEO_REL_PATH,
-                "error_code": "FINAL_VIDEO_COMPOSE_FAILED",
-                "error_message": message,
-                "model_audio_policy": "discarded_or_mute_later",
-                "english_audio_detected": False,
-            }
-            self.store.write_version(conn, project_id, "final_video", failure_content, "ai", self.provider.name, "blocked")
-            return {
-                "compose_status": "failed",
-                "compose_error": message,
-                "error_code": "FINAL_VIDEO_COMPOSE_FAILED",
-                "retryable": False,
-            }
-        base_content = {
-            "clip_count": len(video_tasks),
-            "clips": [
-                {
-                    "shot_id": task["payload"].get("shot_id"),
-                    "api_task_id": task["task_id"],
-                    "download_path": task["download_path"],
-                    "status": "downloaded",
-                    "reference_image_ids": task["payload"].get("reference_image_ids", []),
-                }
-                for task in video_tasks
-            ],
-            "video_path": FINAL_VIDEO_REL_PATH,
-            "model_audio_policy": "discarded_or_mute_later",
-            "english_audio_detected": False,
-        }
-        if output_path is not None:
-            content = {**base_content, "output_size_bytes": output_path.stat().st_size}
-        else:
-            content = self._finalize_final_video_artifacts(conn, project_id, project_dir, video_tasks, base_content)
-        self.store.write_version(conn, project_id, "final_video", content, "ai", self.provider.name, "needs_review")
-        return {"compose_status": "completed", "final_video_path": FINAL_VIDEO_REL_PATH}
-
-    def _finalize_final_video_artifacts(
-        self,
-        conn,
-        project_id: str,
-        project_dir: Path,
-        video_tasks: list[dict[str, Any]],
-        content: dict[str, Any],
-    ) -> dict[str, Any]:
-        narration = self._narration_text_for_final_video(conn, project_id)
-        audio_rel_path = self._ensure_narration_audio(project_dir, narration)
-        storyboard = self.store.current_content(conn, project_id, "storyboard") or {}
-        shots = storyboard.get("shots") if isinstance(storyboard, dict) else []
-        narration_slices = [str(shot.get("narration_slice") or shot.get("subtitle") or "") for shot in shots if isinstance(shot, dict)]
-        durations = [int(shot.get("duration_sec") or 10) for shot in shots if isinstance(shot, dict)]
-        subtitle_path = write_subtitle_srt(project_dir, narration_slices or [narration], durations or [max(10, len(narration) // 4)])
-        clip_paths = [task.get("download_path") or task.get("result", {}).get("download_path") for task in video_tasks]
-        clip_paths = [str(path) for path in clip_paths if path]
-        output_path = compose_final_video_with_audio(project_dir, clip_paths, audio_rel_path)
-        manifest = write_concat_manifest(
-            project_dir,
-            clip_paths,
-            {
-                "task_id": video_tasks[0]["task_id"] if video_tasks else None,
-                "download_path": FINAL_VIDEO_REL_PATH,
-                "reference_images": [clip.get("reference_image_ids", []) for clip in content.get("clips", [])],
-                "final_video_seconds": sum(durations) if durations else None,
-                "audio_streams": 1,
-                "audio_verified": True,
-                "voice_gender": "male",
-                "voice_language": "zh-CN",
-            },
-        )
-        return {
-            **content,
-            "video_path": FINAL_VIDEO_REL_PATH,
-            "output_size_bytes": output_path.stat().st_size,
-            "total_duration_sec": sum(durations) if durations else max(10, len(narration) // 4),
-            "audio_streams_count": 1,
-            "audio_verified": True,
-            "voice_gender": "male",
-            "voice_language": "zh-CN",
-            "narration_audio_path": audio_rel_path,
-            "subtitle_srt_path": str(subtitle_path.relative_to(project_dir)).replace("\\", "/"),
-            "model_audio_policy": "discarded_or_muted",
-            "english_audio_detected": False,
-            "concat_manifest_path": str(manifest.relative_to(project_dir)).replace("\\", "/"),
-        }
-
-    def _narration_text_for_final_video(self, conn, project_id: str) -> str:
-        script = self.store.current_content(conn, project_id, "intro_video_script") or {}
-        narration = script.get("narration_full_text") if isinstance(script, dict) else ""
-        return str(narration or "欢迎来到山海教育导入视频。")
-
-    def _ensure_narration_audio(self, project_dir: Path, narration: str) -> str:
-        audio_path = project_dir / "audio" / "narration.mp3"
-        if self.tts_provider is None:
-            write_placeholder_narration_audio(project_dir)
-        else:
-            self.tts_provider.synthesize(narration, audio_path)
-        return str(audio_path.relative_to(project_dir)).replace("\\", "/")
-
 
 def provider_error_result(exc: ProviderError) -> dict[str, Any]:
     result: dict[str, Any] = {

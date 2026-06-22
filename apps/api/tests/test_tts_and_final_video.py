@@ -99,7 +99,7 @@ def test_final_video_generate_creates_audio_manifest_and_schema_fields(tmp_path:
                 "reference_image_ids": ["asset_001"],
                 "narration_slice": "先数一个苹果。",
                 "subtitle": "先数一个苹果",
-                "model_prompt": "旁白（男声，中文）：先数一个苹果。\n禁止英文配音。",
+                "model_prompt": "中文旁白：先数一个苹果。\n禁止英文配音。",
                 "first_frame_test_status": "passed",
                 "first_frame_asset_id": "asset_001",
             },
@@ -111,7 +111,7 @@ def test_final_video_generate_creates_audio_manifest_and_schema_fields(tmp_path:
                 "reference_image_ids": ["asset_002"],
                 "narration_slice": "再数两支铅笔。",
                 "subtitle": "再数两支铅笔",
-                "model_prompt": "旁白（男声，中文）：再数两支铅笔。\n禁止英文配音。",
+                "model_prompt": "中文旁白：再数两支铅笔。\n禁止英文配音。",
                 "first_frame_test_status": "passed",
                 "first_frame_asset_id": "asset_002",
             },
@@ -135,8 +135,13 @@ def test_final_video_generate_creates_audio_manifest_and_schema_fields(tmp_path:
     project_dir = Path(project["project_dir"])
 
     assert generated["video_path"] == FINAL_VIDEO_REL_PATH
-    assert content["voice_gender"] == "male"
+    assert content["voice_gender"] == "unknown"
     assert content["voice_language"] == "zh-CN"
+    assert content["audio_path"] == content["narration_audio_path"]
+    assert content["subtitle_path"] == content["subtitle_srt_path"]
+    assert content["provider_task_ids"]
+    assert content["source_versions"]["storyboard"]
+    assert content["generated_at"]
     assert content["audio_verified"] is True
     assert content["english_audio_detected"] is False
     assert (project_dir / content["narration_audio_path"]).exists()

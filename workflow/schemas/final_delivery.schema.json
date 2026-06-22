@@ -4,13 +4,15 @@
   "title": "最终交付",
   "type": "object",
   "required": [
-    "pptx_final_path", "video_final_path",
+    "lesson_plan_path", "pptx_final_path", "video_final_path", "delivery_manifest_path",
     "qa_records", "gate_result_json_path", "gate_passed",
-    "time_stats_md_path", "feedback_trigger_at"
+    "time_stats_md_path", "feedback_trigger_at", "source_versions", "generated_at"
   ],
   "properties": {
+    "lesson_plan_path": { "type": "string" },
     "pptx_final_path": { "type": "string" },
-    "video_final_path": { "type": "string" },
+    "video_final_path": { "type": ["string", "null"] },
+    "delivery_manifest_path": { "type": "string" },
     "qa_records": {
       "type": "array",
       "items": { "type": "string" },
@@ -23,6 +25,17 @@
       "description": "R005 强约束：final_delivery_gate.py --mode final 通过"
     },
     "time_stats_md_path": { "type": "string" },
-    "feedback_trigger_at": { "type": "string", "format": "date-time" }
+    "feedback_trigger_at": { "type": "string", "format": "date-time" },
+    "source_versions": {
+      "type": "object",
+      "required": ["lesson_plan", "pptx_artifact", "final_video"],
+      "properties": {
+        "lesson_plan": { "type": ["string", "null"] },
+        "pptx_artifact": { "type": ["string", "null"] },
+        "final_video": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "generated_at": { "type": "string", "format": "date-time" }
   }
 }

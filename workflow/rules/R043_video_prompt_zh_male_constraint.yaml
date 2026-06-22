@@ -1,13 +1,13 @@
 rule_id: R043
-title: 视频 prompt 必须包含中文男声硬约束
+title: 视频 prompt 必须包含中文旁白和禁英文配音
 trigger_node: storyboard
 trigger_event: on_save
 severity: hard_block
 check:
   type: foreach_shot
   expression: |
-    shot.model_prompt CONTAINS "旁白（男声，中文）"
+    shot.model_prompt CONTAINS "中文旁白"
     AND shot.model_prompt CONTAINS "禁止英文配音"
-action_message: 视频模型 prompt 必须明确写「旁白（男声，中文）」和「禁止英文配音」
+action_message: 视频模型 prompt 必须明确写「中文旁白」和「禁止英文配音」
 executor: builtin
 legacy_source: 第九步：修订版-分镜脚本生成提示词-小云雀生视频版.md

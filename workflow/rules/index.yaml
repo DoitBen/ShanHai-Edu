@@ -42,7 +42,7 @@ executors:
 # 规则索引（按编号）
 rules:
   # 红线（hard_block）
-  - { id: R001, file: R001_voice_male_zh.yaml, severity: hard_block }
+  - { id: R001, file: R001_voice_male_zh.yaml, severity: warning }
   - { id: R002, file: R002_no_english_audio.yaml, severity: hard_block }
   - { id: R003, file: R003_no_single_clip_pretending_full.yaml, severity: hard_block }
   - { id: R004, file: R004_character_no_realistic.yaml, severity: hard_block }

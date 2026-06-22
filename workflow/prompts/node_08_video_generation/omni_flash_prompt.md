@@ -32,12 +32,12 @@ omni_flash_payload = {
 }
 ```
 
-## prompt 模板（中文男声 + 禁英文配音硬约束句）
+## prompt 模板（中文旁白 + 禁英文配音硬约束句）
 
 每条 model_prompt 必须包含以下固定结尾：
 
 ```
-旁白（男声，中文）：{{narration_slice}}
+中文旁白：{{narration_slice}}
 画面：{{visual_description}}
 风格：{{style_keywords}}
 角色：{{character_multi_view_desc}}
@@ -48,10 +48,10 @@ R043 会按这个固定句校验每条 prompt。
 
 ## 模型音轨处理策略
 
-omni_flash-10s 可能会输出英文音频或不符合中文男声的旁白，**默认丢弃**：
+omni_flash-10s 可能会输出英文音频或不符合旁白配置的音轨，**默认丢弃**：
 
 1. 视频生成后，提取纯视频流（无音频）
-2. 用中文 TTS（待选型）按 narration_slice 重新合成中文男声音频
+2. 用中文 TTS（待选型）按 narration_slice 重新合成旁白音频
 3. ffmpeg 拼接视频 + 新音频
 4. 写入 final_video.model_audio_policy = "discarded_or_muted"
 

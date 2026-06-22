@@ -39,7 +39,7 @@
         "model_prompt": {
           "type": "string",
           "minLength": 20,
-          "description": "R043 必须包含「旁白（男声，中文）」和「禁止英文配音」"
+          "description": "R043 必须包含「中文旁白」和「禁止英文配音」"
         },
         "first_frame_test_status": {
           "type": "string",

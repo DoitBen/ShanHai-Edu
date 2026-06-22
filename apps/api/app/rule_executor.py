@@ -45,7 +45,7 @@ class RuleWarningError(ValueError):
 
 
 class RuleExecutor:
-    IMPLEMENTED_RULE_IDS = {"R001", "R004", "R006", "R010", "R023", "R024", "R026", "R030"}
+    IMPLEMENTED_RULE_IDS = {"R001", "R004", "R005", "R006", "R010", "R023", "R024", "R026", "R030"}
 
     def __init__(self, rules_dir: Path | None):
         self.rules_dir = rules_dir
@@ -248,6 +248,7 @@ class RuleExecutor:
         checks = {
             "R001": self._check_r001,
             "R004": self._check_r004,
+            "R005": self._check_r005,
             "R006": self._check_r006,
             "R023": self._check_r023,
             "R024": self._check_r024,
@@ -263,12 +264,21 @@ class RuleExecutor:
 
     @staticmethod
     def _check_r001(content: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
-        exemption = content.get("voice_exemption") if isinstance(content.get("voice_exemption"), dict) else {}
-        passed = (content.get("voice_gender") == "male" and content.get("voice_language") == "zh-CN") or bool(exemption.get("approved"))
+        audio_path = content.get("audio_path") or content.get("narration_audio_path")
+        passed = bool(audio_path) and content.get("audio_verified") is True and content.get("voice_language") == "zh-CN"
+        warnings = []
+        if not audio_path:
+            warnings.append("narration_audio_missing")
+        if content.get("audio_verified") is not True:
+            warnings.append("audio_not_verified")
+        if content.get("voice_language") != "zh-CN":
+            warnings.append("voice_language_unclear")
         return passed, {
             "voice_gender": content.get("voice_gender"),
             "voice_language": content.get("voice_language"),
-            "voice_exemption_approved": bool(exemption.get("approved")),
+            "audio_verified": content.get("audio_verified"),
+            "audio_path": audio_path,
+            "warnings": warnings,
         }
 
     @staticmethod
@@ -292,6 +302,18 @@ class RuleExecutor:
                     }
                 )
         return not broken, {"violations": broken}
+
+    @staticmethod
+    def _check_r005(content: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
+        gate_result = content.get("gate_result_json") if isinstance(content.get("gate_result_json"), dict) else {}
+        mode = gate_result.get("mode")
+        gate_passed = gate_result.get("gate_passed")
+        if mode is None:
+            mode = "final" if content.get("gate_passed") is True else None
+        if gate_passed is None:
+            gate_passed = content.get("gate_passed")
+        passed = mode == "final" and gate_passed is True
+        return passed, {"mode": mode, "gate_passed": gate_passed}
 
     @staticmethod
     def _check_r006(content: dict[str, Any]) -> tuple[bool, dict[str, Any]]:

@@ -64,6 +64,7 @@ TEST_DEPENDENCIES = {
     "ppt_page_script": ["ppt_assembly_plan", "character_dict", "visual_contract"],
     "pptx_artifact": ["ppt_page_script", "ppt_visual_asset"],
     "final_video": ["storyboard", "intro_video_script"],
+    "final_delivery": ["pptx_artifact", "final_video"],
 }
 
 
@@ -143,6 +144,7 @@ def test_rule_executor_coverage_marks_yaml_rules_without_runtime_checks_unimplem
     assert by_id["R010"]["implemented"] is True
     assert by_id["R001"]["implemented"] is True
     assert by_id["R004"]["implemented"] is True
+    assert by_id["R005"]["implemented"] is True
     assert by_id["R006"]["implemented"] is True
     assert by_id["R026"]["implemented"] is True
     assert by_id["R030"]["implemented"] is True
@@ -214,6 +216,36 @@ def test_r006_blocks_ppt_page_script_approve(tmp_path: Path):
     error = error_payload(response, 409, "RULE_VIOLATION_R006")
     assert "editable" in json.dumps(error["details"], ensure_ascii=False)
     rows = rule_rows(project, "R006")
+    assert len(rows) == 1
+    assert rows[0]["passed"] == 0
+
+
+def test_r005_blocks_candidate_final_delivery_approve(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project(client)
+    project_id = project["project_id"]
+    seed_approved_upstreams(client, project, "final_delivery")
+    content = {
+        "lesson_plan_path": "exports/final_delivery/lesson_plan.md",
+        "pptx_final_path": "exports/final_delivery/deck.pptx",
+        "video_final_path": "exports/final_delivery/final_video.mp4",
+        "delivery_manifest_path": "exports/final_delivery/delivery_manifest.json",
+        "gate_result_json_path": "exports/final_delivery/gate_result.json",
+        "gate_result_json": {"mode": "candidate", "gate_passed": False},
+        "gate_passed": False,
+        "qa_records": ["candidate_gate"],
+        "time_stats_md_path": "exports/final_delivery/time_stats.md",
+        "feedback_trigger_at": "2026-06-22T00:00:00Z",
+        "source_versions": {"lesson_plan": "ver_lesson", "pptx_artifact": "ver_ppt", "final_video": "ver_video"},
+        "generated_at": "2026-06-22T00:00:00Z",
+    }
+    write_current_version(client, project, "final_delivery", content)
+
+    response = client.post(f"/projects/{project_id}/nodes/final_delivery/approve", json={})
+
+    error = error_payload(response, 409, "RULE_VIOLATION_R005")
+    assert error["details"]["rule_id"] == "R005"
+    rows = rule_rows(project, "R005")
     assert len(rows) == 1
     assert rows[0]["passed"] == 0
 
@@ -402,27 +434,41 @@ def test_r026_blocks_pptx_artifact_when_pptx_cannot_be_parsed(tmp_path: Path):
     assert error["details"]["error_code"] == "PPTX_PARSE_FAILED"
 
 
-def test_r001_blocks_final_video_non_male_zh_voice(tmp_path: Path):
+def test_r001_warns_but_allows_override_for_non_male_voice(tmp_path: Path):
     client = make_client(tmp_path)
     project = create_project(client)
     project_id = project["project_id"]
     seed_approved_upstreams(client, project, "final_video")
-    broken = {
+    content = {
         "clip_count": 1,
         "clips": [],
         "model_audio_policy": "verified_chinese",
         "english_audio_detected": False,
         "voice_gender": "female",
         "voice_language": "zh-CN",
+        "audio_verified": True,
+        "narration_audio_path": "audio/narration.mp3",
     }
-    write_current_version(client, project, "final_video", broken)
+    warning_content = {**content, "audio_verified": False, "narration_audio_path": ""}
+    write_current_version(client, project, "final_video", warning_content)
+    warning = client.post(f"/projects/{project_id}/nodes/final_video/approve", json={})
+    error = error_payload(warning, 409, "RULE_WARNING")
+    assert error["details"]["warnings"][0]["rule_id"] == "R001"
+    assert error["details"]["warnings"][0]["severity"] == "warning"
 
-    response = client.post(f"/projects/{project_id}/nodes/final_video/approve", json={})
+    approved = unwrap_ok(
+        client.post(
+            f"/projects/{project_id}/nodes/final_video/approve",
+            json={"override_warning_rule_ids": ["R001"], "override_reason": "教师选择女声旁白"},
+        )
+    )
 
-    error_payload(response, 409, "RULE_VIOLATION_R001")
+    assert approved == {"node_id": "final_video", "status": "approved"}
     rows = rule_rows(project, "R001")
-    assert len(rows) == 1
-    assert rows[0]["passed"] == 0
+    assert [row["passed"] for row in rows] == [0, 1]
+    details = json.loads(rows[-1]["details_json"])
+    assert details["override"] is True
+    assert details["override_reason"] == "教师选择女声旁白"
 
 
 def test_warning_requires_override_and_override_is_logged(tmp_path: Path):

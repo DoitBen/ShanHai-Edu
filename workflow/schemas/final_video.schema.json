@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "final_video.schema.json",
-  "title": "最终视频（生成+拼接+中文男声）",
+  "title": "最终视频（生成+拼接+旁白）",
   "type": "object",
   "required": [
     "video_path", "total_duration_sec", "clip_count", "clips",
@@ -23,10 +23,10 @@
     "audio_verified": { "type": "boolean", "const": true },
     "voice_gender": {
       "type": "string",
-      "enum": ["male", "exempted_female", "exempted_child", "exempted_ambient"],
-      "description": "R001 默认 male，非 male 需配 voice_exemption"
+      "enum": ["male", "female", "child", "ambient", "unknown"],
+      "description": "旁白配置字段，不作为 hard_block"
     },
-    "voice_language": { "type": "string", "const": "zh-CN", "description": "R001 强约束" },
+    "voice_language": { "type": "string", "description": "旁白语言配置；缺失或不明确触发 warning" },
     "narration_audio_path": { "type": "string" },
     "subtitle_srt_path": { "type": "string" },
     "model_audio_policy": {
@@ -45,7 +45,15 @@
         "reason": { "type": "string" },
         "approved_at": { "type": "string", "format": "date-time" }
       }
-    }
+    },
+    "audio_path": { "type": "string" },
+    "subtitle_path": { "type": "string" },
+    "provider_task_ids": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "source_versions": { "type": "object" },
+    "generated_at": { "type": "string" }
   },
   "$defs": {
     "clip": {

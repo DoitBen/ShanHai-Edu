@@ -973,7 +973,7 @@ class FakeProvider:
                         "reference_image_ids": [f"asset_ref_{index:02d}"],
                         "narration_slice": narration,
                         "subtitle": narration,
-                        "model_prompt": f"旁白（男声，中文）：{narration}\n画面：卡通披萨平均分情境，第{index}镜头。\n风格：3d_non_realistic, warm classroom illustration\n角色：无真人儿童，使用非写实卡通物品。\n禁止英文配音；如平台自动生成英文音频，则该片段判为不合格，需要静音或重合成中文配音。",
+                        "model_prompt": f"中文旁白：{narration}\n画面：卡通披萨平均分情境，第{index}镜头。\n风格：3d_non_realistic, warm classroom illustration\n角色：无真人儿童，使用非写实卡通物品。\n禁止英文配音；如平台自动生成英文音频，则该片段判为不合格，需要静音或重合成中文配音。",
                         "first_frame_test_status": "passed",
                         "first_frame_asset_id": f"asset_ref_{index:02d}",
                     }

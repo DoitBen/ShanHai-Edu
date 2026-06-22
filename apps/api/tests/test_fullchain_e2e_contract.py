@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Any
 from zipfile import ZipFile
@@ -94,6 +95,88 @@ class StubDeepSeekProvider:
                     }
                 ]
             }
+        if node_id == "ppt_assembly_plan":
+            return {
+                "persistent_context": "围绕 5 以内数的认识，保持生活化情境和可编辑数学文本。",
+                "page_count_target": 6,
+                "page_type_quota": {
+                    "life_observation": 1,
+                    "role_task": 1,
+                    "inquiry_operation": 1,
+                    "step_reveal": 1,
+                    "practice_challenge": 1,
+                    "blackboard_summary": 1,
+                },
+                "action_chain": ["look", "count", "match", "speak"],
+                "inquiry_path": "先观察真实物品数量，再建立数字和数量对应，最后用板书总结。",
+                "ppt_video_division": "PPT 负责课堂探究和可编辑数学表达，导入视频负责吸引注意力。",
+                "material_requirements": ["卡通苹果和铅笔数量图", "数字卡片", "可编辑板书文本"],
+                "editable_text_rules": "数字、算式和结论必须使用 PPT 文本或形状层。",
+                "accuracy_warnings": [],
+            }
+        if node_id == "ppt_page_script":
+            return {
+                "pages": [
+                    {
+                        "page_index": 1,
+                        "core_competency": ["number_sense"],
+                        "page_objective": "观察物品数量并提出数数任务",
+                        "student_action": "look",
+                        "page_type": "life_observation",
+                        "main_visual": {
+                            "description": "卡通桌面上摆放 1 到 5 个不同物品。",
+                            "serves_purpose": "帮助学生观察数量并开始数数。",
+                        },
+                        "character_refs": ["char_math_guide"],
+                        "image_prompts": [
+                            {
+                                "prompt_id": "ppt_prompt_01",
+                                "description": "非写实卡通桌面，苹果、铅笔和星星数量清晰。",
+                                "knowledge_link": "5 以内数的认识",
+                                "real_life_scene": True,
+                                "character_refs": ["char_math_guide"],
+                                "aspect_ratio": "16:9",
+                            }
+                        ],
+                        "math_assertions": [{"content": "1、2、3、4、5 表示不同数量", "answer": "1-5", "editable_layer": "ppt_text"}],
+                        "zone_layout": {"task_zone": "左侧物品图", "math_zone": "右侧数字卡", "conclusion_zone": "底部说一说"},
+                        "evidence_requirement": "学生能把物品个数和数字卡对应起来。",
+                        "accuracy_notes": "数字和数量必须一一对应。",
+                        "link_to_prev_page": "承接导入视频中的数数悬念。",
+                        "density_limits": {"body_text_max": 18, "info_chunks_max": 3},
+                    },
+                    {
+                        "page_index": 2,
+                        "core_competency": ["number_sense"],
+                        "page_objective": "总结 1 到 5 的数量意义",
+                        "student_action": "speak",
+                        "page_type": "blackboard_summary",
+                        "main_visual": {
+                            "description": "板书式数字与点子图对应表。",
+                            "serves_purpose": "形成可复述的数量对应结论。",
+                        },
+                        "character_refs": ["char_math_guide"],
+                        "image_prompts": [],
+                        "math_assertions": [{"content": "数到几，就用数字几表示", "answer": "数量对应", "editable_layer": "ppt_shape"}],
+                        "zone_layout": {"task_zone": "顶部回顾", "math_zone": "中间对应表", "conclusion_zone": "底部板书"},
+                        "evidence_requirement": "学生能用自己的话说出数字表示数量。",
+                        "accuracy_notes": "保持学生可见层简洁。",
+                        "link_to_prev_page": "从观察进入总结。",
+                        "density_limits": {"body_text_max": 16, "info_chunks_max": 3},
+                    },
+                ]
+            }
+        if node_id == "ppt_visual_asset":
+            return {
+                "assets": [
+                    {
+                        "asset_id": "ppt_asset_01",
+                        "source_prompt_id": "ppt_prompt_01",
+                        "storage_path": "08A_PPT视觉资产/ppt_asset_01.png",
+                        "status": "approved",
+                    }
+                ]
+            }
         if node_id == "intro_selection":
             return {
                 "selection_mode": "single_best",
@@ -160,7 +243,7 @@ class StubDeepSeekProvider:
                         "reference_image_ids": [f"asset_ref_{index:02d}"],
                         "narration_slice": f"认识数字 {index}",
                         "subtitle": f"认识数字 {index}",
-                        "model_prompt": f"旁白（男声，中文）：认识数字 {index}。禁止英文配音。",
+                        "model_prompt": f"中文旁白：认识数字 {index}。禁止英文配音。",
                         "first_frame_test_status": "passed",
                         "first_frame_asset_id": f"asset_ref_{index:02d}",
                     }
@@ -255,11 +338,32 @@ def test_real_text_placeholder_video_fullchain_exports_ppt_with_mp4(tmp_path: Pa
     project_id = project["project_id"]
     upload_textbook_input(client, project_id)
 
+    for node_id in ["textbook_parse", "lesson_plan", "visual_contract", "character_dict"]:
+        node = generate_and_approve(client, project_id, node_id)
+        assert node["status"] == "approved"
+
+    for node_id in ["ppt_assembly_plan", "ppt_page_script", "ppt_visual_asset"]:
+        node = generate_and_approve(client, project_id, node_id)
+        assert node["status"] == "approved"
+
+    artifact = unwrap_ok(client.post(f"/projects/{project_id}/nodes/pptx_artifact/generate", json={}))
+    assert artifact["status"] == "needs_review"
+    assert artifact["content"]["media_count"] >= 1
+    unwrap_ok(client.post(f"/projects/{project_id}/nodes/pptx_artifact/approve", json={}))
+    exported = unwrap_ok(client.post(f"/projects/{project_id}/export/ppt", json={}))
+    assert exported["filename"].endswith(".pptx")
+    assert exported["download_url"] == f"/projects/{project_id}/exports/{exported['filename']}"
+    assert exported["path"] == artifact["content"]["pptx_path"]
+
+    downloaded_ppt = client.get(exported["download_url"])
+    assert downloaded_ppt.status_code == 200
+    assert downloaded_ppt.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    )
+    pptx_path = Path(project["project_dir"]) / exported["path"]
+    assert pptx_path.exists()
+
     for node_id in [
-        "textbook_parse",
-        "lesson_plan",
-        "visual_contract",
-        "character_dict",
         "intro_selection",
         "intro_video_script",
         "intro_video_screenplay",
@@ -279,36 +383,46 @@ def test_real_text_placeholder_video_fullchain_exports_ppt_with_mp4(tmp_path: Pa
             json={"model": "veo_3_1-fast", "size": "1280x720", "mode": "reference", "full_run": True},
         )
     )
-    assert final_video["status"] == "drafted"
+    assert final_video["status"] == "needs_review"
     assert final_video["video_path"] == "outputs/final_video.mp4"
     assert final_video["content"]["video_path"] == "outputs/final_video.mp4"
     assert len(final_video["tasks"]) == 6
+    unwrap_ok(client.post(f"/projects/{project_id}/nodes/final_video/approve", json={}))
 
     downloaded_mp4 = client.get(f"/projects/{project_id}/outputs/final_video.mp4")
     assert downloaded_mp4.status_code == 200
     assert downloaded_mp4.headers["content-type"].startswith("video/mp4")
     assert downloaded_mp4.content.startswith(b"\x00\x00\x00 ftyp")
 
-    seed_ppt_artifact_upstreams(client, project)
-    artifact = unwrap_ok(client.post(f"/projects/{project_id}/nodes/pptx_artifact/generate", json={}))
-    exported = unwrap_ok(client.post(f"/projects/{project_id}/export/ppt", json={}))
-    assert exported["filename"].endswith(".pptx")
-    assert exported["download_url"] == f"/projects/{project_id}/exports/{exported['filename']}"
-    assert exported["video_path"] == "outputs/final_video.mp4"
-    assert exported["path"] == artifact["content"]["pptx_path"]
+    final_delivery = unwrap_ok(client.post(f"/projects/{project_id}/nodes/final_delivery/generate", json={}))
+    assert final_delivery["status"] == "needs_review"
+    delivery_content = final_delivery["content"]
+    assert delivery_content["lesson_plan_path"] == "exports/final_delivery/lesson_plan.md"
+    assert delivery_content["pptx_final_path"].endswith(".pptx")
+    assert delivery_content["video_final_path"] == "exports/final_delivery/final_video.mp4"
+    assert delivery_content["gate_passed"] is True
 
-    downloaded_ppt = client.get(exported["download_url"])
-    assert downloaded_ppt.status_code == 200
-    assert downloaded_ppt.headers["content-type"].startswith(
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-    )
+    delivery_manifest_path = Path(project["project_dir"]) / delivery_content["delivery_manifest_path"]
+    assert delivery_manifest_path.exists()
+    delivery_manifest = json.loads(delivery_manifest_path.read_text(encoding="utf-8"))
+    assert delivery_manifest["artifacts"]["lesson_plan"] == delivery_content["lesson_plan_path"]
+    assert delivery_manifest["artifacts"]["pptx"] == delivery_content["pptx_final_path"]
+    assert delivery_manifest["artifacts"]["video"] == delivery_content["video_final_path"]
+    assert (Path(project["project_dir"]) / delivery_content["pptx_final_path"]).exists()
+    assert (Path(project["project_dir"]) / delivery_content["video_final_path"]).exists()
 
-    pptx_path = Path(project["project_dir"]) / exported["path"]
-    with ZipFile(pptx_path) as archive:
-        media_names = [
-            name
-            for name in archive.namelist()
-            if name.startswith("ppt/media/") and name.endswith(".mp4")
-        ]
-        assert media_names
-        assert archive.read(media_names[0]) == downloaded_mp4.content
+    unwrap_ok(client.post(f"/projects/{project_id}/nodes/final_delivery/approve", json={}))
+    final_manifest = unwrap_ok(client.get(f"/projects/{project_id}/manifest"))
+    final_states = {node["node_id"]: node["status"] for node in final_manifest["nodes"]}
+    for node_id in [
+        "lesson_plan",
+        "pptx_artifact",
+        "intro_selection",
+        "intro_video_script",
+        "intro_video_screenplay",
+        "intro_video_asset",
+        "storyboard",
+        "final_video",
+        "final_delivery",
+    ]:
+        assert final_states[node_id] == "approved"

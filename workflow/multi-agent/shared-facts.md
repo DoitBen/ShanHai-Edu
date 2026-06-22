@@ -42,6 +42,8 @@
 - 新建项目体验基线：项目创建必须包含角色字典、视觉契约和合规红线，作为 PPT 与导入视频的共同上下文。
 - 导入视频产品基线：如果本课需要导入视频，教案中的导入设计必须拆成"导入视频策划卡 + 课堂接入说明"两层；导入视频和教案之间唯一硬连接字段为课程锚点。课程锚点只负责把独立、有吸引力的视频主题自然接回本课学习任务，不负责提前讲解知识点；导入视频不得被教案限制成知识讲解。
 - 前端本地真实 API 演示基线：`NEXT_PUBLIC_DEMO_MODE=false` 时，项目列表、创建项目、工作区 manifest、节点详情、`textbook_parse` 生成和确认走后端 API；默认 demo/mock 模式继续隔离使用 mock 数据，不与真实 API 状态混用。
+- 架构优化 v2 固定推进顺序：第0周 PPT 主链路 → StateEngine → RuleExecutor → Flywheel → 安全边界；每阶段都先读取仓库 Issues 并修复缺陷，再执行开发、完整测试、提交和推送。
+- 第0周 PPT 主链路基线：真实 API runtime manifest 必须包含 `visual_contract`、`character_dict`、`ppt_assembly_plan`、`ppt_page_script`、`ppt_visual_asset`、`pptx_artifact`；`pptx_artifact/generate` 必须写入可下载 PPTX artifact 节点版本；`final_delivery` 暂不进入第 0 周主线。
 
 ## 已拒绝或暂不采用
 

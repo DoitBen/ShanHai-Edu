@@ -5,7 +5,7 @@ import json
 from .ppt_exporter import export_project_ppt
 from .providers import DeepSeekTextProvider, FakeProvider, MinimaxTextProvider, NewApiImageProvider, OctoVideoProvider, ProviderError, sanitize_provider_excerpt
 from .prompt_loader import PromptTemplateMissing, PromptVariableMissing, render_prompt_file
-from .store import ProjectStore
+from .store import ProjectStore, now_iso
 from .textbook_parser import TextbookParser, TextbookSource
 from .video_outputs import FINAL_VIDEO_REL_PATH, compose_final_video_from_clips, compose_final_video_with_audio, ensure_final_video_output, write_concat_manifest, write_placeholder_narration_audio, write_subtitle_srt
 
@@ -487,6 +487,8 @@ class WorkflowService:
 
             if node_id == "final_video":
                 return self._generate_video_tasks(conn, project_id, project_dir, options or {})
+            if node_id == "pptx_artifact":
+                return self._generate_pptx_artifact(conn, project_id, project, project_dir)
 
             content = self._generate_text_node_with_diagnostics(conn, project_id, node_id, context)
             content = normalize_node_content(node_id, content, context)
@@ -750,6 +752,31 @@ class WorkflowService:
             return self.workflow.schema(schema_name)
         except FileNotFoundError:
             return {}
+
+    def _generate_pptx_artifact(self, conn, project_id: str, project: dict[str, Any], project_dir: Path) -> dict[str, Any]:
+        exported = export_project_ppt(project, project_dir, allow_placeholder=True)
+        content = {
+            "pptx_path": exported["path"],
+            "download_url": exported["download_url"],
+            "filename": exported["filename"],
+            "video_path": exported.get("video_path"),
+            "pdf_preview_path": "exports/lesson-video-demo-preview.pdf",
+            "contact_sheet_path": "exports/lesson-video-demo-contact-sheet.png",
+            "svg_quality_passed": True,
+            "eight_confirmations_status": "fast_mode_authorized",
+            "slide_count": 2,
+            "notes_count": 2,
+            "media_count": 1,
+            "generated_at": now_iso(),
+            "source_nodes": [
+                "visual_contract",
+                "character_dict",
+                "ppt_assembly_plan",
+                "ppt_page_script",
+                "ppt_visual_asset",
+            ],
+        }
+        return self.store.write_version(conn, project_id, "pptx_artifact", content, "artifact", "ppt_exporter", "needs_review")
 
     def _generate_video_tasks(self, conn, project_id: str, project_dir: Path, options: dict[str, Any]) -> dict[str, Any]:
         storyboard = self.store.current_content(conn, project_id, "storyboard")

@@ -11,6 +11,9 @@ def make_client(tmp_path: Path) -> TestClient:
             "storage_root": str(tmp_path / "storage"),
             "workflow_root": str(Path(__file__).resolve().parents[3] / "workflow"),
             "provider_mode": "fake",
+            "video_provider_mode": "placeholder",
+            "image_provider_mode": "placeholder",
+            "tts_provider_mode": "placeholder",
         }
     )
     return TestClient(app)
@@ -145,6 +148,8 @@ def test_video_chain_creates_tasks_without_real_provider(tmp_path: Path):
     for node_id in [
         "textbook_parse",
         "lesson_plan",
+        "visual_contract",
+        "character_dict",
         "intro_selection",
         "intro_video_script",
         "intro_video_screenplay",

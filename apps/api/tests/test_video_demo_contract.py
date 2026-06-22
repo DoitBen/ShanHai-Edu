@@ -12,6 +12,9 @@ def make_client(tmp_path: Path) -> TestClient:
             "storage_root": str(tmp_path / "storage"),
             "workflow_root": str(Path(__file__).resolve().parents[3] / "workflow"),
             "provider_mode": "fake",
+            "video_provider_mode": "placeholder",
+            "image_provider_mode": "placeholder",
+            "tts_provider_mode": "placeholder",
         }
     )
     return TestClient(app)
@@ -80,6 +83,11 @@ def generate_and_approve(client: TestClient, project_id: str, node_id: str) -> d
     approved = unwrap_ok(client.post(f"/projects/{project_id}/nodes/{node_id}/approve", json={}))
     assert approved == {"node_id": node_id, "status": "approved"}
     return current["content"]
+
+
+def generate_and_approve_shared_visual_context(client: TestClient, project_id: str) -> None:
+    for node_id in ["visual_contract", "character_dict"]:
+        generate_and_approve(client, project_id, node_id)
 
 
 def test_intro_selection_requires_approved_lesson_plan_and_can_be_edited(tmp_path: Path):
@@ -191,6 +199,7 @@ def test_storyboard_returns_anchor_warning_when_last_subtitle_misses_anchor(tmp_
     for node_id in ["textbook_parse", "lesson_plan", "intro_selection"]:
         unwrap_ok(client.post(f"/projects/{project_id}/nodes/{node_id}/generate", json={}))
         unwrap_ok(client.post(f"/projects/{project_id}/nodes/{node_id}/approve", json={}))
+    generate_and_approve_shared_visual_context(client, project_id)
 
     intro_selection = unwrap_ok(client.get(f"/projects/{project_id}/nodes/intro_selection"))["content"]
     unrelated_script = {
@@ -226,6 +235,7 @@ def test_fake_video_generation_chain_creates_queryable_tasks(tmp_path: Path):
     for node_id in ["textbook_parse", "lesson_plan", "intro_selection"]:
         unwrap_ok(client.post(f"/projects/{project_id}/nodes/{node_id}/generate", json={}))
         unwrap_ok(client.post(f"/projects/{project_id}/nodes/{node_id}/approve", json={}))
+    generate_and_approve_shared_visual_context(client, project_id)
 
     for node_id in [
         "intro_video_script",
@@ -277,6 +287,7 @@ def test_fake_video_generation_reuses_existing_final_video_output(tmp_path: Path
     for node_id in ["textbook_parse", "lesson_plan", "intro_selection"]:
         unwrap_ok(client.post(f"/projects/{project_id}/nodes/{node_id}/generate", json={}))
         unwrap_ok(client.post(f"/projects/{project_id}/nodes/{node_id}/approve", json={}))
+    generate_and_approve_shared_visual_context(client, project_id)
 
     for node_id in [
         "intro_video_script",
@@ -366,6 +377,8 @@ def test_video_node_edit_rejects_invalid_references_and_shapes(tmp_path: Path):
         "intro_video_screenplay",
         "intro_video_asset",
     ]:
+        if node_id == "intro_video_script":
+            generate_and_approve_shared_visual_context(client, project_id)
         unwrap_ok(client.post(f"/projects/{project_id}/nodes/{node_id}/generate", json={}))
         unwrap_ok(client.post(f"/projects/{project_id}/nodes/{node_id}/approve", json={}))
 
@@ -398,6 +411,8 @@ def test_video_node_edit_rejects_invalid_final_video_structure(tmp_path: Path):
     upload_textbook(client, project_id)
 
     for node_id in ["textbook_parse", "lesson_plan", "intro_selection", "intro_video_script", "intro_video_screenplay", "intro_video_asset", "storyboard"]:
+        if node_id == "intro_video_script":
+            generate_and_approve_shared_visual_context(client, project_id)
         unwrap_ok(client.post(f"/projects/{project_id}/nodes/{node_id}/generate", json={}))
         unwrap_ok(client.post(f"/projects/{project_id}/nodes/{node_id}/approve", json={}))
 

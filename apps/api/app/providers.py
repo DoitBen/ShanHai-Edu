@@ -754,6 +754,161 @@ class FakeProvider:
                     self._intro("story", 1, "小明的半块巧克力", "用故事冲突引出分数表达。"),
                 ],
             }
+        if node_id == "visual_contract":
+            return {
+                "palette": ["#0F766E", "#F59E0B", "#F8FAFC", "#1F2937"],
+                "style_keywords": ["非写实卡通", "公开课作品感", "生活化数学情境"],
+                "font_preference": "Microsoft YaHei",
+                "template_pptx": {
+                    "path": "",
+                    "extracted_palette": ["#0F766E", "#F59E0B", "#F8FAFC"],
+                    "extracted_fonts": ["Microsoft YaHei"],
+                },
+            }
+        if node_id == "character_dict":
+            return {
+                "characters": [
+                    {
+                        "character_id": "char_math_guide",
+                        "name": "小山",
+                        "identity": "非写实卡通数学任务引导员",
+                        "view_front": "圆润比例，正面举着任务卡，表情专注但不写实。",
+                        "view_side": "侧面背小书包，保持卡通轮廓和固定服装。",
+                        "view_back": "背面可见同色书包和简化发型轮廓。",
+                        "view_half": "半身用于提示气泡旁，不出现真人儿童质感。",
+                        "view_hand": "手部为简化卡通手套形态，可指向算式或物品。",
+                        "outfit_lock": {
+                            "color": "teal-and-gold",
+                            "style": "cartoon_school_helper",
+                            "accessories": ["task_card", "small_backpack"],
+                        },
+                        "hair_lock": "简化深色短发块面，不使用真实照片参考。",
+                        "body_proportion": "3d_non_realistic_childlike_chibi",
+                        "style_constraint": "3d_non_realistic",
+                        "banned_keywords": ["真人", "photorealistic", "real child"],
+                        "reference_image": "",
+                    }
+                ]
+            }
+        if node_id == "ppt_assembly_plan":
+            lesson_title = context.get("textbook_parse", {}).get("lesson_title") or "数学探究课"
+            return {
+                "persistent_context": f"围绕《{lesson_title}》公开课，保持生活化情境、可检查数学文本和非写实视觉风格。",
+                "page_count_target": 12,
+                "page_type_quota": {
+                    "life_observation": 2,
+                    "role_task": 1,
+                    "inquiry_operation": 2,
+                    "step_reveal": 2,
+                    "dual_image_compare": 1,
+                    "error_judge": 1,
+                    "practice_challenge": 1,
+                    "evidence_reasoning": 1,
+                    "math_id_card": 0,
+                    "blackboard_summary": 1,
+                    "homework_practice": 0,
+                },
+                "action_chain": ["look", "count", "compare", "speak", "correct"],
+                "inquiry_path": "先看生活情境提出问题，再用可编辑算式和操作图分步探究，最后用易错判断和板书小结收束。",
+                "ppt_video_division": "导入视频只负责引出真实任务，PPT 负责课堂探究、算式呈现、追问和练习巩固。",
+                "material_requirements": ["校园义卖或图书角统计插画", "可编辑竖式文本", "易错题对比图"],
+                "editable_text_rules": "所有数字、算式、单位和结论必须使用 PPT 文本或形状层，禁止压进图片。",
+                "accuracy_warnings": ["检查每一道算式进位位置", "学生可见层不出现内部 prompt 或技术字段"],
+            }
+        if node_id == "ppt_page_script":
+            return {
+                "pages": [
+                    {
+                        "page_index": 1,
+                        "core_competency": ["number_sense"],
+                        "page_objective": "发现一次进位问题",
+                        "student_action": "look",
+                        "page_type": "life_observation",
+                        "main_visual": {
+                            "description": "校园义卖摊位上两组图书数量需要合并统计。",
+                            "serves_purpose": "观察真实数量情境并提出加法问题。",
+                        },
+                        "character_refs": ["char_math_guide"],
+                        "image_prompts": [
+                            {
+                                "prompt_id": "ppt_prompt_01",
+                                "description": "非写实卡通校园义卖，图书堆和价签清晰，无真人儿童照片。",
+                                "knowledge_link": "万以内加法一次进位",
+                                "real_life_scene": True,
+                                "character_refs": ["char_math_guide"],
+                                "aspect_ratio": "16:9",
+                            }
+                        ],
+                        "math_assertions": [
+                            {
+                                "content": "286 + 147 = 433",
+                                "answer": "433",
+                                "editable_layer": "ppt_text",
+                            }
+                        ],
+                        "zone_layout": {
+                            "task_zone": "左侧生活任务图",
+                            "math_zone": "右侧可编辑算式和竖式",
+                            "conclusion_zone": "底部留出学生发现区",
+                        },
+                        "evidence_requirement": "学生需要指出个位相加满十并说明进位原因。",
+                        "accuracy_notes": "检查 6+7=13 后向十位进 1。",
+                        "link_to_prev_page": "承接导入视频里的统计任务。",
+                        "density_limits": {"body_text_max": 18, "info_chunks_max": 3},
+                    },
+                    {
+                        "page_index": 2,
+                        "core_competency": ["operation_ability"],
+                        "page_objective": "总结进位写法",
+                        "student_action": "speak",
+                        "page_type": "blackboard_summary",
+                        "main_visual": {
+                            "description": "板书式竖式步骤图，突出进位 1 的位置。",
+                            "serves_purpose": "帮助学生说清一次进位的计算步骤。",
+                        },
+                        "character_refs": ["char_math_guide"],
+                        "image_prompts": [],
+                        "math_assertions": [
+                            {
+                                "content": "个位满十，向十位进 1。",
+                                "answer": "进位规则",
+                                "editable_layer": "ppt_shape",
+                            }
+                        ],
+                        "zone_layout": {
+                            "task_zone": "顶部问题回顾",
+                            "math_zone": "中间竖式步骤",
+                            "conclusion_zone": "底部板书总结",
+                        },
+                        "evidence_requirement": "学生能复述进位发生的位置和原因。",
+                        "accuracy_notes": "板书层保留教师可改备注，不进入学生可见层。",
+                        "link_to_prev_page": "从生活任务过渡到算法总结。",
+                        "density_limits": {"body_text_max": 16, "info_chunks_max": 3},
+                    },
+                ]
+            }
+        if node_id == "ppt_visual_asset":
+            return {
+                "assets": [
+                    {
+                        "asset_id": "ppt_asset_01",
+                        "source_prompt_id": "ppt_prompt_01",
+                        "storage_path": "08A_PPT视觉资产/ppt_asset_01.png",
+                        "status": "approved",
+                    }
+                ]
+            }
+        if node_id == "pptx_artifact":
+            return {
+                "pptx_path": "exports/lesson-video-demo.pptx",
+                "pdf_preview_path": "exports/lesson-video-demo-preview.pdf",
+                "contact_sheet_path": "exports/lesson-video-demo-contact-sheet.png",
+                "svg_quality_passed": True,
+                "eight_confirmations_status": "fast_mode_authorized",
+                "slide_count": 2,
+                "notes_count": 2,
+                "media_count": 1,
+            }
         if node_id == "intro_selection":
             designs = context.get("lesson_plan", {}).get("intro_designs", [])
             primary = designs[1]["design_id"] if len(designs) > 1 else "design_application_01"

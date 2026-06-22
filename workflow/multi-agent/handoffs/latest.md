@@ -1,5 +1,76 @@
 # 最新角色交接记录
 
+## 【本轮】全栈架构师 — T102 architecture-optimization-v2 第0周 PPT 主链路
+
+### 本轮目标
+
+按 `docs\architecture-optimization-v2.md` 第 0 周裁决接通真实 PPT 主链路：后端运行时 manifest 必须包含视觉契约、角色字典和 PPT 线节点；前端真实 API 工作区必须可见；`pptx_artifact/generate` 必须生成可下载 PPTX artifact；不提前接 `final_delivery`。
+
+### 已完成事项
+
+- 新增 `apps\api\tests\test_ppt_runtime_contract.py` 覆盖新项目 manifest、PPT 分支 generate/edit/approve、PPTX artifact 下载和 `final_delivery` 缺席。
+- `apps\api\app\workflow_config.py` 将 `visual_contract`、`character_dict`、`ppt_assembly_plan`、`ppt_page_script`、`ppt_visual_asset`、`pptx_artifact` 纳入运行时节点与依赖图。
+- `apps\api\app\providers.py` 为新增节点补齐合法 fake 内容。
+- `apps\api\app\services.py` 为 `pptx_artifact` 增加 artifact 分支，复用 `export_project_ppt()` 并写入节点版本。
+- `apps\web\src\lib\api-mappers.ts` 补齐真实 API 模式下的 PPT 节点映射，工作区显示 16 个后端 manifest 节点。
+- 已读取仓库 Issues：`gh issue list --state all --limit 200` 返回空列表；`git fetch --prune origin` 后 `origin/main` 未领先本地。
+
+### 验证证据
+
+```powershell
+python -m pytest apps\api\tests -q
+```
+
+结果：`131 passed, 2 xfailed`。
+
+```powershell
+cd apps\web
+bunx tsc --noEmit --pretty false
+bun run lint
+bun run build
+```
+
+结果：三项均通过。
+
+浏览器 smoke：
+
+- API：`http://127.0.0.1:8123`，fake/placeholder provider，临时 storage 位于用户临时目录。
+- Web：`http://127.0.0.1:3123`，`NEXT_PUBLIC_DEMO_MODE=false`。
+- 工作区显示：`16 个后端 manifest 节点`。
+- 新增节点可见：`视觉契约`、`角色字典`、`PPT 总装方案`、`PPT 页面脚本`、`PPT 视觉资产`、`PPTX 生成`。
+- 浏览器 console `error/warn` 为空。
+
+### 当前状态
+
+- `architecture-optimization-v2.md` 第 0 周 PPT 主链路已达到内测验收口径。
+- 第 0 周不代表 StateEngine、RuleExecutor、Flywheel、安全边界或最终交付门禁完成。
+- 下一阶段必须进入 StateEngine，仍需按同一流程先读 Issues、修缺陷、拆任务、开发、全流程测试、提交并推送。
+
+### 已更新文件
+
+- `apps\api\app\workflow_config.py`
+- `apps\api\app\providers.py`
+- `apps\api\app\services.py`
+- `apps\api\tests\test_ppt_runtime_contract.py`
+- `apps\api\tests\test_ppt_export.py`
+- `apps\api\tests\test_video_demo_contract.py`
+- `apps\api\tests\test_fullchain_e2e_contract.py`
+- `apps\api\tests\test_mvp_api.py`
+- `apps\api\tests\test_real_providers.py`
+- `apps\web\src\lib\api-mappers.ts`
+- `docs\superpowers\plans\2026-06-22-ppt-mainline-phase0.md`
+- `workflow\multi-agent\dispatch.md`
+- `workflow\multi-agent\stage-review.md`
+- `workflow\multi-agent\roles\architect.md`
+- `workflow\multi-agent\shared-facts.md`
+- `workflow\multi-agent\decisions.md`
+- `workflow\multi-agent\handoffs\latest.md`
+
+### 下个角色需要知道的上下文
+
+- StateEngine 是下一阶段，不能跳到 RuleExecutor/Flywheel/安全边界。
+- 当前 `ProjectStore.approve_node()` 仍是直接改状态，StateEngine 阶段应接管 generate/edit/approve/redo/skip、transition log 和 cascade invalidate。
+
 ## 【本轮】全栈工程师 — T101 后端 API 视频模型可配置化
 
 ### 本轮目标
@@ -4272,7 +4343,6 @@ fake 模式结果：
 ### 待决策问题
 
 - 当前阶段部署路线：优先补 docker-compose/内网最小部署，还是直接按 Cloud Run 约束推进。
-- `graphify-out` 和 `apps\web\graphify-out` 是否应作为生成物纳入忽略规则。
 - `docs` 下 PDF/PPTX 白名单是否继续保留。
 
 ### 建议下一个接手角色

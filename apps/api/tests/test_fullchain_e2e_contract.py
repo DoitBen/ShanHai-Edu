@@ -70,6 +70,30 @@ class StubDeepSeekProvider:
                     },
                 ],
             }
+        if node_id == "visual_contract":
+            return {
+                "palette": ["#0F766E", "#F59E0B", "#F8FAFC"],
+                "style_keywords": ["非写实卡通", "生活化数学情境"],
+                "font_preference": "Microsoft YaHei",
+            }
+        if node_id == "character_dict":
+            return {
+                "characters": [
+                    {
+                        "character_id": "char_math_guide",
+                        "name": "小山",
+                        "identity": "非写实卡通数学引导员",
+                        "view_front": "卡通正面形象",
+                        "view_side": "卡通侧面形象",
+                        "view_back": "卡通背面形象",
+                        "outfit_lock": {"color": "teal", "style": "cartoon"},
+                        "hair_lock": "简化发型",
+                        "body_proportion": "3d_non_realistic_childlike_chibi",
+                        "style_constraint": "3d_non_realistic",
+                        "banned_keywords": ["真人", "photorealistic", "real child"],
+                    }
+                ]
+            }
         if node_id == "intro_selection":
             return {
                 "selection_mode": "single_best",
@@ -154,6 +178,8 @@ def make_client(tmp_path: Path, monkeypatch) -> TestClient:
             "workflow_root": str(ROOT / "workflow"),
             "provider_mode": "real",
             "video_provider_mode": "placeholder",
+            "image_provider_mode": "placeholder",
+            "tts_provider_mode": "placeholder",
             "deepseek_api_key": "test-deepseek-key",
             "deepseek_base_url": "https://api.deepseek.com",
             "deepseek_model": "deepseek-chat",
@@ -223,6 +249,8 @@ def test_real_text_placeholder_video_fullchain_exports_ppt_with_mp4(tmp_path: Pa
     for node_id in [
         "textbook_parse",
         "lesson_plan",
+        "visual_contract",
+        "character_dict",
         "intro_selection",
         "intro_video_script",
         "intro_video_screenplay",

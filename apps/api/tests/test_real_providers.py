@@ -1,7 +1,9 @@
 from pathlib import Path
 from typing import Any
 import http.client
+import json
 import threading
+import uuid
 
 import pytest
 from fastapi.testclient import TestClient
@@ -18,6 +20,9 @@ def make_client(tmp_path: Path, overrides: dict[str, Any] | None = None) -> Test
             "storage_root": str(tmp_path / "storage"),
             "workflow_root": str(Path(__file__).resolve().parents[3] / "workflow"),
             "provider_mode": "fake",
+            "video_provider_mode": "placeholder",
+            "image_provider_mode": "placeholder",
+            "tts_provider_mode": "placeholder",
             "capabilities_path": str(
                 Path(__file__).resolve().parents[3]
                 / "docs"
@@ -36,6 +41,51 @@ def unwrap(response):
     payload = response.json()
     assert payload["ok"] is True, payload
     return payload["data"]
+
+
+def _write_shared_visual_context(conn, project_id: str) -> None:
+    conn.execute(
+        "UPDATE node_state SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE project_id = ? AND node_id IN ('project_meta', 'project_config')",
+        (project_id,),
+    )
+    store_content = {
+        "visual_contract": {
+            "palette": ["#0F766E", "#F59E0B", "#F8FAFC"],
+            "style_keywords": ["非写实卡通", "生活化数学情境"],
+            "font_preference": "Microsoft YaHei",
+        },
+        "character_dict": {
+            "characters": [
+                {
+                    "character_id": "char_math_guide",
+                    "name": "小山",
+                    "identity": "非写实卡通数学引导员",
+                    "view_front": "卡通正面形象",
+                    "view_side": "卡通侧面形象",
+                    "view_back": "卡通背面形象",
+                    "outfit_lock": {"color": "teal", "style": "cartoon"},
+                    "hair_lock": "简化发型",
+                    "body_proportion": "3d_non_realistic_childlike_chibi",
+                    "style_constraint": "3d_non_realistic",
+                    "banned_keywords": ["真人", "photorealistic", "real child"],
+                }
+            ]
+        },
+    }
+    for node_id, content in store_content.items():
+        version_id = f"ver_{uuid.uuid4().hex[:12]}"
+        conn.execute(
+            """
+            INSERT INTO node_versions
+            (version_id, project_id, node_id, content_json, generated_by, provider, status, created_at, approved_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """,
+            (version_id, project_id, node_id, json.dumps(content, ensure_ascii=False), "fixture", "fixture", "approved"),
+        )
+        conn.execute(
+            "UPDATE node_state SET status = 'approved', current_version_id = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ? AND node_id = ?",
+            (version_id, project_id, node_id),
+        )
 
 
 def test_video_capabilities_include_octo_models(tmp_path: Path):
@@ -772,6 +822,7 @@ def test_real_provider_mode_generates_video_script_chain_with_shared_llm(tmp_pat
     )
     project_id = project["project_id"]
     with client.app.state.store.connect(Path(project["project_dir"])) as conn:
+        _write_shared_visual_context(conn, project_id)
         client.app.state.store.write_version(
             conn,
             project_id,
@@ -871,6 +922,7 @@ def test_storyboard_prompt_omits_large_data_image_payloads_but_keeps_asset_refs(
     project_dir = Path(project["project_dir"])
     large_data_image = "data:image/png;base64," + ("A" * 100_000)
     with client.app.state.store.connect(project_dir) as conn:
+        _write_shared_visual_context(conn, project_id)
         client.app.state.store.write_version(
             conn,
             project_id,
@@ -1159,6 +1211,7 @@ def _create_project_with_approved_storyboard(client: TestClient, name: str = "�
         ]
     }
     with client.app.state.store.connect(Path(project["project_dir"])) as conn:
+        _write_shared_visual_context(conn, project_id)
         client.app.state.store.write_version(conn, project_id, "intro_video_script", {"narration_full_text": "认识 1 到 2。"}, "ai", "fixture", "approved")
         client.app.state.store.write_version(conn, project_id, "storyboard", storyboard, "ai", "fixture", "approved")
     return project
@@ -1191,6 +1244,7 @@ def _create_project_with_approved_screenplay(client: TestClient, name: str = "�
         ]
     }
     with client.app.state.store.connect(Path(project["project_dir"])) as conn:
+        _write_shared_visual_context(conn, project_id)
         client.app.state.store.write_version(conn, project_id, "intro_video_screenplay", screenplay, "ai", "fixture", "approved")
     return project
 

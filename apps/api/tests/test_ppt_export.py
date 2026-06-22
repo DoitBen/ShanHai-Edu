@@ -13,6 +13,7 @@ def make_client(tmp_path: Path) -> TestClient:
             "storage_root": str(tmp_path / "storage"),
             "workflow_root": str(Path(__file__).resolve().parents[3] / "workflow"),
             "provider_mode": "fake",
+            "video_provider_mode": "placeholder",
         }
     )
     return TestClient(app)

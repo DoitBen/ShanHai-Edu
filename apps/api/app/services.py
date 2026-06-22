@@ -534,6 +534,7 @@ class WorkflowService:
         project = self.store.get_project(project_id)
         project_dir = Path(project["project_dir"])
         with self.store.connect(project_dir) as conn:
+            self._assert_dependencies(conn, project_id, node_id, allow_existing=True)
             content = self.store.current_content(conn, project_id, node_id)
             if content is not None and node_id in {"intro_selection", "storyboard"}:
                 validate_approve_content(node_id, content, self._edit_validation_context(conn, project_id))

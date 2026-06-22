@@ -153,6 +153,40 @@ def test_state_engine_cascades_approved_downstream_to_needs_review_without_losin
     assert cascade_rows[0]["to_status"] == "needs_review"
 
 
+def test_cascaded_downstream_cannot_be_approved_until_upstream_is_reapproved(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project(client)
+    project_id = project["project_id"]
+    upload_textbook(client, project_id)
+    for node_id in ["textbook_parse", "lesson_plan", "ppt_assembly_plan"]:
+        generate_and_approve(client, project_id, node_id)
+
+    lesson_plan = unwrap_ok(client.get(f"/projects/{project_id}/nodes/lesson_plan"))["content"]
+    lesson_plan["state_engine_marker"] = "requires upstream reapproval"
+    unwrap_ok(
+        client.post(
+            f"/projects/{project_id}/nodes/lesson_plan/edit",
+            json={"content": lesson_plan},
+        )
+    )
+
+    downstream = unwrap_ok(client.get(f"/projects/{project_id}/nodes/ppt_assembly_plan"))
+    assert downstream["status"] == "needs_review"
+
+    blocked = client.post(f"/projects/{project_id}/nodes/ppt_assembly_plan/approve", json={})
+    assert blocked.status_code == 409
+    assert blocked.json()["error"]["code"] == "UPSTREAM_NOT_APPROVED"
+
+    rule_rows = client.app.state.store.rule_results(project_id, "ppt_assembly_plan")
+    r010_failures = [row for row in rule_rows if row["rule_id"] == "R010" and row["passed"] == 0]
+    assert r010_failures
+    assert r010_failures[-1]["details"]["dependencies"] == ["lesson_plan"]
+
+    unwrap_ok(client.post(f"/projects/{project_id}/nodes/lesson_plan/approve", json={}))
+    approved = unwrap_ok(client.post(f"/projects/{project_id}/nodes/ppt_assembly_plan/approve", json={}))
+    assert approved == {"node_id": "ppt_assembly_plan", "status": "approved"}
+
+
 def test_store_rejects_non_workflow_business_statuses(tmp_path: Path):
     client = make_client(tmp_path)
     project = create_project(client)

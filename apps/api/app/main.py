@@ -248,6 +248,8 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
             return fail(409, "RULE_WARNING", str(exc), retryable=False, details=exc.details)
         except RuleHardBlockError as exc:
             return fail(409, exc.code, str(exc), retryable=False, details=exc.details)
+        except PermissionError as exc:
+            return fail(409, "UPSTREAM_NOT_APPROVED", str(exc), retryable=False)
         except ValueError as exc:
             return fail(409, "NODE_NOT_READY", str(exc), retryable=False)
         except KeyError as exc:

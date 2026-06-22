@@ -33,6 +33,7 @@ import {
   fetchProjects,
   generateProjectNode,
   retryProjectTask as retryProjectTaskRequest,
+  submitProjectFeedback,
   uploadProjectTextbook,
   uploadProjectTextbookFile,
 } from "./api-client";
@@ -186,6 +187,10 @@ interface AppState {
     projectId: string,
     stageKey: string,
     content: unknown,
+  ) => Promise<{ ok: boolean; msg?: string }>;
+  submitDeliveryFeedback: (
+    projectId: string,
+    payload: Record<string, unknown>,
   ) => Promise<{ ok: boolean; msg?: string }>;
 
   // project actions
@@ -946,6 +951,22 @@ export const useAppStore = create<AppState>((set, get) => ({
         },
       });
       return { ok: false, msg };
+    }
+  },
+
+  submitDeliveryFeedback: async (projectId, payload) => {
+    if (get().dataMode === "demo") return { ok: true };
+    try {
+      await submitProjectFeedback(projectId, {
+        feedback_type: "delivery",
+        payload,
+      });
+      return { ok: true };
+    } catch (error) {
+      return {
+        ok: false,
+        msg: error instanceof Error ? error.message : "反馈提交失败",
+      };
     }
   },
 

@@ -123,6 +123,22 @@ export interface EditNodePayload {
   content: unknown;
 }
 
+export type FeedbackType = "delivery" | "next_session" | "classroom_after_use";
+
+export interface FeedbackPayload {
+  feedback_type: FeedbackType;
+  payload: Record<string, unknown>;
+}
+
+export interface ApiFeedbackResult {
+  feedback_id: string;
+  user_id: string | null;
+  project_id: string;
+  feedback_type: FeedbackType;
+  payload: Record<string, unknown>;
+  created_at: string;
+}
+
 export interface ApiTask {
   task_id: string;
   project_id: string;

@@ -7,13 +7,13 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from .models import NodeApproveRequest, NodeEditRequest, NodeGenerateRequest, ProjectCreateRequest, dump_model
+from .models import FeedbackRequest, NodeApproveRequest, NodeEditRequest, NodeGenerateRequest, ProjectCreateRequest, dump_model
 from .providers import DeepSeekTextProvider, FakeProvider, MinimaxTextProvider, MinimaxTTSProvider, NewApiImageProvider, OctoVideoProvider, ProviderError, sanitize_provider_excerpt
 from .prompt_registry import PromptRegistry, PromptStore
 from .responses import fail, ok
 from .rule_executor import RuleHardBlockError, RuleWarningError
 from .security import require_api_token
-from .services import NodeContentValidationError, WorkflowService
+from .services import FeedbackTypeError, NodeContentValidationError, WorkflowService
 from .settings import Settings
 from .store import ProjectStore
 from .workflow_config import WorkflowConfig
@@ -179,6 +179,22 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
     def get_manifest(project_id: str):
         try:
             return ok(store.manifest(project_id))
+        except KeyError:
+            return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
+
+    @app.get("/projects/{project_id}/flywheel", dependencies=protected)
+    def get_flywheel(project_id: str):
+        try:
+            return ok(service.flywheel_events(project_id))
+        except KeyError:
+            return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
+
+    @app.post("/projects/{project_id}/feedback", dependencies=protected)
+    def record_feedback(project_id: str, payload: FeedbackRequest):
+        try:
+            return ok(service.record_feedback(project_id, payload.feedback_type, payload.payload))
+        except FeedbackTypeError as exc:
+            return fail(400, "FEEDBACK_TYPE_INVALID", str(exc), retryable=False)
         except KeyError:
             return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
 

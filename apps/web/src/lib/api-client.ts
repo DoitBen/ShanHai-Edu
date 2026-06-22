@@ -3,11 +3,13 @@ import type {
   ApiManifest,
   ApiNodeDetail,
   ApiNodeMutationResult,
+  ApiFeedbackResult,
   ApiPptExport,
   ApiProject,
   ApiTask,
   CreateProjectPayload,
   EditNodePayload,
+  FeedbackPayload,
   GenerateNodePayload,
   VideoCapabilitiesResponse,
 } from "./types";
@@ -206,6 +208,20 @@ export async function approveProjectNode(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(approveNote ? { approve_note: approveNote } : {}),
+    },
+  );
+}
+
+export async function submitProjectFeedback(
+  projectId: string,
+  payload: FeedbackPayload,
+): Promise<ApiFeedbackResult> {
+  return request<ApiFeedbackResult>(
+    `/projects/${encodeURIComponent(projectId)}/feedback`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
     },
   );
 }

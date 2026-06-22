@@ -177,6 +177,7 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
   const runStage = useAppStore((s) => s.runStage);
   const saveStageInput = useAppStore((s) => s.saveStageInput);
   const acceptVideoPlan = useAppStore((s) => s.acceptVideoPlan);
+  const submitDeliveryFeedback = useAppStore((s) => s.submitDeliveryFeedback);
 
   // 订阅最新 project 元信息（progress / currentStage / status 等会随操作更新）
   const liveProject =
@@ -206,6 +207,7 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
   const [pptExportStatus, setPptExportStatus] = useState<LoadStatus>("idle");
   const [pptExportError, setPptExportError] = useState<string | null>(null);
   const [pptExportResult, setPptExportResult] = useState<ApiPptExport | null>(null);
+  const [feedbackStatus, setFeedbackStatus] = useState<LoadStatus>("idle");
 
   const selectedStage =
     stages.find((s) => s.key === selectedKey) || stages[0];
@@ -427,6 +429,24 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
     toast.success("已采纳该方案");
   }
 
+  async function handleSubmitDeliveryFeedback() {
+    if (dataMode !== "api" || feedbackStatus === "loading") return;
+    setFeedbackStatus("loading");
+    const result = await submitDeliveryFeedback(project.id, {
+      stage_key: selectedStage?.key || null,
+      stage_title: selectedStage?.title || null,
+      project_status: liveProject.status,
+      progress: liveProject.progress,
+      comment: "交付后反馈入口已预留，等待教师填写正式反馈。",
+    });
+    setFeedbackStatus(result.ok ? "ready" : "error");
+    if (result.ok) {
+      toast.success("反馈已写入飞轮");
+    } else {
+      toast.error(result.msg || "反馈提交失败");
+    }
+  }
+
   // 键盘快捷键：←/→ 切换节点，1-5 切换 Tab
   useEffect(() => {
     const isTyping = (target: EventTarget | null): boolean => {
@@ -541,6 +561,8 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
           project={liveProject}
           stages={stages}
           onBack={() => go("dashboard")}
+          feedbackStatus={feedbackStatus}
+          onSubmitFeedback={dataMode === "api" ? handleSubmitDeliveryFeedback : undefined}
         />
         <Card className="mt-6 border-border bg-card p-10">
           <LoadingState label="正在读取项目 manifest..." />
@@ -556,6 +578,8 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
           project={liveProject}
           stages={stages}
           onBack={() => go("dashboard")}
+          feedbackStatus={feedbackStatus}
+          onSubmitFeedback={dataMode === "api" ? handleSubmitDeliveryFeedback : undefined}
         />
         <Card className="mt-6 border-dashed bg-card p-10">
           <EmptyState
@@ -581,6 +605,8 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
           project={liveProject}
           stages={stages}
           onBack={() => go("dashboard")}
+          feedbackStatus={feedbackStatus}
+          onSubmitFeedback={dataMode === "api" ? handleSubmitDeliveryFeedback : undefined}
         />
         <Card className="mt-6 border-dashed bg-card p-10">
           <EmptyState
@@ -596,11 +622,13 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
   return (
     <div className="mx-auto w-full max-w-[1440px] px-4 py-6 lg:px-8 lg:py-8">
       {/* ===== 顶部 Header ===== */}
-      <WorkspaceHeader
-        project={liveProject}
-        stages={stages}
-        onBack={() => go("dashboard")}
-      />
+        <WorkspaceHeader
+          project={liveProject}
+          stages={stages}
+          onBack={() => go("dashboard")}
+          feedbackStatus={feedbackStatus}
+          onSubmitFeedback={dataMode === "api" ? handleSubmitDeliveryFeedback : undefined}
+        />
 
       {/* ===== 工作流节点轨 ===== */}
       <section className="mt-6">
@@ -992,10 +1020,14 @@ function WorkspaceHeader({
   project,
   stages = [],
   onBack,
+  feedbackStatus = "idle",
+  onSubmitFeedback,
 }: {
   project: ProjectMeta;
   stages?: WorkflowStage[];
   onBack: () => void;
+  feedbackStatus?: LoadStatus;
+  onSubmitFeedback?: () => void;
 }) {
   const stage =
     stages.find((item) => item.key === project.currentStage) ||
@@ -1027,7 +1059,26 @@ function WorkspaceHeader({
               <span>{project.lessonType}</span>
             </div>
           </div>
-          <ProjectStatusBadge status={project.status} />
+          <div className="flex shrink-0 items-center gap-2">
+            {onSubmitFeedback && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                disabled={feedbackStatus === "loading"}
+                onClick={onSubmitFeedback}
+              >
+                {feedbackStatus === "loading" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ListChecks className="h-4 w-4" />
+                )}
+                反馈
+              </Button>
+            )}
+            <ProjectStatusBadge status={project.status} />
+          </div>
         </div>
 
         {/* 底部 3 列：当前阶段 / 总进度 / 下一步动作 */}

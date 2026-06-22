@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Any
 import json
 
+from .flywheel import FeedbackTypeError, FlywheelService
 from .ppt_exporter import export_project_ppt
 from .providers import DeepSeekTextProvider, FakeProvider, MinimaxTextProvider, NewApiImageProvider, OctoVideoProvider, ProviderError, sanitize_provider_excerpt
 from .prompt_loader import PromptTemplateMissing, PromptVariableMissing, render_prompt_file
@@ -446,6 +447,7 @@ class WorkflowService:
         self.video_model = video_model
         self.state_engine = StateEngine(store, self._dependencies())
         self.rule_executor = RuleExecutor(workflow.root / "rules" if workflow else None)
+        self.flywheel = FlywheelService()
 
     def generate_node(self, project_id: str, node_id: str, options: dict[str, Any] | None = None) -> dict[str, Any]:
         project = self.store.get_project(project_id)
@@ -509,10 +511,24 @@ class WorkflowService:
     def edit_node(self, project_id: str, node_id: str, content: dict[str, Any]) -> dict[str, Any]:
         project = self.store.get_project(project_id)
         with self.store.connect(Path(project["project_dir"])) as conn:
+            before_state = self.store.node_state(conn, project_id, node_id)
+            before_content = self.store.current_content(conn, project_id, node_id) if before_state.get("current_version_id") else None
             self._assert_dependencies(conn, project_id, node_id, allow_existing=True)
             validate_edit_content(node_id, content, self._edit_validation_context(conn, project_id))
             self.rule_executor.run_for_event(conn, self.store, project_id, node_id, "on_save", content)
-            return self._write_review_version(conn, project_id, node_id, content, "human_edit", None, "user_save_edit")
+            result = self._write_review_version(conn, project_id, node_id, content, "human_edit", None, "user_save_edit")
+            if before_state.get("status") == "approved":
+                self.flywheel.record_post_approve_edit(
+                    conn,
+                    self.store,
+                    project_id,
+                    node_id,
+                    before_state.get("current_version_id"),
+                    result.get("version_id"),
+                    before_content,
+                    content,
+                )
+            return result
 
     def approve_node(self, project_id: str, node_id: str, approve_options: dict[str, Any] | None = None) -> dict[str, Any]:
         project = self.store.get_project(project_id)
@@ -522,7 +538,7 @@ class WorkflowService:
             if content is not None and node_id in {"intro_selection", "storyboard"}:
                 validate_approve_content(node_id, content, self._edit_validation_context(conn, project_id))
             state = self.store.node_state(conn, project_id, node_id)
-            self.rule_executor.run_for_event(
+            rule_results = self.rule_executor.run_for_event(
                 conn,
                 self.store,
                 project_id,
@@ -533,7 +549,28 @@ class WorkflowService:
                 override_warning_rule_ids=(approve_options or {}).get("override_warning_rule_ids") or [],
                 override_reason=(approve_options or {}).get("override_reason"),
             )
-            return self.state_engine.approve(conn, project_id, node_id)
+            approved = self.state_engine.approve(conn, project_id, node_id)
+            self.flywheel.record_approve(conn, self.store, project_id, node_id, state.get("current_version_id"), content)
+            for result in rule_results:
+                details = result.get("details") if isinstance(result.get("details"), dict) else {}
+                if result.get("severity") == "warning" and details.get("override") is True:
+                    self.flywheel.record_rule_override(
+                        conn,
+                        self.store,
+                        project_id,
+                        node_id,
+                        str(result["rule_id"]),
+                        str(details.get("override_reason")) if details.get("override_reason") is not None else None,
+                    )
+            return approved
+
+    def record_feedback(self, project_id: str, feedback_type: str, payload: dict[str, Any]) -> dict[str, Any]:
+        project = self.store.get_project(project_id)
+        with self.store.connect(Path(project["project_dir"])) as conn:
+            return self.flywheel.record_feedback(conn, self.store, project_id, feedback_type, payload)
+
+    def flywheel_events(self, project_id: str) -> dict[str, list[dict[str, Any]]]:
+        return self.store.flywheel_events(project_id)
 
     def _write_review_version(
         self,

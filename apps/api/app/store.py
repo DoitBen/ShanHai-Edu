@@ -178,6 +178,43 @@ class ProjectStore:
               details_json TEXT NOT NULL,
               created_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS approved_samples (
+              sample_id TEXT PRIMARY KEY,
+              user_id TEXT,
+              project_id TEXT NOT NULL,
+              node_id TEXT NOT NULL,
+              version_id TEXT NOT NULL,
+              content_excerpt TEXT NOT NULL,
+              content_json TEXT NOT NULL,
+              approved_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS post_approve_edits (
+              edit_id TEXT PRIMARY KEY,
+              user_id TEXT,
+              project_id TEXT NOT NULL,
+              node_id TEXT NOT NULL,
+              before_version_id TEXT NOT NULL,
+              after_version_id TEXT NOT NULL,
+              diff_json TEXT NOT NULL,
+              edited_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS rule_override_events (
+              override_id TEXT PRIMARY KEY,
+              user_id TEXT,
+              project_id TEXT NOT NULL,
+              node_id TEXT NOT NULL,
+              rule_id TEXT NOT NULL,
+              reason TEXT,
+              created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS feedback_log (
+              feedback_id TEXT PRIMARY KEY,
+              user_id TEXT,
+              project_id TEXT NOT NULL,
+              feedback_type TEXT NOT NULL,
+              payload_json TEXT NOT NULL,
+              created_at TEXT NOT NULL
+            );
             """
         )
 
@@ -459,6 +496,173 @@ class ProjectStore:
             data["details"] = json.loads(data.pop("details_json") or "{}")
             results.append(data)
         return results
+
+    def record_approved_sample(
+        self,
+        conn: sqlite3.Connection,
+        user_id: str | None,
+        project_id: str,
+        node_id: str,
+        version_id: str,
+        content_excerpt: str,
+        content: dict[str, Any],
+    ) -> dict[str, Any]:
+        sample = {
+            "sample_id": f"sample_{uuid.uuid4().hex[:12]}",
+            "user_id": user_id,
+            "project_id": project_id,
+            "node_id": node_id,
+            "version_id": version_id,
+            "content_excerpt": content_excerpt,
+            "content": content,
+            "approved_at": now_iso(),
+        }
+        conn.execute(
+            """
+            INSERT INTO approved_samples
+            (sample_id, user_id, project_id, node_id, version_id, content_excerpt, content_json, approved_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                sample["sample_id"],
+                sample["user_id"],
+                sample["project_id"],
+                sample["node_id"],
+                sample["version_id"],
+                sample["content_excerpt"],
+                json.dumps(sample["content"], ensure_ascii=False),
+                sample["approved_at"],
+            ),
+        )
+        return sample
+
+    def record_post_approve_edit(
+        self,
+        conn: sqlite3.Connection,
+        user_id: str | None,
+        project_id: str,
+        node_id: str,
+        before_version_id: str,
+        after_version_id: str,
+        diff: dict[str, Any],
+    ) -> dict[str, Any]:
+        edit = {
+            "edit_id": f"edit_{uuid.uuid4().hex[:12]}",
+            "user_id": user_id,
+            "project_id": project_id,
+            "node_id": node_id,
+            "before_version_id": before_version_id,
+            "after_version_id": after_version_id,
+            "diff": diff,
+            "edited_at": now_iso(),
+        }
+        conn.execute(
+            """
+            INSERT INTO post_approve_edits
+            (edit_id, user_id, project_id, node_id, before_version_id, after_version_id, diff_json, edited_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                edit["edit_id"],
+                edit["user_id"],
+                edit["project_id"],
+                edit["node_id"],
+                edit["before_version_id"],
+                edit["after_version_id"],
+                json.dumps(edit["diff"], ensure_ascii=False),
+                edit["edited_at"],
+            ),
+        )
+        return edit
+
+    def record_rule_override_event(
+        self,
+        conn: sqlite3.Connection,
+        user_id: str | None,
+        project_id: str,
+        node_id: str,
+        rule_id: str,
+        reason: str | None,
+    ) -> dict[str, Any]:
+        event = {
+            "override_id": f"override_{uuid.uuid4().hex[:12]}",
+            "user_id": user_id,
+            "project_id": project_id,
+            "node_id": node_id,
+            "rule_id": rule_id,
+            "reason": reason,
+            "created_at": now_iso(),
+        }
+        conn.execute(
+            """
+            INSERT INTO rule_override_events
+            (override_id, user_id, project_id, node_id, rule_id, reason, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event["override_id"],
+                event["user_id"],
+                event["project_id"],
+                event["node_id"],
+                event["rule_id"],
+                event["reason"],
+                event["created_at"],
+            ),
+        )
+        return event
+
+    def record_feedback(
+        self,
+        conn: sqlite3.Connection,
+        user_id: str | None,
+        project_id: str,
+        feedback_type: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        feedback = {
+            "feedback_id": f"feedback_{uuid.uuid4().hex[:12]}",
+            "user_id": user_id,
+            "project_id": project_id,
+            "feedback_type": feedback_type,
+            "payload": payload,
+            "created_at": now_iso(),
+        }
+        conn.execute(
+            """
+            INSERT INTO feedback_log
+            (feedback_id, user_id, project_id, feedback_type, payload_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                feedback["feedback_id"],
+                feedback["user_id"],
+                feedback["project_id"],
+                feedback["feedback_type"],
+                json.dumps(feedback["payload"], ensure_ascii=False),
+                feedback["created_at"],
+            ),
+        )
+        return feedback
+
+    def flywheel_events(self, project_id: str) -> dict[str, list[dict[str, Any]]]:
+        project = self.get_project(project_id)
+        with self.connect(Path(project["project_dir"])) as conn:
+            approved_samples = [dict(row) for row in conn.execute("SELECT * FROM approved_samples WHERE project_id = ? ORDER BY approved_at", (project_id,)).fetchall()]
+            post_approve_edits = [dict(row) for row in conn.execute("SELECT * FROM post_approve_edits WHERE project_id = ? ORDER BY edited_at", (project_id,)).fetchall()]
+            rule_override_events = [dict(row) for row in conn.execute("SELECT * FROM rule_override_events WHERE project_id = ? ORDER BY created_at", (project_id,)).fetchall()]
+            feedback_log = [dict(row) for row in conn.execute("SELECT * FROM feedback_log WHERE project_id = ? ORDER BY created_at", (project_id,)).fetchall()]
+        for row in approved_samples:
+            row["content"] = json.loads(row.pop("content_json") or "{}")
+        for row in post_approve_edits:
+            row["diff"] = json.loads(row.pop("diff_json") or "{}")
+        for row in feedback_log:
+            row["payload"] = json.loads(row.pop("payload_json") or "{}")
+        return {
+            "approved_samples": approved_samples,
+            "post_approve_edits": post_approve_edits,
+            "rule_override_events": rule_override_events,
+            "feedback_log": feedback_log,
+        }
 
     def approve_node(self, project_id: str, node_id: str) -> dict[str, Any]:
         project = self.get_project(project_id)

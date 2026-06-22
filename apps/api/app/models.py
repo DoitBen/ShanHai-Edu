@@ -40,6 +40,11 @@ class NodeApproveRequest(BaseModel):
     override_reason: str | None = None
 
 
+class FeedbackRequest(BaseModel):
+    feedback_type: str = Field(min_length=1)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
 def dump_model(model: BaseModel, *, exclude_none: bool = False) -> dict[str, Any]:
     if hasattr(model, "model_dump"):
         return model.model_dump(exclude_none=exclude_none)

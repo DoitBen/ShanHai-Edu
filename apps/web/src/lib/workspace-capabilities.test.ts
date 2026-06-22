@@ -1,5 +1,15 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { canEditStageInWorkspace } from "./workspace-capabilities";
 import type { WorkflowStage } from "./types";
+
+const root = process.cwd();
+
+function readProjectFile(path: string): string {
+  return readFileSync(join(root, path), "utf-8");
+}
+
+const workspaceSource = readProjectFile("src/components/screens/ProjectWorkspaceScreen.tsx");
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -37,4 +47,14 @@ assert(
 assert(
   canEditStageInWorkspace("api", stage({ key: "open-lesson-plan" })) === false,
   "api mode must not fall back to hard-coded editable stage keys when capabilities are absent",
+);
+
+assert(
+  !workspaceSource.includes("exportProjectPpt"),
+  "ProjectWorkspaceScreen must trigger pptx_artifact/generate instead of exportProjectPpt",
+);
+
+assert(
+  !workspaceSource.includes("/export/ppt"),
+  "ProjectWorkspaceScreen must not call the legacy /export/ppt endpoint",
 );

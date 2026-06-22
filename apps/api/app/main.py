@@ -298,6 +298,8 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
     def export_ppt(project_id: str):
         try:
             return ok(service.export_ppt(project_id))
+        except ValueError as exc:
+            return fail(409, "PPT_ARTIFACT_NOT_READY", str(exc), retryable=False)
         except RuntimeError as exc:
             return fail(500, "PPT_EXPORT_FAILED", str(exc), retryable=False)
         except KeyError:

@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/lib/store";
 import {
-  exportProjectPpt,
   fetchVideoCapabilities,
   resolveApiDownloadUrl,
 } from "@/lib/api-client";
@@ -333,12 +332,27 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
     setPptExportStatus("loading");
     setPptExportError(null);
     try {
-      const result = await exportProjectPpt(project.id);
+      const pptStage = stages.find((stage) => stage.key === "pptx-generation");
+      if (!pptStage) {
+        throw new Error("未找到 pptx_artifact 节点，请先同步 manifest");
+      }
+      const res = await generateStage(project.id, pptStage.key);
+      if (!res.ok) {
+        throw new Error(res.msg || "PPTX artifact 生成失败");
+      }
+      const latestStage =
+        useAppStore
+          .getState()
+          .stagesByProject[project.id]?.find((item) => item.key === pptStage.key) || pptStage;
+      const result = pptArtifactExportFromStage(latestStage);
+      if (!result) {
+        throw new Error("pptx_artifact 已生成但缺少下载信息");
+      }
       setPptExportResult(result);
       setPptExportStatus("ready");
-      toast.success("PPT 已导出，可下载查看");
+      toast.success("PPTX artifact 已生成，可下载查看");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "PPT 导出失败";
+      const message = error instanceof Error ? error.message : "PPTX artifact 生成失败";
       setPptExportResult(null);
       setPptExportStatus("error");
       setPptExportError(message);
@@ -2663,16 +2677,16 @@ function PptExportPanel({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <FileType2 className="h-4 w-4 text-primary" />
-            <span className="t-module">交付 PPT</span>
+            <span className="t-module">PPTX artifact</span>
             {status === "ready" && (
               <ToneBadge tone="success">已生成</ToneBadge>
             )}
             {status === "error" && (
-              <ToneBadge tone="danger">导出失败</ToneBadge>
+              <ToneBadge tone="danger">生成失败</ToneBadge>
             )}
           </div>
           <p className="mt-1 t-caption text-muted-foreground">
-            基于当前项目产物生成 PPTX，并使用后端返回的下载地址打开文件。
+            通过 pptx_artifact 节点生成 PPTX，并使用 manifest artifact 下载地址打开文件。
           </p>
           {result?.filename && (
             <div className="mt-2 t-caption text-muted-foreground">
@@ -2699,13 +2713,13 @@ function PptExportPanel({
             ) : (
               <FileType2 className="h-4 w-4" />
             )}
-            {status === "loading" ? "导出中..." : "导出 PPT"}
+            {status === "loading" ? "生成中..." : "生成 PPTX"}
           </Button>
           {downloadHref && (
             <Button asChild size="sm" className="gap-1.5">
               <a href={downloadHref} target="_blank" rel="noreferrer">
                 <Download className="h-4 w-4" />
-                下载 PPT
+                下载 PPTX
               </a>
             </Button>
           )}
@@ -2845,6 +2859,20 @@ function parseJsonObject(value: string): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+function pptArtifactExportFromStage(stage: WorkflowStage): ApiPptExport | null {
+  const content = parseJsonObject(stage.result);
+  const downloadUrl = stage.artifact?.download_url || getStringValue(content.download_url);
+  const pptxPath = stage.artifact?.pptx_path || getStringValue(content.pptx_path);
+  if (!downloadUrl || !pptxPath) return null;
+  const filename = getStringValue(content.filename) || pptxPath.split(/[\\/]/).pop() || "lesson-video-demo.pptx";
+  return {
+    filename,
+    path: pptxPath,
+    download_url: downloadUrl,
+    video_path: stage.artifact?.video_path || getStringValue(content.video_path),
+  };
 }
 
 function validateIntroSelectionAnchor(value: string): string | null {

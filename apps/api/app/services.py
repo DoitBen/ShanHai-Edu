@@ -814,7 +814,32 @@ class WorkflowService:
 
     def export_ppt(self, project_id: str) -> dict[str, str]:
         project = self.store.get_project(project_id)
-        return export_project_ppt(project, Path(project["project_dir"]), allow_placeholder=self.video_provider is None)
+        project_dir = Path(project["project_dir"])
+        with self.store.connect(project_dir) as conn:
+            content = self.store.current_content(conn, project_id, "pptx_artifact")
+        if not isinstance(content, dict):
+            raise ValueError("PPTX artifact is not ready; generate pptx_artifact first")
+        pptx_path = content.get("pptx_path")
+        download_url = content.get("download_url")
+        if not isinstance(pptx_path, str) or not pptx_path:
+            raise ValueError("PPTX artifact is missing pptx_path")
+        if not isinstance(download_url, str) or not download_url:
+            raise ValueError("PPTX artifact is missing download_url")
+        resolved = (project_dir / pptx_path).resolve()
+        project_root = project_dir.resolve()
+        try:
+            resolved.relative_to(project_root)
+        except ValueError as exc:
+            raise ValueError("PPTX artifact path is outside project") from exc
+        if resolved.suffix.lower() != ".pptx" or not resolved.exists():
+            raise ValueError("PPTX artifact file is not available")
+        filename = content.get("filename") if isinstance(content.get("filename"), str) else Path(pptx_path).name
+        return {
+            "filename": filename,
+            "path": pptx_path,
+            "download_url": download_url,
+            "video_path": content.get("video_path"),
+        }
 
     def retry_task(self, project_id: str, task_id: str) -> dict[str, Any]:
         task = self.store.task(project_id, task_id)

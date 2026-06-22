@@ -73,6 +73,12 @@ export interface CreateProjectPayload {
   textbook_version: string;
   volume: string;
   lesson_type: string;
+  character_profile?: string;
+  character_safety_rule?: string;
+  visual_palette?: string;
+  visual_style_keywords?: string;
+  font_preference?: string;
+  compliance_notes?: string;
 }
 
 export interface ApiNodeState {

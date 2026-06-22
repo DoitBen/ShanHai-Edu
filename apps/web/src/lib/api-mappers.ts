@@ -219,6 +219,12 @@ export function draftToCreateProjectPayload(draft: NewProjectDraft): CreateProje
     textbook_version: VERSION_TO_API[draft.textbookVersion] || draft.textbookVersion,
     volume: VOLUME_TO_API[draft.volume] || draft.volume,
     lesson_type: LESSON_TYPE_TO_API[draft.lessonType] || draft.lessonType,
+    character_profile: draft.characterProfile.trim(),
+    character_safety_rule: draft.characterSafetyRule.trim(),
+    visual_palette: draft.visualPalette.trim(),
+    visual_style_keywords: draft.visualStyleKeywords.trim(),
+    font_preference: draft.fontPreference.trim(),
+    compliance_notes: draft.complianceNotes.trim(),
   };
 }
 

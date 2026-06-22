@@ -25,6 +25,18 @@ def slugify(value: str) -> str:
     return normalized or "project"
 
 
+def _clean_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _split_user_list(value: str | None) -> list[str]:
+    text = _clean_text(value)
+    if not text:
+        return []
+    parts = re.split(r"[、,，;；\n]+", text)
+    return [part.strip() for part in parts if part.strip()]
+
+
 class ProjectStore:
     def __init__(self, storage_root: Path):
         self.storage_root = storage_root
@@ -71,8 +83,95 @@ class ProjectStore:
                     """,
                     (project_id, node_id, status, None, created_at),
                 )
+            self._seed_create_project_runtime_nodes(conn, project_id, payload, node_ids)
             self.record_event(conn, project_id, "project_meta", "project_created", payload)
         return self.get_project(project_id)
+
+    def _seed_create_project_runtime_nodes(
+        self,
+        conn: sqlite3.Connection,
+        project_id: str,
+        payload: dict[str, Any],
+        node_ids: list[str],
+    ) -> None:
+        seeded_nodes = {
+            "visual_contract": self._visual_contract_from_create_payload(payload),
+            "character_dict": self._character_dict_from_create_payload(payload),
+        }
+        for node_id, content in seeded_nodes.items():
+            if node_id not in node_ids or content is None:
+                continue
+            written = self.write_version(conn, project_id, node_id, content, "user_create_project", None, "approved")
+            self.update_current_version_status(conn, written["version_id"], "approved", approved=True)
+            self.record_state_transition(
+                conn,
+                project_id,
+                node_id,
+                written.get("_previous_status"),
+                "approved",
+                "user_create_project",
+                version_id_before=written.get("_previous_version_id"),
+                version_id_after=written["version_id"],
+                reason="seeded_from_create_project_payload",
+            )
+            self.record_event(
+                conn,
+                project_id,
+                node_id,
+                "runtime_node_seeded",
+                {"version_id": written["version_id"], "generated_by": "user_create_project"},
+            )
+
+    def _visual_contract_from_create_payload(self, payload: dict[str, Any]) -> dict[str, Any] | None:
+        source = {
+            "visual_palette": _clean_text(payload.get("visual_palette")),
+            "visual_style_keywords": _clean_text(payload.get("visual_style_keywords")),
+            "font_preference": _clean_text(payload.get("font_preference")),
+            "compliance_notes": _clean_text(payload.get("compliance_notes")),
+        }
+        if not any(source.values()):
+            return None
+        palette = re.findall(r"#[0-9A-Fa-f]{6}", source["visual_palette"] or "")
+        if len(palette) < 3:
+            palette = ["#0F766E", "#F59E0B", "#F8FAFC"]
+        style_keywords = _split_user_list(source["visual_style_keywords"]) or ["非写实卡通", "公开课作品感", "生活化数学情境"]
+        return {
+            "palette": palette[:5],
+            "style_keywords": style_keywords,
+            "font_preference": source["font_preference"] or "Microsoft YaHei",
+            "source_input": source,
+        }
+
+    def _character_dict_from_create_payload(self, payload: dict[str, Any]) -> dict[str, Any] | None:
+        profile = _clean_text(payload.get("character_profile"))
+        safety_rule = _clean_text(payload.get("character_safety_rule"))
+        compliance_notes = _clean_text(payload.get("compliance_notes"))
+        if not any([profile, safety_rule, compliance_notes]):
+            return None
+        return {
+            "characters": [
+                {
+                    "character_id": "char_user_guide",
+                    "name": "课堂引导员",
+                    "identity": profile or "非写实卡通数学任务引导员",
+                    "view_front": "非写实卡通正面形象，保持圆润比例和清晰课堂提示姿态。",
+                    "view_side": "非写实卡通侧面形象，服装和发型与正面设定一致。",
+                    "view_back": "非写实卡通背面形象，保留固定服装轮廓和简化发型。",
+                    "view_half": "半身用于提示气泡旁，不出现真人儿童质感。",
+                    "view_hand": "手部为简化卡通手套形态，可指向算式或物品。",
+                    "outfit_lock": {"color": "teal-and-gold", "style": "cartoon"},
+                    "hair_lock": "简化卡通发型，不使用真实儿童照片质感。",
+                    "body_proportion": "3d_non_realistic_childlike_chibi",
+                    "style_constraint": "3d_non_realistic",
+                    "banned_keywords": ["真人", "photorealistic", "real child"],
+                }
+            ],
+            "source_input": {
+                "character_profile": profile,
+                "character_safety_rule": safety_rule,
+                "compliance_notes": compliance_notes,
+            },
+        }
 
     def init_db(self, conn: sqlite3.Connection) -> None:
         conn.executescript(

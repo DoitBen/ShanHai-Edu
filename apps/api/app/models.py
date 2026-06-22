@@ -10,6 +10,12 @@ class ProjectCreateRequest(BaseModel):
     textbook_version: str = Field(min_length=1)
     volume: str = Field(min_length=1)
     lesson_type: str = Field(min_length=1)
+    character_profile: str | None = None
+    character_safety_rule: str | None = None
+    visual_palette: str | None = None
+    visual_style_keywords: str | None = None
+    font_preference: str | None = None
+    compliance_notes: str | None = None
 
 
 class NodeGenerateRequest(BaseModel):

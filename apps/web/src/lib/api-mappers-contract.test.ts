@@ -1,5 +1,5 @@
-import { mapApiManifest } from "./api-mappers";
-import type { ApiManifest } from "./types";
+import { draftToCreateProjectPayload, mapApiManifest } from "./api-mappers";
+import type { ApiManifest, NewProjectDraft } from "./types";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -60,3 +60,49 @@ assert(stage.summary.includes("schemas/ppt_assembly_plan.schema.json"), "stage s
 assert(stage.summary.includes("lesson_plan"), "stage summary must expose API dependencies");
 assert(stage.capabilities?.can_edit === true, "stage capabilities must come from API manifest");
 assert(stage.ruleSummary?.warning_rule_ids.includes("R023"), "stage rule summary must come from API manifest");
+
+const draft: NewProjectDraft = {
+  step: 1,
+  name: "  角色视觉契约项目  ",
+  subject: "数学",
+  grade: "二年级",
+  textbookVersion: "人教版",
+  volume: "上册",
+  lessonType: "公开课",
+  characterProfile: "小山是非写实卡通数学引导员",
+  characterSafetyRule: "禁真人、photorealistic、real child",
+  visualPalette: "暖纸白 #F6F5F1、深青灰 #2D4356、古铜金 #9C7C4E",
+  visualStyleKeywords: "温润、克制、真实生活情境",
+  fontPreference: "系统无衬线中文优先",
+  complianceNotes: "所有儿童角色必须为非写实卡通或剪影风格。",
+  apiProjectId: null,
+  textbookFileName: "",
+  textbookContent: "",
+  parseResult: null,
+  parseStatus: "idle",
+  parseError: null,
+  selectedKnowledgePointId: "",
+  videoPurpose: "",
+  videoTypes: [],
+  videoCountPerType: 1,
+  videoTheme: "",
+  audience: "",
+  duration: "",
+  creativeBrief: "",
+  pptStyle: "",
+  pptSlides: 8,
+  pptStructure: "",
+  outputPath: "",
+  constraints: "",
+  safeMode: true,
+};
+
+const payload = draftToCreateProjectPayload(draft);
+
+assert(payload.name === "角色视觉契约项目", "project name must be trimmed");
+assert(payload.character_profile === draft.characterProfile, "character profile must be sent to create project API");
+assert(payload.character_safety_rule === draft.characterSafetyRule, "character safety rule must be sent to create project API");
+assert(payload.visual_palette === draft.visualPalette, "visual palette must be sent to create project API");
+assert(payload.visual_style_keywords === draft.visualStyleKeywords, "visual style keywords must be sent to create project API");
+assert(payload.font_preference === draft.fontPreference, "font preference must be sent to create project API");
+assert(payload.compliance_notes === draft.complianceNotes, "compliance notes must be sent to create project API");

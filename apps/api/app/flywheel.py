@@ -12,6 +12,10 @@ class FeedbackTypeError(ValueError):
     pass
 
 
+class FeedbackPayloadError(ValueError):
+    pass
+
+
 class FlywheelService:
     def record_approve(
         self,
@@ -89,6 +93,7 @@ class FlywheelService:
     ) -> dict[str, Any]:
         if feedback_type not in VALID_FEEDBACK_TYPES:
             raise FeedbackTypeError(f"feedback_type must be one of {sorted(VALID_FEEDBACK_TYPES)}")
+        _validate_feedback_payload(feedback_type, payload)
         return store.record_feedback(
             conn,
             user_id=user_id,
@@ -113,6 +118,29 @@ def _content_excerpt(content: Any, max_chars: int = 500) -> str:
     if not text:
         text = json.dumps(content, ensure_ascii=False, sort_keys=True)
     return text[:max_chars]
+
+
+def _validate_feedback_payload(feedback_type: str, payload: dict[str, Any]) -> None:
+    if not payload:
+        raise FeedbackPayloadError("feedback payload must not be empty")
+    comment = payload.get("comment")
+    if feedback_type == "delivery" and not _meaningful_text(comment):
+        raise FeedbackPayloadError("delivery feedback requires a non-empty comment")
+    text = " ".join(_collect_strings(payload)).lower()
+    placeholder_markers = [
+        "占位",
+        "预留",
+        "等待教师填写正式反馈",
+        "placeholder",
+        "todo",
+        "mock",
+    ]
+    if any(marker.lower() in text for marker in placeholder_markers):
+        raise FeedbackPayloadError("feedback payload contains placeholder text")
+
+
+def _meaningful_text(value: Any) -> bool:
+    return isinstance(value, str) and len(value.strip()) >= 2
 
 
 def _collect_strings(value: Any) -> list[str]:

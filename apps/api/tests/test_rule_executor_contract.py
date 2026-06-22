@@ -4,6 +4,8 @@ from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
+from pptx import Presentation
+from pptx.util import Inches
 
 from app.main import create_app
 
@@ -55,6 +57,16 @@ def write_current_version(
     project_id = project["project_id"]
     with client.app.state.store.connect(Path(project["project_dir"])) as conn:
         return client.app.state.store.write_version(conn, project_id, node_id, content, "fixture", "fixture", status)
+
+
+def write_pptx(project: dict[str, Any], rel_path: str, visible_text: str) -> None:
+    pptx_path = Path(project["project_dir"]) / rel_path
+    pptx_path.parent.mkdir(parents=True, exist_ok=True)
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    box = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(8), Inches(1))
+    box.text_frame.text = visible_text
+    presentation.save(pptx_path)
 
 
 def rule_rows(project: dict[str, Any], rule_id: str) -> list[sqlite3.Row]:
@@ -141,6 +153,7 @@ def test_r030_blocks_pptx_artifact_without_visual_assets(tmp_path: Path):
     client = make_client(tmp_path)
     project = create_project(client)
     project_id = project["project_id"]
+    write_pptx(project, "exports/no-visual.pptx", "学生可见层干净")
     broken = {
         "pptx_path": "exports/no-visual.pptx",
         "slide_count": 2,
@@ -156,6 +169,54 @@ def test_r030_blocks_pptx_artifact_without_visual_assets(tmp_path: Path):
     rows = rule_rows(project, "R030")
     assert len(rows) == 1
     assert rows[0]["passed"] == 0
+
+
+def test_r026_blocks_internal_text_in_actual_pptx_visible_shapes(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project(client)
+    project_id = project["project_id"]
+    write_pptx(project, "exports/internal-visible.pptx", "这里是学生可见层 QA 检查点")
+    clean_json = {
+        "pptx_path": "exports/internal-visible.pptx",
+        "slide_count": 1,
+        "notes_count": 0,
+        "media_count": 1,
+        "svg_quality_passed": True,
+    }
+    write_current_version(client, project, "pptx_artifact", clean_json)
+
+    response = client.post(f"/projects/{project_id}/nodes/pptx_artifact/approve", json={})
+
+    error_payload(response, 409, "RULE_VIOLATION_R026")
+    rows = rule_rows(project, "R026")
+    assert len(rows) == 1
+    assert rows[0]["passed"] == 0
+    details = json.loads(rows[0]["details_json"])
+    assert details["pptx_path"] == "exports/internal-visible.pptx"
+    assert details["violations"][0]["source"] == "pptx_shape_text"
+
+
+def test_r026_ignores_notes_text_when_actual_pptx_visible_shapes_are_clean(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project(client)
+    project_id = project["project_id"]
+    write_pptx(project, "exports/clean-visible.pptx", "学生可见层干净")
+    clean_visible = {
+        "pptx_path": "exports/clean-visible.pptx",
+        "slide_count": 1,
+        "notes_count": 1,
+        "media_count": 1,
+        "svg_quality_passed": True,
+        "notes_text": "教师备注：QA 检查点仅供内部核验",
+    }
+    write_current_version(client, project, "pptx_artifact", clean_visible)
+
+    approved = unwrap_ok(client.post(f"/projects/{project_id}/nodes/pptx_artifact/approve", json={}))
+
+    assert approved == {"node_id": "pptx_artifact", "status": "approved"}
+    rows = rule_rows(project, "R026")
+    assert len(rows) == 1
+    assert rows[0]["passed"] == 1
 
 
 def test_r001_blocks_final_video_non_male_zh_voice(tmp_path: Path):

@@ -13,7 +13,7 @@ from .prompt_registry import PromptRegistry, PromptStore
 from .responses import fail, ok
 from .rule_executor import RuleHardBlockError, RuleWarningError
 from .security import require_api_token
-from .services import FeedbackTypeError, NodeContentValidationError, WorkflowService
+from .services import FeedbackPayloadError, FeedbackTypeError, NodeContentValidationError, WorkflowService
 from .settings import Settings
 from .store import ProjectStore
 from .workflow_config import WorkflowConfig
@@ -195,6 +195,8 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
             return ok(service.record_feedback(project_id, payload.feedback_type, payload.payload))
         except FeedbackTypeError as exc:
             return fail(400, "FEEDBACK_TYPE_INVALID", str(exc), retryable=False)
+        except FeedbackPayloadError as exc:
+            return fail(400, "FEEDBACK_PAYLOAD_INVALID", str(exc), retryable=False)
         except KeyError:
             return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
 

@@ -15,7 +15,6 @@ import type {
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
-const API_TOKEN = process.env.NEXT_PUBLIC_API_TOKEN;
 
 export function resolveApiDownloadUrl(downloadUrl: string): string {
   if (/^https?:\/\//i.test(downloadUrl)) return downloadUrl;
@@ -39,7 +38,6 @@ class ApiClientError extends Error {
 function headers(extra?: HeadersInit): HeadersInit {
   return {
     Accept: "application/json",
-    ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}),
     ...extra,
   };
 }

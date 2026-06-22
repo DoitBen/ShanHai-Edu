@@ -50,6 +50,8 @@ import {
   DialogContent,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
+  DialogHeader,
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -207,6 +209,8 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
   const [pptExportStatus, setPptExportStatus] = useState<LoadStatus>("idle");
   const [pptExportError, setPptExportError] = useState<string | null>(null);
   const [pptExportResult, setPptExportResult] = useState<ApiPptExport | null>(null);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackDraft, setFeedbackDraft] = useState("");
   const [feedbackStatus, setFeedbackStatus] = useState<LoadStatus>("idle");
 
   const selectedStage =
@@ -429,18 +433,31 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
     toast.success("已采纳该方案");
   }
 
+  function handleOpenDeliveryFeedback() {
+    setFeedbackDraft("");
+    setFeedbackStatus("idle");
+    setFeedbackOpen(true);
+  }
+
   async function handleSubmitDeliveryFeedback() {
     if (dataMode !== "api" || feedbackStatus === "loading") return;
+    const comment = feedbackDraft.trim();
+    if (!comment) {
+      toast.warning("请先填写真实反馈内容");
+      return;
+    }
     setFeedbackStatus("loading");
     const result = await submitDeliveryFeedback(project.id, {
       stage_key: selectedStage?.key || null,
       stage_title: selectedStage?.title || null,
       project_status: liveProject.status,
       progress: liveProject.progress,
-      comment: "交付后反馈入口已预留，等待教师填写正式反馈。",
+      comment,
     });
     setFeedbackStatus(result.ok ? "ready" : "error");
     if (result.ok) {
+      setFeedbackDraft("");
+      setFeedbackOpen(false);
       toast.success("反馈已写入飞轮");
     } else {
       toast.error(result.msg || "反馈提交失败");
@@ -562,7 +579,15 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
           stages={stages}
           onBack={() => go("dashboard")}
           feedbackStatus={feedbackStatus}
-          onSubmitFeedback={dataMode === "api" ? handleSubmitDeliveryFeedback : undefined}
+          onSubmitFeedback={dataMode === "api" ? handleOpenDeliveryFeedback : undefined}
+        />
+        <DeliveryFeedbackDialog
+          open={feedbackOpen}
+          status={feedbackStatus}
+          value={feedbackDraft}
+          onOpenChange={setFeedbackOpen}
+          onChange={setFeedbackDraft}
+          onSubmit={handleSubmitDeliveryFeedback}
         />
         <Card className="mt-6 border-border bg-card p-10">
           <LoadingState label="正在读取项目 manifest..." />
@@ -579,7 +604,15 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
           stages={stages}
           onBack={() => go("dashboard")}
           feedbackStatus={feedbackStatus}
-          onSubmitFeedback={dataMode === "api" ? handleSubmitDeliveryFeedback : undefined}
+          onSubmitFeedback={dataMode === "api" ? handleOpenDeliveryFeedback : undefined}
+        />
+        <DeliveryFeedbackDialog
+          open={feedbackOpen}
+          status={feedbackStatus}
+          value={feedbackDraft}
+          onOpenChange={setFeedbackOpen}
+          onChange={setFeedbackDraft}
+          onSubmit={handleSubmitDeliveryFeedback}
         />
         <Card className="mt-6 border-dashed bg-card p-10">
           <EmptyState
@@ -606,7 +639,15 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
           stages={stages}
           onBack={() => go("dashboard")}
           feedbackStatus={feedbackStatus}
-          onSubmitFeedback={dataMode === "api" ? handleSubmitDeliveryFeedback : undefined}
+          onSubmitFeedback={dataMode === "api" ? handleOpenDeliveryFeedback : undefined}
+        />
+        <DeliveryFeedbackDialog
+          open={feedbackOpen}
+          status={feedbackStatus}
+          value={feedbackDraft}
+          onOpenChange={setFeedbackOpen}
+          onChange={setFeedbackDraft}
+          onSubmit={handleSubmitDeliveryFeedback}
         />
         <Card className="mt-6 border-dashed bg-card p-10">
           <EmptyState
@@ -627,7 +668,7 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
           stages={stages}
           onBack={() => go("dashboard")}
           feedbackStatus={feedbackStatus}
-          onSubmitFeedback={dataMode === "api" ? handleSubmitDeliveryFeedback : undefined}
+          onSubmitFeedback={dataMode === "api" ? handleOpenDeliveryFeedback : undefined}
         />
 
       {/* ===== 工作流节点轨 ===== */}
@@ -913,6 +954,15 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
         stageTitle={selectedStage?.title}
       />
 
+      <DeliveryFeedbackDialog
+        open={feedbackOpen}
+        status={feedbackStatus}
+        value={feedbackDraft}
+        onOpenChange={setFeedbackOpen}
+        onChange={setFeedbackDraft}
+        onSubmit={handleSubmitDeliveryFeedback}
+      />
+
       <div className="h-2" />
     </div>
   );
@@ -946,6 +996,61 @@ function SectionLabel({
       </div>
       {right}
     </div>
+  );
+}
+
+function DeliveryFeedbackDialog({
+  open,
+  status,
+  value,
+  onOpenChange,
+  onChange,
+  onSubmit,
+}: {
+  open: boolean;
+  status: LoadStatus;
+  value: string;
+  onOpenChange: (open: boolean) => void;
+  onChange: (value: string) => void;
+  onSubmit: () => void;
+}) {
+  const submitting = status === "loading";
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-[560px]">
+        <DialogHeader>
+          <DialogTitle>提交交付反馈</DialogTitle>
+          <DialogDescription>
+            记录教师真实使用后的体验、问题或下次调整方向。
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2">
+          <Label htmlFor="delivery-feedback-comment">反馈内容</Label>
+          <Textarea
+            id="delivery-feedback-comment"
+            value={value}
+            disabled={submitting}
+            onChange={(event) => onChange(event.target.value)}
+            placeholder="例如：课堂导入节奏合适，但第 3 页练习题还需要减少一步提示。"
+            className="min-h-32"
+          />
+        </div>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={submitting}
+            onClick={() => onOpenChange(false)}
+          >
+            取消
+          </Button>
+          <Button type="button" className="gap-2" disabled={submitting} onClick={onSubmit}>
+            {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+            提交
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

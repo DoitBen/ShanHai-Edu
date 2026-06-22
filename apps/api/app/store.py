@@ -664,25 +664,6 @@ class ProjectStore:
             "feedback_log": feedback_log,
         }
 
-    def approve_node(self, project_id: str, node_id: str) -> dict[str, Any]:
-        project = self.get_project(project_id)
-        with self.connect(Path(project["project_dir"])) as conn:
-            state = self.node_state(conn, project_id, node_id)
-            if not state.get("current_version_id") and node_id not in {"project_meta", "project_config"}:
-                raise ValueError("node has no current version")
-            updated_at = now_iso()
-            conn.execute(
-                "UPDATE node_state SET status = ?, updated_at = ? WHERE project_id = ? AND node_id = ?",
-                ("approved", updated_at, project_id, node_id),
-            )
-            if state.get("current_version_id"):
-                conn.execute(
-                    "UPDATE node_versions SET status = ?, approved_at = ? WHERE version_id = ?",
-                    ("approved", updated_at, state["current_version_id"]),
-                )
-            self.record_event(conn, project_id, node_id, "node_approved", {"version_id": state.get("current_version_id")})
-        return {"node_id": node_id, "status": "approved"}
-
     def save_asset(
         self,
         conn: sqlite3.Connection,

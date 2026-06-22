@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Any
 import json
 
-from .flywheel import FeedbackTypeError, FlywheelService
+from .flywheel import FeedbackPayloadError, FeedbackTypeError, FlywheelService
 from .ppt_exporter import export_project_ppt
 from .providers import DeepSeekTextProvider, FakeProvider, MinimaxTextProvider, NewApiImageProvider, OctoVideoProvider, ProviderError, sanitize_provider_excerpt
 from .prompt_loader import PromptTemplateMissing, PromptVariableMissing, render_prompt_file

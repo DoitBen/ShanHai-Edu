@@ -3,6 +3,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from pptx import Presentation
 import yaml
 
 from .store import ProjectStore
@@ -64,7 +65,7 @@ class RuleExecutor:
         warnings: list[dict[str, Any]] = []
         for severity in ["hard_block", "warning", "info"]:
             for rule in [item for item in event_rules if item.get("severity") == severity]:
-                check = self._builtin_check(rule, content or {})
+                check = self._builtin_check(rule, content or {}, conn, store, project_id)
                 if check is None:
                     continue
                 passed, details = check
@@ -158,16 +159,24 @@ class RuleExecutor:
             "details": record["details"],
         }
 
-    def _builtin_check(self, rule: dict[str, Any], content: dict[str, Any]) -> tuple[bool, dict[str, Any]] | None:
+    def _builtin_check(
+        self,
+        rule: dict[str, Any],
+        content: dict[str, Any],
+        conn: sqlite3.Connection,
+        store: ProjectStore,
+        project_id: str,
+    ) -> tuple[bool, dict[str, Any]] | None:
         checks = {
             "R001": self._check_r001,
             "R004": self._check_r004,
             "R006": self._check_r006,
             "R023": self._check_r023,
             "R024": self._check_r024,
-            "R026": self._check_r026,
             "R030": self._check_r030,
         }
+        if rule["rule_id"] == "R026":
+            return self._check_r026(content, conn, store, project_id)
         check = checks.get(rule["rule_id"])
         return check(content) if check else None
 
@@ -238,8 +247,13 @@ class RuleExecutor:
         active_types = [key for key, value in quota.items() if isinstance(value, (int, float)) and value >= 1]
         return len(active_types) >= 5, {"active_page_type_count": len(active_types), "active_page_types": active_types}
 
-    @staticmethod
-    def _check_r026(content: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
+    def _check_r026(
+        self,
+        content: dict[str, Any],
+        conn: sqlite3.Connection,
+        store: ProjectStore,
+        project_id: str,
+    ) -> tuple[bool, dict[str, Any]]:
         forbidden_patterns = [
             "准确性提醒",
             "QA 检查点",
@@ -253,13 +267,39 @@ class RuleExecutor:
             "draft",
             "candidate",
         ]
-        text_values = RuleExecutor._collect_strings(content)
+        text_values = [{"source": "content_json", "text": value} for value in RuleExecutor._collect_strings(content)]
+        pptx_path = content.get("pptx_path") if isinstance(content.get("pptx_path"), str) else None
+        if pptx_path:
+            text_values.extend(self._pptx_visible_text_values(conn, store, project_id, pptx_path))
         hits = []
-        for value in text_values:
+        for item in text_values:
+            value = item["text"]
             for pattern in forbidden_patterns:
                 if re.search(pattern, value, flags=re.IGNORECASE):
-                    hits.append({"pattern": pattern, "text": value[:120]})
-        return not hits, {"violations": hits}
+                    hits.append({"source": item["source"], "pattern": pattern, "text": value[:120]})
+        return not hits, {"pptx_path": pptx_path, "violations": hits}
+
+    def _pptx_visible_text_values(
+        self,
+        conn: sqlite3.Connection,
+        store: ProjectStore,
+        project_id: str,
+        rel_path: str,
+    ) -> list[dict[str, str]]:
+        project_dir = Path(store.get_project(project_id)["project_dir"])
+        pptx_path = (project_dir / rel_path).resolve()
+        if not _is_within(pptx_path, project_dir.resolve()) or pptx_path.suffix.lower() != ".pptx" or not pptx_path.exists():
+            return [{"source": "pptx_missing", "text": rel_path}]
+        presentation = Presentation(str(pptx_path))
+        values: list[dict[str, str]] = []
+        for slide_index, slide in enumerate(presentation.slides, start=1):
+            for shape_index, shape in enumerate(slide.shapes, start=1):
+                if not getattr(shape, "has_text_frame", False):
+                    continue
+                text = "\n".join(paragraph.text for paragraph in shape.text_frame.paragraphs).strip()
+                if text:
+                    values.append({"source": "pptx_shape_text", "text": text, "location": f"slide:{slide_index}/shape:{shape_index}"})
+        return values
 
     @staticmethod
     def _check_r030(content: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
@@ -317,3 +357,11 @@ class RuleExecutor:
             rule.setdefault("severity", item.get("severity"))
             rules.append(rule)
         return rules
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False

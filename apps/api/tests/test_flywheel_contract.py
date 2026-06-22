@@ -189,6 +189,28 @@ def test_feedback_api_records_feedback_log(tmp_path: Path):
     assert flywheel["feedback_log"][0]["payload"]["next_session_hint"] == "下次优先减少动画时长"
 
 
+def test_feedback_api_rejects_placeholder_feedback_payload(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project(client)
+
+    response = client.post(
+        f"/projects/{project['project_id']}/feedback",
+        json={
+            "feedback_type": "delivery",
+            "payload": {
+                "stage_key": "ppt-export",
+                "comment": "交付后反馈入口已预留，等待教师填写正式反馈。",
+            },
+        },
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "FEEDBACK_PAYLOAD_INVALID"
+    assert table_rows(project, "feedback_log") == []
+
+
 def test_feedback_api_rejects_unknown_feedback_type(tmp_path: Path):
     client = make_client(tmp_path)
     project = create_project(client)

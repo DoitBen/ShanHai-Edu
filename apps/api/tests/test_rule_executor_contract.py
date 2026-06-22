@@ -103,6 +103,15 @@ def rule_rows(project: dict[str, Any], rule_id: str) -> list[sqlite3.Row]:
         ).fetchall()
 
 
+def transition_rows(project: dict[str, Any], node_id: str) -> list[sqlite3.Row]:
+    with sqlite3.connect(Path(project["project_dir"]) / "project.db") as conn:
+        conn.row_factory = sqlite3.Row
+        return conn.execute(
+            "SELECT * FROM state_transition_log WHERE node_id = ? ORDER BY triggered_at, rowid",
+            (node_id,),
+        ).fetchall()
+
+
 def error_payload(response, status_code: int, code: str) -> dict[str, Any]:
     assert response.status_code == status_code, response.text
     payload = response.json()
@@ -123,6 +132,36 @@ def test_r010_blocks_downstream_generate_and_logs_rule_result(tmp_path: Path):
     assert len(rows) == 1
     assert rows[0]["passed"] == 0
     assert rows[0]["trigger_event"] == "on_generate"
+
+
+def test_rule_executor_coverage_marks_yaml_rules_without_runtime_checks_unimplemented(tmp_path: Path):
+    client = make_client(tmp_path)
+
+    coverage = client.app.state.service.rule_executor.coverage()
+
+    by_id = {rule["rule_id"]: rule for rule in coverage["rules"]}
+    assert by_id["R010"]["implemented"] is True
+    assert by_id["R001"]["implemented"] is True
+    assert by_id["R004"]["implemented"] is True
+    assert by_id["R006"]["implemented"] is True
+    assert by_id["R026"]["implemented"] is True
+    assert by_id["R030"]["implemented"] is True
+    assert by_id["R011"]["implemented"] is False
+    assert by_id["R011"]["executor_type"] == "unimplemented"
+    assert "R011" in coverage["unimplemented_rule_ids"]
+    assert "R011" in coverage["unimplemented_hard_block_rule_ids"]
+
+
+def test_manifest_rule_summary_exposes_unimplemented_hard_block_rules_for_node(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project(client)
+    project_id = project["project_id"]
+
+    manifest = unwrap_ok(client.get(f"/projects/{project_id}/manifest"))
+    ppt_asset = {node["node_id"]: node for node in manifest["nodes"]}["ppt_visual_asset"]
+
+    assert "R011" in ppt_asset["rule_summary"]["unimplemented_hard_block_rule_ids"]
+    assert ppt_asset["rule_summary"]["unimplemented_hard_block_count"] >= 1
 
 
 def test_r004_blocks_character_dict_save_and_logs_result(tmp_path: Path):
@@ -147,6 +186,10 @@ def test_r004_blocks_character_dict_save_and_logs_result(tmp_path: Path):
     rows = rule_rows(project, "R004")
     assert len(rows) == 1
     assert rows[0]["passed"] == 0
+
+    transitions = transition_rows(project, "character_dict")
+    assert transitions[-1]["to_status"] == "blocked"
+    assert transitions[-1]["trigger"] == "hard_block_rule_hit"
 
 
 def test_r006_blocks_ppt_page_script_approve(tmp_path: Path):

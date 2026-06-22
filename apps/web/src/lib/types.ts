@@ -17,6 +17,7 @@ export type StageStatus =
   | "running"
   | "pending_confirm"
   | "approved"
+  | "skipped"
   | "blocked"
   | "failed";
 
@@ -118,6 +119,8 @@ export interface ApiRuleSummary {
   warning_count: number;
   failed_rule_ids: string[];
   warning_rule_ids: string[];
+  unimplemented_hard_block_count?: number;
+  unimplemented_hard_block_rule_ids?: string[];
 }
 
 export interface ApiManifest {

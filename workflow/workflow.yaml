@@ -29,6 +29,9 @@ transitions:
     to: drafted
     trigger: ai_generate
   - from: not_started
+    to: drafted
+    trigger: user_edit
+  - from: not_started
     to: skipped
     trigger: config_change
   - from: drafted
@@ -63,9 +66,18 @@ transitions:
   - from: blocked
     to: drafted
     trigger: user_resolve
+  - from: blocked
+    to: drafted
+    trigger: ai_generate
+  - from: blocked
+    to: drafted
+    trigger: user_edit
   - from: any
     to: blocked
     trigger: hard_block_rule_hit
+  - from: any
+    to: skipped
+    trigger: config_change
   - from: skipped
     to: not_started
     trigger: user_cancel_skip

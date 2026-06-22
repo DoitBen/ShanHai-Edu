@@ -1,4 +1,5 @@
 import re
+import subprocess
 from pathlib import Path
 
 from app.providers import sanitize_provider_excerpt
@@ -81,3 +82,49 @@ def test_api_env_example_contains_only_placeholders_for_secret_like_values():
                 violations.append(key)
 
     assert violations == []
+
+
+def test_client_secret_scan_script_fails_without_printing_sentinel_value(tmp_path):
+    sentinel = "SHANHAI_SECRET_SENTINEL_TEST_VALUE"
+    web_root = tmp_path / "web"
+    client_dir = web_root / ".next" / "static" / "chunks"
+    client_dir.mkdir(parents=True)
+    (client_dir / "leak.js").write_text(f"window.__leak='{sentinel}'", encoding="utf-8")
+    script = REPO_ROOT / "apps" / "web" / "scripts" / "assert-no-client-secrets.mjs"
+
+    result = subprocess.run(
+        ["node", str(script), "--root", str(web_root), "--sentinel", sentinel],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "leak.js" in result.stderr
+    assert sentinel not in result.stderr
+    assert sentinel not in result.stdout
+
+
+def test_client_secret_scan_script_passes_when_client_artifacts_are_clean(tmp_path):
+    sentinel = "SHANHAI_SECRET_SENTINEL_CLEAN_VALUE"
+    web_root = tmp_path / "web"
+    client_dir = web_root / ".next" / "static" / "chunks"
+    client_dir.mkdir(parents=True)
+    (client_dir / "clean.js").write_text("window.__safe='ok'", encoding="utf-8")
+    server_dir = web_root / ".next" / "server" / "app" / "api" / "backend"
+    server_dir.mkdir(parents=True)
+    (server_dir / "route.js").write_text(f"process.env.BACKEND_API_TOKEN || '{sentinel}'", encoding="utf-8")
+    script = REPO_ROOT / "apps" / "web" / "scripts" / "assert-no-client-secrets.mjs"
+
+    result = subprocess.run(
+        ["node", str(script), "--root", str(web_root), "--sentinel", sentinel],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert sentinel not in result.stdout
+    assert sentinel not in result.stderr

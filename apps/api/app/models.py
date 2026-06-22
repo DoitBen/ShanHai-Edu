@@ -10,6 +10,8 @@ class ProjectCreateRequest(BaseModel):
     textbook_version: str = Field(min_length=1)
     volume: str = Field(min_length=1)
     lesson_type: str = Field(min_length=1)
+    needs_intro_video: bool | None = None
+    embed_video_in_ppt: bool | None = None
     character_profile: str | None = None
     character_safety_rule: str | None = None
     visual_palette: str | None = None

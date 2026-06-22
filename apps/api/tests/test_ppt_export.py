@@ -35,18 +35,20 @@ def unwrap_ok(response):
     return payload["data"]
 
 
-def create_project(client: TestClient) -> dict[str, Any]:
+def create_project(client: TestClient, extra: dict[str, Any] | None = None) -> dict[str, Any]:
+    payload = {
+        "name": "PPT 导出项目",
+        "subject": "math",
+        "grade": "1",
+        "textbook_version": "renjiao",
+        "volume": "shang",
+        "lesson_type": "public",
+    }
+    payload.update(extra or {})
     return unwrap_ok(
         client.post(
             "/projects",
-            json={
-                "name": "PPT 导出项目",
-                "subject": "math",
-                "grade": "1",
-                "textbook_version": "renjiao",
-                "volume": "shang",
-                "lesson_type": "public",
-            },
+            json=payload,
         )
     )
 
@@ -75,7 +77,6 @@ def test_pptx_artifact_generate_creates_pptx_and_compat_export_reads_existing_ar
     exported = unwrap_ok(client.post(f"/projects/{project_id}/export/ppt", json={}))
 
     pptx_path = Path(project["project_dir"]) / artifact["content"]["pptx_path"]
-    video_path = Path(project["project_dir"]) / artifact["content"]["video_path"]
 
     assert exported == {
         "filename": artifact["content"]["filename"],
@@ -84,18 +85,17 @@ def test_pptx_artifact_generate_creates_pptx_and_compat_export_reads_existing_ar
         "video_path": artifact["content"]["video_path"],
     }
     assert exported["download_url"] == f"/projects/{project_id}/exports/{exported['filename']}"
+    assert exported["video_path"] is None
     assert pptx_path.exists()
-    assert video_path.exists()
     with ZipFile(pptx_path) as archive:
         names = set(archive.namelist())
         assert "ppt/slides/slide1.xml" in names
-        assert "ppt/slides/slide2.xml" in names
-        assert any(name.startswith("ppt/media/") and name.endswith(".mp4") for name in names)
+        assert not any(name.startswith("ppt/media/") and name.endswith(".mp4") for name in names)
 
 
 def test_export_ppt_reuses_existing_final_video_output(tmp_path: Path):
     client = make_client(tmp_path)
-    project = create_project(client)
+    project = create_project(client, {"embed_video_in_ppt": True})
     project_id = project["project_id"]
     video_path = Path(project["project_dir"]) / "outputs" / "final_video.mp4"
     video_path.parent.mkdir(parents=True, exist_ok=True)

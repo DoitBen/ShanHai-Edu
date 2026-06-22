@@ -151,6 +151,7 @@ export const STAGE_STATUS_LABEL: Record<StageStatus, string> = {
   running: "运行中",
   pending_confirm: "待确认",
   approved: "已通过",
+  skipped: "已跳过",
   blocked: "已阻塞",
   failed: "失败",
 };
@@ -170,6 +171,7 @@ export const STAGE_STATUS_TONE: Record<StageStatus, StageStatusTone> = {
   running: "brand",
   pending_confirm: "warning",
   approved: "success",
+  skipped: "info",
   blocked: "danger",
   failed: "danger",
 };

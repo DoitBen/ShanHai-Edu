@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "bun scripts/run-with-log.mjs dev.log -- next dev -p 3000",
     "build": "next build && bun scripts/copy-standalone-assets.mjs",
+    "scan:client-secrets": "bun scripts/assert-no-client-secrets.mjs",
     "start": "bun scripts/run-with-log.mjs server.log NODE_ENV=production -- bun .next/standalone/server.js",
     "lint": "eslint .",
     "db:push": "prisma db push",

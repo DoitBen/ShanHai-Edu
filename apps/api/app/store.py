@@ -84,6 +84,11 @@ class ProjectStore:
                     (project_id, node_id, status, None, created_at),
                 )
             self._seed_create_project_runtime_nodes(conn, project_id, payload, node_ids)
+            if workflow:
+                from .state_engine import StateEngine
+
+                project_config = self.current_content(conn, project_id, "project_config") or {}
+                StateEngine(self, workflow.runtime_dependencies(), workflow).apply_config_change(conn, project_id, project_config)
             self.record_event(conn, project_id, "project_meta", "project_created", payload)
         return self.get_project(project_id)
 
@@ -95,6 +100,7 @@ class ProjectStore:
         node_ids: list[str],
     ) -> None:
         seeded_nodes = {
+            "project_config": self._project_config_from_create_payload(payload),
             "visual_contract": self._visual_contract_from_create_payload(payload),
             "character_dict": self._character_dict_from_create_payload(payload),
         }
@@ -121,6 +127,27 @@ class ProjectStore:
                 "runtime_node_seeded",
                 {"version_id": written["version_id"], "generated_by": "user_create_project"},
             )
+
+    def _project_config_from_create_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        needs_intro_video = payload.get("needs_intro_video")
+        if needs_intro_video is None:
+            needs_intro_video = True
+        embed_video_in_ppt = payload.get("embed_video_in_ppt")
+        if embed_video_in_ppt is None:
+            embed_video_in_ppt = False
+        return {
+            "needs_intro_video": bool(needs_intro_video),
+            "intro_video_type": payload.get("intro_video_type") or "full_60_120s",
+            "ppt_page_range": payload.get("ppt_page_range") or [12, 16],
+            "visual_richness": payload.get("visual_richness") or "mid",
+            "embed_video_in_ppt": bool(embed_video_in_ppt),
+            "intro_design_types": payload.get("intro_design_types") or ["science", "application", "story"],
+            "designs_per_type": int(payload.get("designs_per_type") or 3),
+            "source_input": {
+                "needs_intro_video": needs_intro_video,
+                "embed_video_in_ppt": embed_video_in_ppt,
+            },
+        }
 
     def _visual_contract_from_create_payload(self, payload: dict[str, Any]) -> dict[str, Any] | None:
         source = {
@@ -355,13 +382,18 @@ class ProjectStore:
                     projects.append(data)
         return sorted(projects, key=lambda p: p["created_at"], reverse=True)
 
-    def manifest(self, project_id: str, workflow: WorkflowConfig | None = None) -> dict[str, Any]:
+    def manifest(
+        self,
+        project_id: str,
+        workflow: WorkflowConfig | None = None,
+        rule_runtime_summary: dict[str, dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         project = self.get_project(project_id)
         with self.connect(Path(project["project_dir"])) as conn:
             rows = conn.execute("SELECT * FROM node_state ORDER BY rowid").fetchall()
         return {
             "project": project,
-            "nodes": [self.decorate_node_state(conn, project_id, dict(row), workflow) for row in rows],
+            "nodes": [self.decorate_node_state(conn, project_id, dict(row), workflow, rule_runtime_summary) for row in rows],
         }
 
     def node_state(self, conn: sqlite3.Connection, project_id: str, node_id: str) -> dict[str, Any]:
@@ -379,6 +411,7 @@ class ProjectStore:
         project_id: str,
         state: dict[str, Any],
         workflow: WorkflowConfig | None = None,
+        rule_runtime_summary: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         latest_transition = self.latest_transition(conn, project_id, state["node_id"])
         review_reason = None
@@ -397,15 +430,27 @@ class ProjectStore:
             **self._manifest_workflow_fields(node_config),
             "capabilities": self._manifest_capabilities(conn, project_id, state, node_config),
             "artifact": self._manifest_artifact(content),
-            "rule_summary": self._manifest_rule_summary(conn, project_id, node_id),
+            "rule_summary": self._manifest_rule_summary(conn, project_id, node_id, (rule_runtime_summary or {}).get(node_id)),
             "latest_transition": latest_transition,
             "review_reason": review_reason,
         }
 
-    def node_detail(self, project_id: str, node_id: str, workflow: WorkflowConfig | None = None) -> dict[str, Any]:
+    def node_detail(
+        self,
+        project_id: str,
+        node_id: str,
+        workflow: WorkflowConfig | None = None,
+        rule_runtime_summary: dict[str, dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         project = self.get_project(project_id)
         with self.connect(Path(project["project_dir"])) as conn:
-            state = self.decorate_node_state(conn, project_id, self.node_state(conn, project_id, node_id), workflow)
+            state = self.decorate_node_state(
+                conn,
+                project_id,
+                self.node_state(conn, project_id, node_id),
+                workflow,
+                rule_runtime_summary,
+            )
             content = self.current_content(conn, project_id, node_id)
         return {**state, "content": content}
 
@@ -470,7 +515,13 @@ class ProjectStore:
         artifact = {key: content[key] for key in artifact_keys if content.get(key)}
         return artifact or None
 
-    def _manifest_rule_summary(self, conn: sqlite3.Connection, project_id: str, node_id: str) -> dict[str, Any]:
+    def _manifest_rule_summary(
+        self,
+        conn: sqlite3.Connection,
+        project_id: str,
+        node_id: str,
+        runtime_summary: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         rows = conn.execute(
             """
             SELECT rule_id, severity, passed FROM rule_result_log
@@ -487,6 +538,8 @@ class ProjectStore:
             "warning_count": len(warning_rule_ids),
             "failed_rule_ids": failed_rule_ids,
             "warning_rule_ids": warning_rule_ids,
+            "unimplemented_hard_block_count": int((runtime_summary or {}).get("unimplemented_hard_block_count", 0)),
+            "unimplemented_hard_block_rule_ids": list((runtime_summary or {}).get("unimplemented_hard_block_rule_ids", [])),
         }
 
     def current_content(self, conn: sqlite3.Connection, project_id: str, node_id: str) -> dict[str, Any] | None:

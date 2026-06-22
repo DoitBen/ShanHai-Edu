@@ -15,6 +15,7 @@ from .rule_executor import RuleHardBlockError, RuleWarningError
 from .security import require_api_token
 from .services import FeedbackPayloadError, FeedbackTypeError, NodeContentValidationError, WorkflowService
 from .settings import Settings
+from .state_engine import NodeSkippedError
 from .store import ProjectStore
 from .workflow_config import WorkflowConfig
 
@@ -160,6 +161,10 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except FileNotFoundError:
             return fail(404, "SCHEMA_NOT_FOUND", f"未找到 schema：{schema_name}")
 
+    @app.get("/rules/coverage", dependencies=protected)
+    def get_rule_coverage():
+        return ok(service.rule_executor.coverage())
+
     @app.post("/projects", dependencies=protected)
     def create_project(payload: ProjectCreateRequest):
         return ok(store.create_project(dump_model(payload), workflow))
@@ -178,7 +183,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
     @app.get("/projects/{project_id}/manifest", dependencies=protected)
     def get_manifest(project_id: str):
         try:
-            return ok(store.manifest(project_id, workflow))
+            return ok(store.manifest(project_id, workflow, service.rule_runtime_summary()))
         except KeyError:
             return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
 
@@ -211,6 +216,8 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
     def generate_node(project_id: str, node_id: str, payload: NodeGenerateRequest | None = None):
         try:
             return ok(service.generate_node(project_id, node_id, payload.to_options() if payload else {}))
+        except NodeSkippedError as exc:
+            return fail(409, "NODE_SKIPPED", str(exc), retryable=False)
         except PermissionError as exc:
             return fail(409, "UPSTREAM_NOT_APPROVED", str(exc), retryable=False)
         except ProviderError as exc:
@@ -233,6 +240,8 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
             return fail(400, "NODE_CONTENT_INVALID", str(exc), retryable=False, details=exc.details)
         except RuleHardBlockError as exc:
             return fail(400, exc.code, str(exc), retryable=False, details=exc.details)
+        except NodeSkippedError as exc:
+            return fail(409, "NODE_SKIPPED", str(exc), retryable=False)
         except PermissionError as exc:
             return fail(409, "UPSTREAM_NOT_APPROVED", str(exc), retryable=False)
         except KeyError as exc:
@@ -262,7 +271,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
     @app.get("/projects/{project_id}/nodes/{node_id}", dependencies=protected)
     def get_node(project_id: str, node_id: str):
         try:
-            return ok(store.node_detail(project_id, node_id, workflow))
+            return ok(store.node_detail(project_id, node_id, workflow, service.rule_runtime_summary()))
         except KeyError as exc:
             return fail(404, "NOT_FOUND", str(exc), retryable=False)
 

@@ -7,7 +7,7 @@ from .ppt_exporter import export_project_ppt
 from .providers import DeepSeekTextProvider, FakeProvider, MinimaxTextProvider, NewApiImageProvider, OctoVideoProvider, ProviderError, sanitize_provider_excerpt
 from .prompt_loader import PromptTemplateMissing, PromptVariableMissing, render_prompt_file
 from .rule_executor import RuleExecutor
-from .state_engine import StateEngine
+from .state_engine import NodeSkippedError, StateEngine
 from .store import ProjectStore, now_iso
 from .textbook_parser import TextbookParser, TextbookSource
 from .video_outputs import FINAL_VIDEO_REL_PATH, compose_final_video_from_clips, compose_final_video_with_audio, ensure_final_video_output, write_concat_manifest, write_placeholder_narration_audio, write_subtitle_srt
@@ -445,7 +445,7 @@ class WorkflowService:
         self.prompt_root = prompt_root or Path("workflow") / "prompts"
         self.tts_provider = tts_provider
         self.video_model = video_model
-        self.state_engine = StateEngine(store, self._dependencies())
+        self.state_engine = StateEngine(store, self._dependencies(), workflow)
         self.rule_executor = RuleExecutor(workflow.root / "rules" if workflow else None)
         self.flywheel = FlywheelService()
 
@@ -517,6 +517,9 @@ class WorkflowService:
             validate_edit_content(node_id, content, self._edit_validation_context(conn, project_id))
             self.rule_executor.run_for_event(conn, self.store, project_id, node_id, "on_save", content)
             result = self._write_review_version(conn, project_id, node_id, content, "human_edit", None, "user_save_edit")
+            if node_id == "project_config":
+                self.state_engine.apply_config_change(conn, project_id, content)
+                self.state_engine.restore_config_skips(conn, project_id, content)
             if before_state.get("status") == "approved":
                 self.flywheel.record_post_approve_edit(
                     conn,
@@ -573,6 +576,11 @@ class WorkflowService:
     def flywheel_events(self, project_id: str) -> dict[str, list[dict[str, Any]]]:
         return self.store.flywheel_events(project_id)
 
+    def rule_runtime_summary(self) -> dict[str, dict[str, Any]]:
+        if not self.workflow:
+            return {}
+        return {node_id: self.rule_executor.summary_for_node(node_id) for node_id in self.workflow.runtime_node_ids()}
+
     def _write_review_version(
         self,
         conn,
@@ -603,6 +611,8 @@ class WorkflowService:
             return
         try:
             self.state_engine.assert_upstreams_passable(conn, project_id, node_id)
+        except NodeSkippedError:
+            raise
         except PermissionError as exc:
             self.rule_executor.record_r010_result(
                 conn,
@@ -864,27 +874,41 @@ class WorkflowService:
             return {}
 
     def _generate_pptx_artifact(self, conn, project_id: str, project: dict[str, Any], project_dir: Path) -> dict[str, Any]:
-        exported = export_project_ppt(project, project_dir, allow_placeholder=True)
+        source_nodes = [
+            "visual_contract",
+            "character_dict",
+            "ppt_assembly_plan",
+            "ppt_page_script",
+            "ppt_visual_asset",
+        ]
+        sources = {
+            "project_config": self.store.current_content(conn, project_id, "project_config") or {},
+            **{node_id: self.store.current_content(conn, project_id, node_id) or {} for node_id in source_nodes},
+        }
+        final_video_content = self.store.current_content(conn, project_id, "final_video") or {}
+        existing_video_path = final_video_content.get("video_path") if isinstance(final_video_content, dict) else None
+        if existing_video_path:
+            sources["project_config"] = {**sources["project_config"], "_embed_video_path": existing_video_path}
+        source_versions = {
+            node_id: self.store.node_state(conn, project_id, node_id).get("current_version_id")
+            for node_id in source_nodes
+        }
+        exported = export_project_ppt(project, project_dir, allow_placeholder=True, sources=sources)
         content = {
             "pptx_path": exported["path"],
             "download_url": exported["download_url"],
             "filename": exported["filename"],
-            "video_path": exported.get("video_path"),
+            "video_path": exported.get("video_path") or existing_video_path,
             "pdf_preview_path": "exports/lesson-video-demo-preview.pdf",
             "contact_sheet_path": "exports/lesson-video-demo-contact-sheet.png",
             "svg_quality_passed": True,
             "eight_confirmations_status": "fast_mode_authorized",
-            "slide_count": 2,
-            "notes_count": 2,
-            "media_count": 1,
+            "slide_count": exported["slide_count"],
+            "notes_count": exported["notes_count"],
+            "media_count": exported["media_count"],
             "generated_at": now_iso(),
-            "source_nodes": [
-                "visual_contract",
-                "character_dict",
-                "ppt_assembly_plan",
-                "ppt_page_script",
-                "ppt_visual_asset",
-            ],
+            "source_nodes": source_nodes,
+            "source_versions": source_versions,
         }
         return self._write_review_version(conn, project_id, "pptx_artifact", content, "artifact", "ppt_exporter", "ai_generate_done")
 

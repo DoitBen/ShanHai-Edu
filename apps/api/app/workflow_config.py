@@ -22,6 +22,18 @@ class WorkflowConfig:
     def nodes(self) -> list[dict[str, Any]]:
         return list(self.workflow.get("nodes", []))
 
+    @property
+    def states(self) -> list[str]:
+        return list(self.workflow.get("states", []))
+
+    @property
+    def passable_states(self) -> list[str]:
+        return list(self.workflow.get("passable_states", []))
+
+    @property
+    def transitions(self) -> list[dict[str, Any]]:
+        return list(self.workflow.get("transitions", []))
+
     def node_ids(self) -> list[str]:
         return [node["id"] for node in self.nodes]
 

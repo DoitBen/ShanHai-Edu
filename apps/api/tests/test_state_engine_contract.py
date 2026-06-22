@@ -45,6 +45,19 @@ def create_project(client: TestClient, name: str = "StateEngine 契约") -> dict
     )
 
 
+def create_project_with_config(client: TestClient, payload: dict[str, Any]) -> dict[str, Any]:
+    base = {
+        "name": "StateEngine 配置跳过",
+        "subject": "math",
+        "grade": "2",
+        "textbook_version": "renjiao",
+        "volume": "shang",
+        "lesson_type": "public",
+    }
+    base.update(payload)
+    return unwrap_ok(client.post("/projects", json=base))
+
+
 def upload_textbook(client: TestClient, project_id: str) -> None:
     unwrap_ok(
         client.post(
@@ -223,3 +236,209 @@ def test_store_rejects_invalid_node_state_updates(tmp_path: Path):
 
         state = store.node_state(conn, project_id, "lesson_plan")
         assert state["status"] in STATE_VALUES
+
+
+def test_create_project_persists_project_config_and_applies_skip_when(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project_with_config(
+        client,
+        {
+            "needs_intro_video": False,
+            "embed_video_in_ppt": False,
+        },
+    )
+    project_id = project["project_id"]
+
+    project_config = unwrap_ok(client.get(f"/projects/{project_id}/nodes/project_config"))
+    assert project_config["status"] == "approved"
+    assert project_config["current_version_id"]
+    assert project_config["content"]["needs_intro_video"] is False
+    assert project_config["content"]["embed_video_in_ppt"] is False
+    assert project_config["latest_transition"]["trigger"] == "user_create_project"
+
+    manifest = unwrap_ok(client.get(f"/projects/{project_id}/manifest"))
+    nodes = {node["node_id"]: node for node in manifest["nodes"]}
+    skipped_nodes = [
+        "intro_selection",
+        "intro_video_script",
+        "intro_video_screenplay",
+        "intro_video_asset",
+        "storyboard",
+        "final_video",
+    ]
+    for node_id in skipped_nodes:
+        assert nodes[node_id]["status"] == "skipped"
+        assert nodes[node_id]["latest_transition"]["trigger"] == "config_change"
+        assert nodes[node_id]["capabilities"]["can_generate"] is False
+
+    rows = transition_rows(project["project_dir"], project_id, "intro_selection")
+    assert rows[-1]["from_status"] == "not_started"
+    assert rows[-1]["to_status"] == "skipped"
+    assert rows[-1]["trigger"] == "config_change"
+
+
+def test_skipped_upstream_is_passable_for_downstream_generation(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project_with_config(client, {"needs_intro_video": False})
+    project_id = project["project_id"]
+    upload_textbook(client, project_id)
+
+    for node_id in ["textbook_parse", "lesson_plan"]:
+        generate_and_approve(client, project_id, node_id)
+
+    blocked_video = client.post(f"/projects/{project_id}/nodes/intro_video_script/generate", json={})
+    assert blocked_video.status_code == 409
+    assert blocked_video.json()["error"]["code"] == "NODE_SKIPPED"
+
+    ppt_plan = unwrap_ok(client.post(f"/projects/{project_id}/nodes/ppt_assembly_plan/generate", json={}))
+    assert ppt_plan["status"] == "needs_review"
+
+
+def test_project_config_change_can_restore_skipped_video_branch(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project_with_config(client, {"needs_intro_video": False})
+    project_id = project["project_id"]
+
+    config_detail = unwrap_ok(client.get(f"/projects/{project_id}/nodes/project_config"))
+    content = dict(config_detail["content"])
+    content["needs_intro_video"] = True
+    edited = unwrap_ok(client.post(f"/projects/{project_id}/nodes/project_config/edit", json={"content": content}))
+    assert edited["status"] == "needs_review"
+
+    manifest = unwrap_ok(client.get(f"/projects/{project_id}/manifest"))
+    nodes = {node["node_id"]: node for node in manifest["nodes"]}
+    for node_id in ["intro_selection", "intro_video_script", "intro_video_screenplay", "intro_video_asset", "storyboard", "final_video"]:
+        assert nodes[node_id]["status"] == "not_started"
+        assert nodes[node_id]["latest_transition"]["trigger"] == "config_change"
+
+    rows = transition_rows(project["project_dir"], project_id, "intro_selection")
+    assert [row["to_status"] for row in rows[-2:]] == ["skipped", "not_started"]
+
+
+def test_project_config_change_skips_existing_video_branch_without_deleting_current_version(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project_with_config(client, {"needs_intro_video": True})
+    project_id = project["project_id"]
+    upload_textbook(client, project_id)
+
+    for node_id in ["textbook_parse", "lesson_plan", "intro_selection", "intro_video_script"]:
+        generate_and_approve(client, project_id, node_id)
+
+    before = unwrap_ok(client.get(f"/projects/{project_id}/nodes/intro_video_script"))
+    assert before["status"] == "approved"
+    before_version_id = before["current_version_id"]
+    before_content = before["content"]
+
+    config_detail = unwrap_ok(client.get(f"/projects/{project_id}/nodes/project_config"))
+    content = dict(config_detail["content"])
+    content["needs_intro_video"] = False
+    unwrap_ok(client.post(f"/projects/{project_id}/nodes/project_config/edit", json={"content": content}))
+
+    after = unwrap_ok(client.get(f"/projects/{project_id}/nodes/intro_video_script"))
+    assert after["status"] == "skipped"
+    assert after["current_version_id"] == before_version_id
+    assert after["content"] == before_content
+    assert after["latest_transition"]["from_status"] == "approved"
+    assert after["latest_transition"]["to_status"] == "skipped"
+    assert after["latest_transition"]["trigger"] == "config_change"
+
+
+def test_state_engine_rejects_transitions_not_declared_in_workflow_yaml(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project(client)
+    project_id = project["project_id"]
+    store = client.app.state.store
+    engine = client.app.state.service.state_engine
+
+    with store.connect(Path(project["project_dir"])) as conn:
+        try:
+            engine.approve(conn, project_id, "lesson_plan")
+        except ValueError as exc:
+            assert "Illegal workflow transition" in str(exc)
+        else:
+            raise AssertionError("StateEngine should reject not_started -> approved")
+
+        state = store.node_state(conn, project_id, "lesson_plan")
+        assert state["status"] == "not_started"
+
+
+def test_state_engine_rejects_blocked_direct_approve_until_resolved(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project(client)
+    project_id = project["project_id"]
+    store = client.app.state.store
+    engine = client.app.state.service.state_engine
+
+    with store.connect(Path(project["project_dir"])) as conn:
+        written = store.write_version(
+            conn,
+            project_id,
+            "lesson_plan",
+            {"error_code": "TEST_BLOCKED"},
+            "fixture",
+            "fixture",
+            "blocked",
+        )
+        store.record_state_transition(
+            conn,
+            project_id,
+            "lesson_plan",
+            written.get("_previous_status"),
+            "blocked",
+            "hard_block_rule_hit",
+            version_id_before=written.get("_previous_version_id"),
+            version_id_after=written["version_id"],
+        )
+
+        try:
+            engine.approve(conn, project_id, "lesson_plan")
+        except ValueError as exc:
+            assert "Illegal workflow transition" in str(exc)
+        else:
+            raise AssertionError("StateEngine should reject blocked -> approved")
+
+        state = store.node_state(conn, project_id, "lesson_plan")
+        assert state["status"] == "blocked"
+
+
+def test_blocked_node_can_be_resolved_by_user_edit_before_approval(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project(client)
+    project_id = project["project_id"]
+    store = client.app.state.store
+    engine = client.app.state.service.state_engine
+
+    with store.connect(Path(project["project_dir"])) as conn:
+        written = store.write_version(
+            conn,
+            project_id,
+            "lesson_plan",
+            {"error_code": "TEST_BLOCKED"},
+            "fixture",
+            "fixture",
+            "blocked",
+        )
+        store.record_state_transition(
+            conn,
+            project_id,
+            "lesson_plan",
+            written.get("_previous_status"),
+            "blocked",
+            "hard_block_rule_hit",
+            version_id_before=written.get("_previous_version_id"),
+            version_id_after=written["version_id"],
+        )
+        fixed = store.write_version(
+            conn,
+            project_id,
+            "lesson_plan",
+            {"lesson_plan_markdown": "# 教案\n\n## 基本信息\n\n修复后内容", "intro_designs": []},
+            "human_edit",
+            None,
+            "needs_review",
+        )
+        public = engine.record_version_ready(conn, project_id, "lesson_plan", fixed, "user_save_edit")
+
+        assert public["status"] == "needs_review"
+        state = store.node_state(conn, project_id, "lesson_plan")
+        assert state["status"] == "needs_review"

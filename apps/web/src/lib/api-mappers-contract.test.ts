@@ -61,6 +61,56 @@ assert(stage.summary.includes("lesson_plan"), "stage summary must expose API dep
 assert(stage.capabilities?.can_edit === true, "stage capabilities must come from API manifest");
 assert(stage.ruleSummary?.warning_rule_ids.includes("R023"), "stage rule summary must come from API manifest");
 
+const skippedManifest: ApiManifest = {
+  ...manifest,
+  nodes: [
+    {
+      project_id: "proj_manifest",
+      node_id: "lesson_plan",
+      title: "公开课教案",
+      step: 1,
+      branch: "shared",
+      depends_on: [],
+      schema: "schemas/lesson_plan.schema.json",
+      status: "approved",
+      current_version_id: "ver_lesson",
+      updated_at: "2026-06-22T00:00:01Z",
+    },
+    {
+      project_id: "proj_manifest",
+      node_id: "intro_selection",
+      title: "导入设计选择集",
+      step: 1.5,
+      branch: "intro_video",
+      depends_on: ["lesson_plan"],
+      schema: "schemas/intro_selection.schema.json",
+      status: "skipped",
+      current_version_id: null,
+      updated_at: "2026-06-22T00:00:02Z",
+    },
+    {
+      project_id: "proj_manifest",
+      node_id: "ppt_assembly_plan",
+      title: "PPT 总装方案",
+      step: 2,
+      branch: "ppt",
+      depends_on: ["lesson_plan"],
+      schema: "schemas/ppt_assembly_plan.schema.json",
+      status: "not_started",
+      current_version_id: null,
+      updated_at: "2026-06-22T00:00:03Z",
+    },
+  ],
+};
+
+const skippedMapped = mapApiManifest(skippedManifest);
+const skippedStages = Object.fromEntries(skippedMapped.stages.map((item) => [item.apiNodeId, item]));
+
+assert(skippedStages.intro_selection.status === "skipped", "skipped backend status must be preserved as UI skipped");
+assert(skippedMapped.project.progress === 67, "approved and skipped stages must both count toward progress");
+assert(skippedMapped.project.currentStage === "ppt-plan", "current stage must skip approved/skipped nodes");
+assert(skippedMapped.project.nextAction.includes("PPT 总装方案"), "next action must point to first non-passable stage");
+
 const draft: NewProjectDraft = {
   step: 1,
   name: "  角色视觉契约项目  ",

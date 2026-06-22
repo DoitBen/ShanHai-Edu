@@ -1060,8 +1060,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const projects: ProjectMeta[] = get().projects.map((p) => {
       if (p.id !== projectId) return p;
       const nextKey = nextStageKey(stageKey);
-      const approved = stages.filter((s) => s.status === "approved").length;
-      const progress = Math.round((approved / stages.length) * 100);
+      const passed = stages.filter((s) => s.status === "approved" || s.status === "skipped").length;
+      const progress = Math.round((passed / stages.length) * 100);
       const cur = stages.find((s) => s.key === nextKey);
       return {
         ...p,

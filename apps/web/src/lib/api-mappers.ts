@@ -230,9 +230,9 @@ export function draftToCreateProjectPayload(draft: NewProjectDraft): CreateProje
 
 export function mapApiProject(project: ApiProject, nodes?: ApiNodeState[]): ProjectMeta {
   const stages = nodes ? mapApiNodesToStages(nodes) : [];
-  const current = stages.find((stage) => stage.status !== "approved") || stages[0];
-  const approved = stages.filter((stage) => stage.status === "approved").length;
-  const progress = stages.length ? Math.round((approved / stages.length) * 100) : 0;
+  const current = stages.find((stage) => !isPassableStageStatus(stage.status)) || stages[0];
+  const passed = stages.filter((stage) => isPassableStageStatus(stage.status)).length;
+  const progress = stages.length ? Math.round((passed / stages.length) * 100) : 0;
 
   return {
     id: project.project_id,
@@ -400,7 +400,7 @@ function fallbackNodeDef(nodeId: string, order: number): NodeDef {
 }
 
 function mapProjectStatus(status: string, stages: WorkflowStage[]): ProjectStatus {
-  if (status === "done" || stages.length > 0 && stages.every((stage) => stage.status === "approved")) {
+  if (status === "done" || stages.length > 0 && stages.every((stage) => isPassableStageStatus(stage.status))) {
     return "done";
   }
   if (status === "failed" || stages.some((stage) => stage.status === "failed")) return "failed";
@@ -421,9 +421,14 @@ function mapStageStatus(status: string): StageStatus {
     approved: "approved",
     blocked: "blocked",
     failed: "failed",
+    skipped: "skipped",
     generated: "pending_confirm",
   };
   return map[status] || "not_started";
+}
+
+function isPassableStageStatus(status: StageStatus): boolean {
+  return status === "approved" || status === "skipped";
 }
 
 function formatReviewReason(reviewReason?: ApiReviewReason | null): string | undefined {

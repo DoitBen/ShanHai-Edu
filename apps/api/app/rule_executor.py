@@ -45,6 +45,8 @@ class RuleWarningError(ValueError):
 
 
 class RuleExecutor:
+    IMPLEMENTED_RULE_IDS = {"R001", "R004", "R006", "R010", "R023", "R024", "R026", "R030"}
+
     def __init__(self, rules_dir: Path | None):
         self.rules_dir = rules_dir
         self.rules = self._load_rules(rules_dir) if rules_dir else []
@@ -70,6 +72,7 @@ class RuleExecutor:
             for rule in [item for item in event_rules if item.get("severity") == severity]:
                 check = self._builtin_check(rule, content or {}, conn, store, project_id)
                 if check is None:
+                    self._record_unimplemented_rule(store, conn, project_id, node_id, version_id, rule, trigger_event)
                     continue
                 passed, details = check
                 if severity == "warning" and not passed and rule["rule_id"] in override_ids:
@@ -89,7 +92,7 @@ class RuleExecutor:
                             node_id=node_id,
                             from_status=state.get("status"),
                             to_status="blocked",
-                            trigger="hard_block",
+                            trigger="hard_block_rule_hit",
                             version_id_before=state.get("current_version_id"),
                             version_id_after=state.get("current_version_id"),
                             reason=result["message"],
@@ -102,6 +105,50 @@ class RuleExecutor:
             conn.commit()
             raise RuleWarningError(warnings)
         return results
+
+    def coverage(self) -> dict[str, Any]:
+        rules = []
+        for rule in self.rules:
+            rule_id = str(rule.get("rule_id"))
+            implemented = self._is_implemented(rule)
+            rules.append(
+                {
+                    "rule_id": rule_id,
+                    "title": rule.get("title"),
+                    "trigger_node": rule.get("trigger_node"),
+                    "trigger_event": rule.get("trigger_event"),
+                    "severity": rule.get("severity"),
+                    "declared_executor": rule.get("executor"),
+                    "executor_type": "builtin" if implemented else "unimplemented",
+                    "implemented": implemented,
+                }
+            )
+        unimplemented = [rule for rule in rules if not rule["implemented"]]
+        return {
+            "loaded_count": len(rules),
+            "implemented_count": len(rules) - len(unimplemented),
+            "unimplemented_count": len(unimplemented),
+            "rules": rules,
+            "implemented_rule_ids": [rule["rule_id"] for rule in rules if rule["implemented"]],
+            "unimplemented_rule_ids": [rule["rule_id"] for rule in unimplemented],
+            "unimplemented_hard_block_rule_ids": [
+                rule["rule_id"] for rule in unimplemented if rule.get("severity") == "hard_block"
+            ],
+        }
+
+    def summary_for_node(self, node_id: str) -> dict[str, Any]:
+        applicable = [rule for rule in self.rules if self._node_matches(rule.get("trigger_node"), node_id)]
+        unimplemented_hard_blocks = sorted(
+            {
+                str(rule["rule_id"])
+                for rule in applicable
+                if rule.get("severity") == "hard_block" and not self._is_implemented(rule)
+            }
+        )
+        return {
+            "unimplemented_hard_block_count": len(unimplemented_hard_blocks),
+            "unimplemented_hard_block_rule_ids": unimplemented_hard_blocks,
+        }
 
     def record_r010_result(
         self,
@@ -122,6 +169,34 @@ class RuleExecutor:
         if not passed:
             conn.commit()
         return result
+
+    def _record_unimplemented_rule(
+        self,
+        store: ProjectStore,
+        conn: sqlite3.Connection,
+        project_id: str,
+        node_id: str,
+        version_id: str | None,
+        rule: dict[str, Any],
+        trigger_event: str,
+    ) -> dict[str, Any] | None:
+        if rule.get("severity") != "hard_block":
+            return None
+        return self._record(
+            store,
+            conn,
+            project_id,
+            node_id,
+            version_id,
+            rule,
+            trigger_event,
+            True,
+            {
+                "implemented": False,
+                "executor_type": "unimplemented",
+                "coverage_visible": True,
+            },
+        )
 
     def _record(
         self,
@@ -182,6 +257,9 @@ class RuleExecutor:
             return self._check_r026(content, conn, store, project_id)
         check = checks.get(rule["rule_id"])
         return check(content) if check else None
+
+    def _is_implemented(self, rule: dict[str, Any]) -> bool:
+        return str(rule.get("rule_id")) in self.IMPLEMENTED_RULE_IDS
 
     @staticmethod
     def _check_r001(content: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
@@ -359,7 +437,7 @@ class RuleExecutor:
     def _node_matches(trigger_node: str | None, node_id: str) -> bool:
         if trigger_node in {None, "", "所有"}:
             return True
-        candidates = [part.strip() for part in str(trigger_node).split("/") if part.strip()]
+        candidates = [part.strip() for part in re.split(r"[|/]", str(trigger_node)) if part.strip()]
         return node_id in candidates
 
     @staticmethod

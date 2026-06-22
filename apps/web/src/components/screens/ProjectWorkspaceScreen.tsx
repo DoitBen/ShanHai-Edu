@@ -456,7 +456,7 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
       }
       return;
     }
-    if (selectedStage.status !== "approved") {
+    if (!["approved", "skipped"].includes(selectedStage.status)) {
       approveStage(project.id, selectedStage.key);
     }
     const next = nextStageKey(selectedStage.key);
@@ -1362,7 +1362,7 @@ function WorkflowRail({
         {orderedStages.map((stage, i) => {
           const status = stage.status;
           const isSelected = stage.key === selectedKey;
-          const isApproved = status === "approved";
+          const isApproved = status === "approved" || status === "skipped";
           const isRunning = status === "running";
           const isError = status === "failed" || status === "blocked";
           const isPending =
@@ -1522,6 +1522,7 @@ function RunTab({
     running: "运行中",
     pending_confirm: "运行完成，待确认",
     approved: "已通过",
+    skipped: "已跳过",
     blocked: "已阻塞",
     failed: "运行失败",
   };

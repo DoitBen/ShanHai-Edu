@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
+from pptx import Presentation
 
 from app.main import create_app
 from app.providers import FakeProvider
@@ -72,6 +73,26 @@ def event_rows(project_dir: str, project_id: str, node_id: str) -> list[sqlite3.
             "SELECT * FROM events WHERE project_id = ? AND node_id = ? ORDER BY created_at, rowid",
             (project_id, node_id),
         ).fetchall()
+
+
+def current_version_ids(project_dir: str, project_id: str, node_ids: list[str]) -> dict[str, str | None]:
+    with sqlite3.connect(Path(project_dir) / "project.db") as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            f"SELECT node_id, current_version_id FROM node_state WHERE project_id = ? AND node_id IN ({','.join('?' for _ in node_ids)})",
+            [project_id, *node_ids],
+        ).fetchall()
+    return {row["node_id"]: row["current_version_id"] for row in rows}
+
+
+def slide_texts(pptx_path: Path) -> list[str]:
+    presentation = Presentation(str(pptx_path))
+    texts: list[str] = []
+    for slide in presentation.slides:
+        for shape in slide.shapes:
+            if getattr(shape, "has_text_frame", False):
+                texts.append("\n".join(paragraph.text for paragraph in shape.text_frame.paragraphs))
+    return texts
 
 
 def upload_textbook(client: TestClient, project_id: str) -> None:
@@ -200,6 +221,8 @@ def test_manifest_exposes_workflow_contract_capabilities_and_artifacts(tmp_path:
         "warning_count": 0,
         "failed_rule_ids": [],
         "warning_rule_ids": [],
+        "unimplemented_hard_block_count": 0,
+        "unimplemented_hard_block_rule_ids": [],
     }
 
     upload_textbook(client, project_id)
@@ -211,11 +234,13 @@ def test_manifest_exposes_workflow_contract_capabilities_and_artifacts(tmp_path:
     artifact_node = {node["node_id"]: node for node in artifact_manifest["nodes"]}["pptx_artifact"]
     assert artifact_node["capabilities"]["can_edit"] is False
     assert artifact_node["capabilities"]["can_approve"] is True
-    assert artifact_node["artifact"] == {
+    expected_artifact = {
         "download_url": artifact_result["content"]["download_url"],
         "pptx_path": artifact_result["content"]["pptx_path"],
-        "video_path": artifact_result["content"]["video_path"],
     }
+    if artifact_result["content"].get("video_path"):
+        expected_artifact["video_path"] = artifact_result["content"]["video_path"]
+    assert artifact_node["artifact"] == expected_artifact
 
 
 def test_node_detail_uses_same_workflow_contract_as_manifest(tmp_path: Path):
@@ -398,3 +423,117 @@ def test_create_project_seeded_visual_and_character_content_is_used_by_downstrea
     assert context["visual_contract"]["palette"] == ["#112233", "#445566", "#778899"]
     assert context["visual_contract"]["font_preference"] == "Source Han Sans"
     assert context["character_dict"]["characters"][0]["identity"] == "小山是用户创建时填写的数学引导员。"
+
+
+def test_pptx_artifact_consumes_ppt_nodes_and_records_source_versions(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = unwrap_ok(
+        client.post(
+            "/projects",
+            json={
+                "name": "真实 PPTX 内容消费",
+                "subject": "math",
+                "grade": "2",
+                "textbook_version": "renjiao",
+                "volume": "shang",
+                "lesson_type": "public",
+                "character_profile": "小山是非写实卡通数学引导员。",
+                "character_safety_rule": "禁真人、photorealistic、real child。",
+                "visual_palette": "#112233 #445566 #778899",
+                "visual_style_keywords": "清爽、可编辑、生活化",
+                "font_preference": "Source Han Sans",
+            },
+        )
+    )
+    project_id = project["project_id"]
+    upload_textbook(client, project_id)
+    for node_id in ["textbook_parse", "lesson_plan"]:
+        unwrap_ok(client.post(f"/projects/{project_id}/nodes/{node_id}/generate", json={}))
+        unwrap_ok(client.post(f"/projects/{project_id}/nodes/{node_id}/approve", json={}))
+
+    ppt_plan = {
+        "page_count_target": 2,
+        "theme": "唯一主题-真实消费",
+        "persistent_context": "PPTX 必须来自页面脚本",
+        "page_outline": ["唯一标题-观察苹果", "唯一标题-进位解释"],
+        "action_chain": ["look", "count"],
+        "inquiry_path": "从数苹果到解释进位",
+        "ppt_video_division": "PPT 承担课堂探究",
+        "material_requirements": ["可编辑数学文本"],
+        "editable_text_rules": "数学内容必须可编辑。",
+        "accuracy_warnings": [],
+    }
+    unwrap_ok(client.post(f"/projects/{project_id}/nodes/ppt_assembly_plan/edit", json={"content": ppt_plan}))
+    unwrap_ok(
+        client.post(
+            f"/projects/{project_id}/nodes/ppt_assembly_plan/approve",
+            json={"override_warning_rule_ids": ["R023", "R024"], "override_reason": "contract test custom plan"},
+        )
+    )
+
+    page_script = {
+        "pages": [
+            {
+                "page_index": 1,
+                "core_competency": ["number_sense"],
+                "page_objective": "唯一目标-观察苹果",
+                "student_action": "look",
+                "page_type": "life_observation",
+                "main_visual": {"description": "唯一视觉-三篮苹果", "serves_purpose": "观察数量"},
+                "character_refs": ["char_user_guide"],
+                "image_prompts": [],
+                "math_assertions": [{"content": "唯一算式 128 + 36 = 164", "answer": "164", "editable_layer": "ppt_text"}],
+                "zone_layout": {"task_zone": "左侧任务", "math_zone": "右侧算式", "conclusion_zone": "底部结论"},
+                "evidence_requirement": "说出为什么个位要进位",
+                "accuracy_notes": "教师备注-不要进入学生可见层",
+                "link_to_prev_page": "承接教材情境",
+                "density_limits": {"body_text_max": 18, "info_chunks_max": 3},
+            },
+            {
+                "page_index": 2,
+                "core_competency": ["operation_ability"],
+                "page_objective": "唯一目标-解释进位",
+                "student_action": "speak",
+                "page_type": "evidence_reasoning",
+                "main_visual": {"description": "唯一视觉-十个一换一个十", "serves_purpose": "解释进位"},
+                "character_refs": ["char_user_guide"],
+                "image_prompts": [],
+                "math_assertions": [{"content": "唯一结论 满十向十位进1", "answer": "进1", "editable_layer": "ppt_shape"}],
+                "zone_layout": {"task_zone": "左侧问题", "math_zone": "中间推理", "conclusion_zone": "右侧小结"},
+                "evidence_requirement": "用小棒说明进位",
+                "accuracy_notes": "教师备注-只在备注层",
+                "link_to_prev_page": "接上页苹果数量",
+                "density_limits": {"body_text_max": 18, "info_chunks_max": 3},
+            },
+        ]
+    }
+    unwrap_ok(client.post(f"/projects/{project_id}/nodes/ppt_page_script/edit", json={"content": page_script}))
+    unwrap_ok(client.post(f"/projects/{project_id}/nodes/ppt_page_script/approve", json={}))
+
+    visual_asset = {
+        "assets": [
+            {
+                "asset_id": "asset_unique_apple",
+                "source_prompt_id": "prompt_page_1",
+                "storage_path": "08A_PPT视觉资产/asset_unique_apple.png",
+                "status": "approved",
+            }
+        ]
+    }
+    unwrap_ok(client.post(f"/projects/{project_id}/nodes/ppt_visual_asset/edit", json={"content": visual_asset}))
+    unwrap_ok(client.post(f"/projects/{project_id}/nodes/ppt_visual_asset/approve", json={}))
+
+    source_nodes = ["visual_contract", "character_dict", "ppt_assembly_plan", "ppt_page_script", "ppt_visual_asset"]
+    expected_versions = current_version_ids(project["project_dir"], project_id, source_nodes)
+    artifact = unwrap_ok(client.post(f"/projects/{project_id}/nodes/pptx_artifact/generate", json={}))
+    content = artifact["content"]
+
+    pptx_path = Path(project["project_dir"]) / content["pptx_path"]
+    texts = "\n".join(slide_texts(pptx_path))
+    assert "唯一目标-观察苹果" in texts
+    assert "唯一算式 128 + 36 = 164" in texts
+    assert "唯一视觉-十个一换一个十" in texts
+    assert "lesson-video-demo" not in content["filename"]
+    assert content["slide_count"] == len(page_script["pages"])
+    assert content["media_count"] == len(visual_asset["assets"])
+    assert content["source_versions"] == expected_versions

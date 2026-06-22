@@ -8,6 +8,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def test_frontend_source_does_not_depend_on_public_api_token():
+    public_api_token_name = "NEXT_PUBLIC" + "_API_TOKEN"
     frontend_files = [
         *list((REPO_ROOT / "apps" / "web" / "src").rglob("*.ts")),
         *list((REPO_ROOT / "apps" / "web" / "src").rglob("*.tsx")),
@@ -16,10 +17,20 @@ def test_frontend_source_does_not_depend_on_public_api_token():
     offenders = []
     for path in frontend_files:
         text = path.read_text(encoding="utf-8")
-        if "NEXT_PUBLIC_API_TOKEN" in text:
+        if public_api_token_name in text:
             offenders.append(str(path.relative_to(REPO_ROOT)))
 
     assert offenders == []
+
+
+def test_ops_runbook_uses_server_side_backend_proxy_token_language():
+    runbook = REPO_ROOT / "docs" / "ops-runbook-draft.md"
+    text = runbook.read_text(encoding="utf-8")
+    public_api_token_name = "NEXT_PUBLIC" + "_API_TOKEN"
+
+    assert public_api_token_name not in text
+    assert "/api/backend" in text
+    assert "BACKEND_API_TOKEN" in text
 
 
 def test_frontend_source_does_not_expose_public_secret_like_env_names():

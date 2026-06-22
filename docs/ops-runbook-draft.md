@@ -117,8 +117,8 @@ netstat -ano | findstr ":3000"
 
 | 变量名 | 所属服务 | 是否敏感 | 来源 | 说明 |
 |---|---|---:|---|---|
-| `NEXT_PUBLIC_API_BASE_URL` | Web | 否 | Web 构建/运行环境 | 前端调用 API 的 base URL，默认 `http://localhost:8000`。 |
-| `NEXT_PUBLIC_API_TOKEN` | Web | 是 | Web 构建/运行环境 | 前端向 API 发送的 Bearer token。注意 `NEXT_PUBLIC_*` 会暴露给浏览器，不适合作为真正后端密钥；仅可用于本地或内网轻量门禁，正式部署需重新评估。 |
+| `BACKEND_API_BASE_URL` | Web/Next 服务端 | 否 | Next 服务端运行环境 | Next `/api/backend/*` 代理转发到 FastAPI 的 base URL，浏览器端默认只访问同源 `/api/backend`。 |
+| `BACKEND_API_TOKEN` | Web/Next 服务端、API | 是 | 服务端密钥注入 | Next 服务端代理向 FastAPI 转发的 Bearer token；只允许存在于服务端环境，禁止进入浏览器 bundle。 |
 | `NEXT_PUBLIC_DEMO_MODE` | Web | 否 | Web 构建/运行环境 | 控制是否使用 demo/mock 模式；不等于 `false` 时默认为 demo 模式。 |
 | `STORAGE_ROOT` | API | 否 | API 运行环境 / `.env` | 项目运行时数据根目录，默认 `storage`。 |
 | `WORKFLOW_ROOT` | API | 否 | API 运行环境 / `.env` | workflow 配置根目录，默认 `workflow`。 |
@@ -132,7 +132,6 @@ netstat -ano | findstr ":3000"
 | `OCTO_API_KEY` | API | 是 | API 密钥注入 | 章鱼哥 NewAPI 服务端密钥。 |
 | `OCTO_BASE_URL` | API | 否/可能敏感 | API 运行环境 / `.env` | 章鱼哥 NewAPI base URL，默认指向服务端配置中的公共入口。 |
 | `OCTO_VIDEO_PROVIDER` | API | 否 | API 运行环境 / `.env` | 章鱼哥视频 provider 名，当前配置项存在，后端需确认实际使用范围。 |
-| `BACKEND_API_TOKEN` | API | 是 | API 密钥注入 | API 轻量 Bearer token。未配置时受保护接口默认开放，正式部署必须配置或替换为正式鉴权。 |
 | `CORS_ORIGINS` | API | 否 | API 运行环境 / `.env` | API 允许的前端来源列表，逗号分隔，默认允许本机 `3000`。 |
 
 密钥注入原则：
@@ -256,7 +255,7 @@ storage\projects\<project_slug>_<project_id>\
 - Cloud Run 文件系统非持久，`storage` 必须改为挂载卷、对象存储或外部数据库/文件服务。
 - SQLite 不适合多实例共享写入；Cloud Run 多实例会放大写冲突和状态不一致风险。
 - 视频生成与下载可能超过请求生命周期，需要后端确认异步任务队列、回调或任务轮询方案。
-- `NEXT_PUBLIC_API_TOKEN` 会暴露在浏览器，不适合作为正式 API 密钥。
+- Web 端必须通过同源 Next `/api/backend/*` 代理访问 API；FastAPI Bearer token 只能由 `BACKEND_API_TOKEN` 在服务端注入，禁止放入任何 `NEXT_PUBLIC_*` 变量。
 - Cloud Run 需要明确 Secret Manager 注入、最小权限、出网访问、超时和并发配置。
 
 ### 内网部署风险

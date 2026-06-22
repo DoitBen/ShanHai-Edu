@@ -9,6 +9,7 @@ import {
   fetchVideoCapabilities,
   resolveApiDownloadUrl,
 } from "@/lib/api-client";
+import { canEditStageInWorkspace } from "@/lib/workspace-capabilities";
 import {
   STAGE_DEFS,
   stageDefByKey,
@@ -103,15 +104,6 @@ const LOG_LEVEL_META = {
 } as const;
 
 type TabKey = "input" | "run" | "result" | "evidence" | "logs";
-
-const API_EDITABLE_STAGE_KEYS = new Set([
-  "open-lesson-plan",
-  "video-design-import",
-  "video-script",
-  "video-screenplay",
-  "video-assets",
-  "storyboard",
-]);
 
 /* ============================================================
  * 主组件 —— 项目工作区指挥台
@@ -264,7 +256,7 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
   async function handleSave(text?: string) {
     if (dataMode === "api") {
       if (!selectedStage) return;
-      if (!API_EDITABLE_STAGE_KEYS.has(selectedStage.key)) {
+      if (!canEditStageInWorkspace(dataMode, selectedStage)) {
         toast.info("真实 API 模式下当前节点不开放手工编辑保存");
         return;
       }
@@ -555,7 +547,8 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
   const status = selectedStage?.status;
   const isFinalVideoStage = selectedStage?.key === "video-generation";
   const isRunning = status === "running" && !isFinalVideoStage;
-  const canSave = !!status && status !== "running";
+  const canEditSelectedStage = canEditStageInWorkspace(dataMode, selectedStage);
+  const canSave = !!status && status !== "running" && canEditSelectedStage;
   const canRegenerate = !!status && (status !== "running" || isFinalVideoStage);
   const canApprove =
     !!status &&
@@ -885,7 +878,7 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
                     onRefresh={() => void loadProjectTasks(project.id)}
                     onRetryTask={retryProjectTask}
                   />
-                ) : dataMode === "api" && selectedStage && API_EDITABLE_STAGE_KEYS.has(selectedStage.key) ? (
+                ) : dataMode === "api" && selectedStage && canEditSelectedStage ? (
                   <EditableNodeResult
                     stage={selectedStage}
                     value={resultDraft || selectedStage.result}

@@ -5,6 +5,7 @@ import json
 from .ppt_exporter import export_project_ppt
 from .providers import DeepSeekTextProvider, FakeProvider, MinimaxTextProvider, NewApiImageProvider, OctoVideoProvider, ProviderError, sanitize_provider_excerpt
 from .prompt_loader import PromptTemplateMissing, PromptVariableMissing, render_prompt_file
+from .state_engine import StateEngine
 from .store import ProjectStore, now_iso
 from .textbook_parser import TextbookParser, TextbookSource
 from .video_outputs import FINAL_VIDEO_REL_PATH, compose_final_video_from_clips, compose_final_video_with_audio, ensure_final_video_output, write_concat_manifest, write_placeholder_narration_audio, write_subtitle_srt
@@ -442,6 +443,7 @@ class WorkflowService:
         self.prompt_root = prompt_root or Path("workflow") / "prompts"
         self.tts_provider = tts_provider
         self.video_model = video_model
+        self.state_engine = StateEngine(store, self._dependencies())
 
     def generate_node(self, project_id: str, node_id: str, options: dict[str, Any] | None = None) -> dict[str, Any]:
         project = self.store.get_project(project_id)
@@ -483,7 +485,7 @@ class WorkflowService:
                     context["textbook_source"] = parsed_source.get("textbook_source")
                 else:
                     content = normalize_node_content(node_id, parsed_source, {**context, **parsed_source})
-                    return self.store.write_version(conn, project_id, node_id, content, "ai", self.provider.name, "needs_review")
+                    return self._write_review_version(conn, project_id, node_id, content, "ai", self.provider.name, "ai_generate_done")
 
             if node_id == "final_video":
                 return self._generate_video_tasks(conn, project_id, project_dir, options or {})
@@ -500,14 +502,14 @@ class WorkflowService:
                     raise
             if node_id == "intro_video_asset" and self.image_provider is not None:
                 content = self._generate_image_tasks(conn, project_id, project_dir, content, options or {})
-            return self.store.write_version(conn, project_id, node_id, content, "ai", self.provider.name, "needs_review")
+            return self._write_review_version(conn, project_id, node_id, content, "ai", self.provider.name, "ai_generate_done")
 
     def edit_node(self, project_id: str, node_id: str, content: dict[str, Any]) -> dict[str, Any]:
         project = self.store.get_project(project_id)
         with self.store.connect(Path(project["project_dir"])) as conn:
             self._assert_dependencies(conn, project_id, node_id, allow_existing=True)
             validate_edit_content(node_id, content, self._edit_validation_context(conn, project_id))
-            return self.store.write_version(conn, project_id, node_id, content, "human_edit", None, "needs_review")
+            return self._write_review_version(conn, project_id, node_id, content, "human_edit", None, "user_save_edit")
 
     def approve_node(self, project_id: str, node_id: str) -> dict[str, Any]:
         project = self.store.get_project(project_id)
@@ -516,7 +518,20 @@ class WorkflowService:
             content = self.store.current_content(conn, project_id, node_id)
             if content is not None and node_id in {"intro_selection", "storyboard"}:
                 validate_approve_content(node_id, content, self._edit_validation_context(conn, project_id))
-        return self.store.approve_node(project_id, node_id)
+            return self.state_engine.approve(conn, project_id, node_id)
+
+    def _write_review_version(
+        self,
+        conn,
+        project_id: str,
+        node_id: str,
+        content: dict[str, Any],
+        generated_by: str,
+        provider: str | None,
+        trigger: str,
+    ) -> dict[str, Any]:
+        result = self.store.write_version(conn, project_id, node_id, content, generated_by, provider, "needs_review")
+        return self.state_engine.record_version_ready(conn, project_id, node_id, result, trigger)
 
     def _edit_validation_context(self, conn, project_id: str) -> dict[str, Any]:
         context: dict[str, Any] = {}
@@ -530,12 +545,7 @@ class WorkflowService:
         return context
 
     def _assert_dependencies(self, conn, project_id: str, node_id: str, allow_existing: bool = False) -> None:
-        if node_id in {"project_meta", "project_config"}:
-            return
-        for dep in self._dependencies().get(node_id, []):
-            state = self.store.node_state(conn, project_id, dep)
-            if state["status"] not in {"approved", "skipped"}:
-                raise PermissionError(f"Upstream node {dep} is not approved")
+        self.state_engine.assert_upstreams_passable(conn, project_id, node_id)
 
     def _assert_selected_anchor(self, context: dict[str, Any]) -> None:
         if not _valid_anchor(_selected_anchor_from_context(context)):
@@ -776,7 +786,7 @@ class WorkflowService:
                 "ppt_visual_asset",
             ],
         }
-        return self.store.write_version(conn, project_id, "pptx_artifact", content, "artifact", "ppt_exporter", "needs_review")
+        return self._write_review_version(conn, project_id, "pptx_artifact", content, "artifact", "ppt_exporter", "ai_generate_done")
 
     def _generate_video_tasks(self, conn, project_id: str, project_dir: Path, options: dict[str, Any]) -> dict[str, Any]:
         storyboard = self.store.current_content(conn, project_id, "storyboard")

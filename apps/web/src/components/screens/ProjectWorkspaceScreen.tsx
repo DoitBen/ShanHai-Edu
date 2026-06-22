@@ -653,6 +653,12 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
                     {BRANCH_LABEL[selectedStage.branch]}
                     {selectedStage.summary ? ` · ${selectedStage.summary}` : ""}
                   </div>
+                  {selectedStage.reviewReason && (
+                    <div className="mt-1 flex items-center gap-1.5 t-caption text-warning">
+                      <RefreshCw className="h-3.5 w-3.5 shrink-0" />
+                      <span className="line-clamp-1">{selectedStage.reviewReason}</span>
+                    </div>
+                  )}
                 </div>
               </div>
               {selectedStage.duration && (
@@ -1142,6 +1148,9 @@ function WorkflowRail({
                 {isRunning && (
                   <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
                 )}
+                {stage.reviewTrigger === "cascade_invalidate" && !isRunning && (
+                  <RefreshCw className="absolute right-1.5 top-1.5 h-3 w-3 text-warning" aria-label="上游变更后需重审" />
+                )}
               </button>
               {i < orderedStages.length - 1 && (
                 <div className="flex w-3 justify-center pt-6">
@@ -1246,6 +1255,12 @@ function RunTab({
           </span>
         )}
       </div>
+      {stage.reviewReason && (
+        <div className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-warning">
+          <RefreshCw className="mt-0.5 h-4 w-4 shrink-0" />
+          <span className="t-body">{stage.reviewReason}</span>
+        </div>
+      )}
       <div className="flex flex-wrap gap-2">
         <Button size="sm" className="gap-1.5" onClick={onRegenerate}>
           <Play className="h-4 w-4" />

@@ -67,6 +67,8 @@ export interface ApiNodeState {
   status: string;
   current_version_id: string | null;
   updated_at: string | null;
+  latest_transition?: ApiStateTransition | null;
+  review_reason?: ApiReviewReason | null;
 }
 
 export interface ApiManifest {
@@ -86,6 +88,27 @@ export interface ApiNodeMutationResult {
   updated_at?: string | null;
   video_path?: string | null;
   tasks?: ApiTask[];
+}
+
+export interface ApiStateTransition {
+  transition_id: string;
+  project_id: string;
+  node_id: string;
+  from_status: string | null;
+  to_status: string;
+  trigger: string;
+  triggered_at: string;
+  triggered_by_user_id: string | null;
+  version_id_before: string | null;
+  version_id_after: string | null;
+  reason: string | null;
+}
+
+export interface ApiReviewReason {
+  trigger: string;
+  reason: string | null;
+  version_id_before?: string | null;
+  version_id_after?: string | null;
 }
 
 export interface GenerateNodePayload {
@@ -164,6 +187,8 @@ export interface WorkflowStage {
   evidence: string[];
   logs: StageLog[];
   duration?: string;
+  reviewReason?: string;
+  reviewTrigger?: string;
 }
 
 export interface TextbookParseResult {

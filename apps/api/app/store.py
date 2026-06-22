@@ -152,6 +152,19 @@ class ProjectStore:
               estimated_cost REAL,
               created_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS state_transition_log (
+              transition_id TEXT PRIMARY KEY,
+              project_id TEXT NOT NULL,
+              node_id TEXT NOT NULL,
+              from_status TEXT,
+              to_status TEXT NOT NULL,
+              trigger TEXT NOT NULL,
+              triggered_at TEXT NOT NULL,
+              triggered_by_user_id TEXT,
+              version_id_before TEXT,
+              version_id_after TEXT,
+              reason TEXT
+            );
             """
         )
 
@@ -159,6 +172,7 @@ class ProjectStore:
         project_dir.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(project_dir / "project.db")
         conn.row_factory = sqlite3.Row
+        self.init_db(conn)
         return conn
 
     def find_project_dir(self, project_id: str) -> Path:
@@ -195,7 +209,7 @@ class ProjectStore:
             rows = conn.execute("SELECT * FROM node_state ORDER BY rowid").fetchall()
         return {
             "project": project,
-            "nodes": [dict(row) for row in rows],
+            "nodes": [self.decorate_node_state(conn, project_id, dict(row)) for row in rows],
         }
 
     def node_state(self, conn: sqlite3.Connection, project_id: str, node_id: str) -> dict[str, Any]:
@@ -206,6 +220,29 @@ class ProjectStore:
         if row is None:
             raise KeyError(f"Unknown node: {node_id}")
         return dict(row)
+
+    def decorate_node_state(self, conn: sqlite3.Connection, project_id: str, state: dict[str, Any]) -> dict[str, Any]:
+        latest_transition = self.latest_transition(conn, project_id, state["node_id"])
+        review_reason = None
+        if state.get("status") == "needs_review" and latest_transition and latest_transition.get("trigger") == "cascade_invalidate":
+            review_reason = {
+                "trigger": latest_transition["trigger"],
+                "reason": latest_transition.get("reason"),
+                "version_id_before": latest_transition.get("version_id_before"),
+                "version_id_after": latest_transition.get("version_id_after"),
+            }
+        return {
+            **state,
+            "latest_transition": latest_transition,
+            "review_reason": review_reason,
+        }
+
+    def node_detail(self, project_id: str, node_id: str) -> dict[str, Any]:
+        project = self.get_project(project_id)
+        with self.connect(Path(project["project_dir"])) as conn:
+            state = self.decorate_node_state(conn, project_id, self.node_state(conn, project_id, node_id))
+            content = self.current_content(conn, project_id, node_id)
+        return {**state, "content": content}
 
     def current_content(self, conn: sqlite3.Connection, project_id: str, node_id: str) -> dict[str, Any] | None:
         state = self.node_state(conn, project_id, node_id)
@@ -225,6 +262,7 @@ class ProjectStore:
         provider: str | None,
         status: str = "needs_review",
     ) -> dict[str, Any]:
+        previous_state = self.node_state(conn, project_id, node_id)
         version_id = f"ver_{uuid.uuid4().hex[:12]}"
         created_at = now_iso()
         conn.execute(
@@ -240,7 +278,109 @@ class ProjectStore:
             (status, version_id, created_at, project_id, node_id),
         )
         self.record_event(conn, project_id, node_id, "version_written", {"version_id": version_id, "status": status})
-        return {"version_id": version_id, "node_id": node_id, "status": status, "content": content}
+        return {
+            "version_id": version_id,
+            "node_id": node_id,
+            "status": status,
+            "content": content,
+            "_previous_status": previous_state.get("status"),
+            "_previous_version_id": previous_state.get("current_version_id"),
+        }
+
+    def update_node_state(
+        self,
+        conn: sqlite3.Connection,
+        project_id: str,
+        node_id: str,
+        status: str,
+        current_version_id: str | None,
+    ) -> None:
+        conn.execute(
+            "UPDATE node_state SET status = ?, current_version_id = ?, updated_at = ? WHERE project_id = ? AND node_id = ?",
+            (status, current_version_id, now_iso(), project_id, node_id),
+        )
+
+    def update_current_version_status(self, conn: sqlite3.Connection, version_id: str, status: str, approved: bool = False) -> None:
+        if approved:
+            conn.execute(
+                "UPDATE node_versions SET status = ?, approved_at = ? WHERE version_id = ?",
+                (status, now_iso(), version_id),
+            )
+            return
+        conn.execute("UPDATE node_versions SET status = ? WHERE version_id = ?", (status, version_id))
+
+    def record_state_transition(
+        self,
+        conn: sqlite3.Connection,
+        project_id: str,
+        node_id: str,
+        from_status: str | None,
+        to_status: str,
+        trigger: str,
+        triggered_by_user_id: str | None = None,
+        version_id_before: str | None = None,
+        version_id_after: str | None = None,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        transition = {
+            "transition_id": f"tr_{uuid.uuid4().hex[:12]}",
+            "project_id": project_id,
+            "node_id": node_id,
+            "from_status": from_status,
+            "to_status": to_status,
+            "trigger": trigger,
+            "triggered_at": now_iso(),
+            "triggered_by_user_id": triggered_by_user_id,
+            "version_id_before": version_id_before,
+            "version_id_after": version_id_after,
+            "reason": reason,
+        }
+        conn.execute(
+            """
+            INSERT INTO state_transition_log
+            (transition_id, project_id, node_id, from_status, to_status, trigger, triggered_at, triggered_by_user_id,
+             version_id_before, version_id_after, reason)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                transition["transition_id"],
+                transition["project_id"],
+                transition["node_id"],
+                transition["from_status"],
+                transition["to_status"],
+                transition["trigger"],
+                transition["triggered_at"],
+                transition["triggered_by_user_id"],
+                transition["version_id_before"],
+                transition["version_id_after"],
+                transition["reason"],
+            ),
+        )
+        return transition
+
+    def latest_transition(self, conn: sqlite3.Connection, project_id: str, node_id: str) -> dict[str, Any] | None:
+        row = conn.execute(
+            """
+            SELECT * FROM state_transition_log
+            WHERE project_id = ? AND node_id = ?
+            ORDER BY triggered_at DESC, rowid DESC
+            LIMIT 1
+            """,
+            (project_id, node_id),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def transition_log(self, project_id: str, node_id: str | None = None) -> list[dict[str, Any]]:
+        project = self.get_project(project_id)
+        with self.connect(Path(project["project_dir"])) as conn:
+            params: list[str] = [project_id]
+            sql = "SELECT * FROM state_transition_log WHERE project_id = ?"
+            if node_id is not None:
+                sql += " AND node_id = ?"
+                params.append(node_id)
+            sql += " ORDER BY triggered_at"
+            rows = conn.execute(sql, params).fetchall()
+        return [dict(row) for row in rows]
 
     def approve_node(self, project_id: str, node_id: str) -> dict[str, Any]:
         project = self.get_project(project_id)

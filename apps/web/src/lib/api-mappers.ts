@@ -4,6 +4,7 @@ import type {
   ApiNodeMutationResult,
   ApiNodeState,
   ApiProject,
+  ApiReviewReason,
   CreateProjectPayload,
   NewProjectDraft,
   ProjectMeta,
@@ -258,9 +259,12 @@ export function mapApiManifest(manifest: ApiManifest): {
 }
 
 export function mapApiNodeDetailToStage(stage: WorkflowStage, detail: ApiNodeDetail): WorkflowStage {
+  const reviewReason = formatReviewReason(detail.review_reason);
   return {
     ...stage,
     status: mapStageStatus(detail.status),
+    reviewReason,
+    reviewTrigger: detail.review_reason?.trigger,
     result: formatNodeContent(detail.content),
     logs: [
       ...stage.logs,
@@ -272,6 +276,16 @@ export function mapApiNodeDetailToStage(stage: WorkflowStage, detail: ApiNodeDet
           ? `已读取后端节点详情，当前版本 ${detail.current_version_id}`
           : "已读取后端节点详情，暂无版本内容",
       },
+      ...(reviewReason
+        ? [
+            {
+              id: `review-${detail.node_id}-${detail.latest_transition?.transition_id || detail.updated_at || "current"}`,
+              time: formatTime(detail.latest_transition?.triggered_at || detail.updated_at),
+              level: "warn" as const,
+              message: reviewReason,
+            },
+          ]
+        : []),
     ],
   };
 }
@@ -313,6 +327,7 @@ function mapApiNodesToStages(nodes: ApiNodeState[]): WorkflowStage[] {
   return nodes
     .map((node, index) => {
       const def = NODE_DEFS[node.node_id] || fallbackNodeDef(node.node_id, index + 1);
+      const reviewReason = formatReviewReason(node.review_reason);
       return {
         key: def.key,
         apiNodeId: node.node_id,
@@ -320,6 +335,8 @@ function mapApiNodesToStages(nodes: ApiNodeState[]): WorkflowStage[] {
         branch: def.branch,
         order: def.order,
         status: mapStageStatus(node.status),
+        reviewReason,
+        reviewTrigger: node.review_reason?.trigger,
         summary: def.summary,
         input: "",
         result: "",
@@ -331,6 +348,16 @@ function mapApiNodesToStages(nodes: ApiNodeState[]): WorkflowStage[] {
             level: "info",
             message: `manifest 已同步：${node.node_id}`,
           },
+          ...(reviewReason
+            ? [
+                {
+                  id: `manifest-review-${node.node_id}-${node.latest_transition?.transition_id || node.updated_at || "current"}`,
+                  time: formatTime(node.latest_transition?.triggered_at || node.updated_at),
+                  level: "warn" as const,
+                  message: reviewReason,
+                },
+              ]
+            : []),
         ],
       } satisfies WorkflowStage;
     })
@@ -372,6 +399,14 @@ function mapStageStatus(status: string): StageStatus {
     generated: "pending_confirm",
   };
   return map[status] || "not_started";
+}
+
+function formatReviewReason(reviewReason?: ApiReviewReason | null): string | undefined {
+  if (!reviewReason) return undefined;
+  if (reviewReason.trigger === "cascade_invalidate") {
+    return reviewReason.reason || "上游内容已变更，需要重新确认本节点是否仍可使用";
+  }
+  return reviewReason.reason || undefined;
 }
 
 function formatNodeContent(content: unknown): string {

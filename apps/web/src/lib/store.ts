@@ -5,6 +5,7 @@ import type {
   AuthUser,
   DataMode,
   LoadStatus,
+  PendingRuleWarning,
   ProjectMeta,
   ApiTask,
   ApiTextbookParseContent,
@@ -36,6 +37,7 @@ import {
   submitProjectFeedback,
   uploadProjectTextbook,
   uploadProjectTextbookFile,
+  isApiClientError,
 } from "./api-client";
 import {
   draftToCreateProjectPayload,
@@ -84,6 +86,19 @@ function saveAuth(user: AuthUser | null) {
   } else {
     window.localStorage.removeItem(AUTH_KEY);
   }
+}
+
+function extractRuleWarnings(details: unknown): PendingRuleWarning["warnings"] {
+  const maybeDetails = details && typeof details === "object" ? details as Record<string, unknown> : {};
+  const warnings = Array.isArray(maybeDetails.warnings) ? maybeDetails.warnings : [];
+  return warnings
+    .filter((item): item is Record<string, unknown> => item !== null && typeof item === "object")
+    .map((item) => ({
+      rule_id: typeof item.rule_id === "string" ? item.rule_id : "UNKNOWN_RULE",
+      message: typeof item.message === "string" ? item.message : undefined,
+      severity: typeof item.severity === "string" ? item.severity : "warning",
+      details: item.details,
+    }));
 }
 
 /* ---------------- 新建项目草稿 ---------------- */
@@ -157,6 +172,7 @@ interface AppState {
   nodeErrorByProject: Record<string, Record<string, string | null>>;
   stageActionStatusByProject: Record<string, Record<string, LoadStatus>>;
   stageActionErrorByProject: Record<string, Record<string, string | null>>;
+  pendingRuleWarningByProject: Record<string, Record<string, PendingRuleWarning | null>>;
   tasksByProject: Record<string, ApiTask[]>;
   tasksStatusByProject: Record<string, LoadStatus>;
   tasksErrorByProject: Record<string, string | null>;
@@ -182,6 +198,7 @@ interface AppState {
   approveStageRemote: (
     projectId: string,
     stageKey: string,
+    options?: { override_warning_rule_ids?: string[]; override_reason?: string },
   ) => Promise<{ ok: boolean; msg?: string }>;
   editStageRemote: (
     projectId: string,
@@ -293,6 +310,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   nodeErrorByProject: {},
   stageActionStatusByProject: {},
   stageActionErrorByProject: {},
+  pendingRuleWarningByProject: {},
   tasksByProject: {},
   tasksStatusByProject: {},
   tasksErrorByProject: {},
@@ -817,7 +835,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  approveStageRemote: async (projectId, stageKey) => {
+  approveStageRemote: async (projectId, stageKey, options) => {
     if (get().dataMode === "demo") {
       get().approveStage(projectId, stageKey);
       return { ok: true };
@@ -840,10 +858,25 @@ export const useAppStore = create<AppState>((set, get) => ({
           [stageKey]: null,
         },
       },
+      pendingRuleWarningByProject: {
+        ...get().pendingRuleWarningByProject,
+        [projectId]: {
+          ...(get().pendingRuleWarningByProject[projectId] || {}),
+          [stageKey]: null,
+        },
+      },
     });
 
     try {
-      const result = await approveProjectNode(projectId, nodeId, "本地演示确认通过");
+      const result = await approveProjectNode(projectId, nodeId, {
+        approve_note: "本地演示确认通过",
+        ...(options?.override_warning_rule_ids?.length
+          ? {
+              override_warning_rule_ids: options.override_warning_rule_ids,
+              override_reason: options.override_reason,
+            }
+          : {}),
+      });
       const stages = (get().stagesByProject[projectId] || []).map((item) =>
         item.key === stageKey ? mapApiNodeMutationToStage(item, result) : item,
       );
@@ -859,11 +892,50 @@ export const useAppStore = create<AppState>((set, get) => ({
             [stageKey]: "ready",
           },
         },
+        pendingRuleWarningByProject: {
+          ...get().pendingRuleWarningByProject,
+          [projectId]: {
+            ...(get().pendingRuleWarningByProject[projectId] || {}),
+            [stageKey]: null,
+          },
+        },
       });
       await get().loadProjectManifest(projectId);
       await get().loadProjectNode(projectId, stageKey);
       return { ok: true };
     } catch (error) {
+      if (isApiClientError(error) && error.code === "RULE_WARNING") {
+        const warnings = extractRuleWarnings(error.details);
+        set({
+          stageActionStatusByProject: {
+            ...get().stageActionStatusByProject,
+            [projectId]: {
+              ...(get().stageActionStatusByProject[projectId] || {}),
+              [stageKey]: "ready",
+            },
+          },
+          stageActionErrorByProject: {
+            ...get().stageActionErrorByProject,
+            [projectId]: {
+              ...(get().stageActionErrorByProject[projectId] || {}),
+              [stageKey]: error.message,
+            },
+          },
+          pendingRuleWarningByProject: {
+            ...get().pendingRuleWarningByProject,
+            [projectId]: {
+              ...(get().pendingRuleWarningByProject[projectId] || {}),
+              [stageKey]: {
+                projectId,
+                stageKey,
+                nodeId,
+                warnings,
+              },
+            },
+          },
+        });
+        return { ok: false, msg: error.message };
+      }
       const msg = error instanceof Error ? error.message : "节点确认失败";
       set({
         stageActionStatusByProject: {

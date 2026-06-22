@@ -25,14 +25,26 @@ class ApiClientError extends Error {
   code: string;
   status: number;
   retryable: boolean;
+  details: unknown;
 
-  constructor(message: string, code: string, status: number, retryable = false) {
+  constructor(message: string, code: string, status: number, retryable = false, details: unknown = null) {
     super(message);
     this.name = "ApiClientError";
     this.code = code;
     this.status = status;
     this.retryable = retryable;
+    this.details = details;
   }
+}
+
+export function isApiClientError(error: unknown): error is ApiClientError {
+  return error instanceof ApiClientError;
+}
+
+export interface ApproveNodeOptions {
+  approve_note?: string;
+  override_warning_rule_ids?: string[];
+  override_reason?: string;
 }
 
 function headers(extra?: HeadersInit): HeadersInit {
@@ -62,6 +74,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       code,
       response.status,
       error?.retryable,
+      error?.details,
     );
   }
   return payload.data;
@@ -198,14 +211,18 @@ export async function editProjectNode(
 export async function approveProjectNode(
   projectId: string,
   nodeId: string,
-  approveNote?: string,
+  options?: string | ApproveNodeOptions,
 ): Promise<ApiNodeMutationResult> {
+  const payload =
+    typeof options === "string"
+      ? { approve_note: options }
+      : options || {};
   return request<ApiNodeMutationResult>(
     `/projects/${encodeURIComponent(projectId)}/nodes/${encodeURIComponent(nodeId)}/approve`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(approveNote ? { approve_note: approveNote } : {}),
+      body: JSON.stringify(payload),
     },
   );
 }

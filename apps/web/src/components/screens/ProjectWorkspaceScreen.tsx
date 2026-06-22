@@ -21,6 +21,7 @@ import type {
   ApiPptExport,
   ApiTask,
   LoadStatus,
+  PendingRuleWarning,
   ProjectMeta,
   VideoIntroPlan,
   VideoIntroType,
@@ -154,6 +155,7 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
   const nodeErrorByProject = useAppStore((s) => s.nodeErrorByProject);
   const stageActionStatusByProject = useAppStore((s) => s.stageActionStatusByProject);
   const stageActionErrorByProject = useAppStore((s) => s.stageActionErrorByProject);
+  const pendingRuleWarningByProject = useAppStore((s) => s.pendingRuleWarningByProject);
   const tasksByProject = useAppStore((s) => s.tasksByProject);
   const tasksStatusByProject = useAppStore((s) => s.tasksStatusByProject);
   const tasksErrorByProject = useAppStore((s) => s.tasksErrorByProject);
@@ -204,6 +206,8 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackDraft, setFeedbackDraft] = useState("");
   const [feedbackStatus, setFeedbackStatus] = useState<LoadStatus>("idle");
+  const [ruleOverrideOpen, setRuleOverrideOpen] = useState(false);
+  const [ruleOverrideReason, setRuleOverrideReason] = useState("");
 
   const selectedStage =
     stages.find((s) => s.key === selectedKey) || stages[0];
@@ -218,6 +222,9 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
     : "idle";
   const selectedActionError = selectedStage
     ? stageActionErrorByProject[project.id]?.[selectedStage.key]
+    : null;
+  const selectedRuleWarning = selectedStage
+    ? pendingRuleWarningByProject[project.id]?.[selectedStage.key]
     : null;
   const projectTasks = tasksByProject[project.id] || [];
   const projectTasksStatus = tasksStatusByProject[project.id] || "idle";
@@ -352,6 +359,15 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
       }
       const res = await approveStageRemote(project.id, selectedStage.key);
       if (!res.ok) {
+        const warning = useAppStore
+          .getState()
+          .pendingRuleWarningByProject[project.id]?.[selectedStage.key];
+        if (warning) {
+          setRuleOverrideReason("");
+          setRuleOverrideOpen(true);
+          toast.warning("规则 warning 需要填写 override 原因后确认");
+          return;
+        }
         toast.error(res.msg || "节点确认失败");
         return;
       }
@@ -363,6 +379,28 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
     approveStage(project.id, selectedStage.key);
     toast.success("已确认，进入下一阶段");
     const next = nextStageKey(selectedStage.key);
+    if (next) syncToStage(next);
+  }
+
+  async function handleOverrideRuleWarning() {
+    if (!selectedStage || !selectedRuleWarning) return;
+    const reason = ruleOverrideReason.trim();
+    if (!reason) {
+      toast.warning("请填写 override 原因");
+      return;
+    }
+    const res = await approveStageRemote(project.id, selectedStage.key, {
+      override_warning_rule_ids: selectedRuleWarning.warnings.map((warning) => warning.rule_id),
+      override_reason: reason,
+    });
+    if (!res.ok) {
+      toast.error(res.msg || "warning override 确认失败");
+      return;
+    }
+    setRuleOverrideOpen(false);
+    setRuleOverrideReason("");
+    toast.success("已记录 warning override 并确认通过");
+    const next = orderedStageKeys[currentIndex + 1];
     if (next) syncToStage(next);
   }
 
@@ -956,6 +994,16 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
         onSubmit={handleSubmitDeliveryFeedback}
       />
 
+      <RuleWarningOverrideDialog
+        open={ruleOverrideOpen}
+        warning={selectedRuleWarning || null}
+        reason={ruleOverrideReason}
+        submitting={selectedActionStatus === "loading"}
+        onOpenChange={setRuleOverrideOpen}
+        onReasonChange={setRuleOverrideReason}
+        onSubmit={handleOverrideRuleWarning}
+      />
+
       <div className="h-2" />
     </div>
   );
@@ -1040,6 +1088,79 @@ function DeliveryFeedbackDialog({
           <Button type="button" className="gap-2" disabled={submitting} onClick={onSubmit}>
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
             提交
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RuleWarningOverrideDialog({
+  open,
+  warning,
+  reason,
+  submitting,
+  onOpenChange,
+  onReasonChange,
+  onSubmit,
+}: {
+  open: boolean;
+  warning: PendingRuleWarning | null;
+  reason: string;
+  submitting: boolean;
+  onOpenChange: (open: boolean) => void;
+  onReasonChange: (value: string) => void;
+  onSubmit: () => void;
+}) {
+  const warnings = warning?.warnings || [];
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-[640px]">
+        <DialogHeader>
+          <DialogTitle>规则 warning override</DialogTitle>
+          <DialogDescription>
+            当前节点命中 warning 规则，填写原因后可继续确认，并写入 Flywheel override 记录。
+          </DialogDescription>
+        </DialogHeader>
+        <div className="max-h-[320px] space-y-3 overflow-y-auto pr-1">
+          {warnings.map((item) => (
+            <div key={item.rule_id} className="rounded-md border border-warning/30 bg-warning/5 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <span className="t-body font-semibold text-warning">{item.rule_id}</span>
+                <span className="t-caption text-muted-foreground">{item.severity || "warning"}</span>
+              </div>
+              {item.message && <p className="mt-2 t-body text-foreground">{item.message}</p>}
+              {typeof item.details !== "undefined" && (
+                <pre className="mt-2 max-h-28 overflow-auto rounded bg-muted p-2 text-xs text-muted-foreground">
+                  {JSON.stringify(item.details, null, 2)}
+                </pre>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="rule-override-reason">Override 原因</Label>
+          <Textarea
+            id="rule-override-reason"
+            value={reason}
+            disabled={submitting}
+            onChange={(event) => onReasonChange(event.target.value)}
+            placeholder="说明为什么本次 warning 可接受，例如：内测保留 6 页且已人工确认板书页覆盖。"
+            className="min-h-24"
+          />
+        </div>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={submitting}
+            onClick={() => onOpenChange(false)}
+          >
+            取消
+          </Button>
+          <Button type="button" className="gap-2" disabled={submitting || !reason.trim()} onClick={onSubmit}>
+            {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+            提交 override 并确认
           </Button>
         </DialogFooter>
       </DialogContent>

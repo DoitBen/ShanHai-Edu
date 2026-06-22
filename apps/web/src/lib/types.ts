@@ -35,6 +35,20 @@ export interface ApiErrorPayload {
   details?: unknown;
 }
 
+export interface RuleWarningItem {
+  rule_id: string;
+  message?: string;
+  severity?: string;
+  details?: unknown;
+}
+
+export interface PendingRuleWarning {
+  projectId: string;
+  stageKey: string;
+  nodeId: string;
+  warnings: RuleWarningItem[];
+}
+
 export type ApiEnvelope<T> =
   | { ok: true; data: T }
   | { ok: false; error: ApiErrorPayload };

@@ -5,6 +5,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.state_engine import STATE_VALUES
 
 
 def make_client(tmp_path: Path) -> TestClient:
@@ -150,3 +151,41 @@ def test_state_engine_cascades_approved_downstream_to_needs_review_without_losin
     assert len(cascade_rows) == 1
     assert cascade_rows[0]["from_status"] == "approved"
     assert cascade_rows[0]["to_status"] == "needs_review"
+
+
+def test_store_rejects_non_workflow_business_statuses(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project(client)
+    store = client.app.state.store
+    project_id = project["project_id"]
+    invalid_status = "fail" + "ed"
+
+    with store.connect(Path(project["project_dir"])) as conn:
+        try:
+            store.write_version(conn, project_id, "lesson_plan", {"bad": True}, "fixture", "fixture", invalid_status)
+        except ValueError as exc:
+            assert "Invalid workflow status" in str(exc)
+        else:
+            raise AssertionError("write_version should reject failed as a business status")
+
+        state = store.node_state(conn, project_id, "lesson_plan")
+        assert state["status"] in STATE_VALUES
+
+
+def test_store_rejects_invalid_node_state_updates(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project(client)
+    store = client.app.state.store
+    project_id = project["project_id"]
+    invalid_status = "fail" + "ed"
+
+    with store.connect(Path(project["project_dir"])) as conn:
+        try:
+            store.update_node_state(conn, project_id, "lesson_plan", invalid_status, None)
+        except ValueError as exc:
+            assert "Invalid workflow status" in str(exc)
+        else:
+            raise AssertionError("update_node_state should reject failed as a business status")
+
+        state = store.node_state(conn, project_id, "lesson_plan")
+        assert state["status"] in STATE_VALUES

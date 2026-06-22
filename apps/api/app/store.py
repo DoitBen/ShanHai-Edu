@@ -12,6 +12,9 @@ from fastapi import UploadFile
 from .workflow_config import WorkflowConfig
 
 
+WORKFLOW_STATUS_VALUES = {"not_started", "drafted", "needs_review", "approved", "blocked", "skipped"}
+
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -405,6 +408,7 @@ class ProjectStore:
         provider: str | None,
         status: str = "needs_review",
     ) -> dict[str, Any]:
+        self._assert_workflow_status(status)
         previous_state = self.node_state(conn, project_id, node_id)
         version_id = f"ver_{uuid.uuid4().hex[:12]}"
         created_at = now_iso()
@@ -438,12 +442,14 @@ class ProjectStore:
         status: str,
         current_version_id: str | None,
     ) -> None:
+        self._assert_workflow_status(status)
         conn.execute(
             "UPDATE node_state SET status = ?, current_version_id = ?, updated_at = ? WHERE project_id = ? AND node_id = ?",
             (status, current_version_id, now_iso(), project_id, node_id),
         )
 
     def update_current_version_status(self, conn: sqlite3.Connection, version_id: str, status: str, approved: bool = False) -> None:
+        self._assert_workflow_status(status)
         if approved:
             conn.execute(
                 "UPDATE node_versions SET status = ?, approved_at = ? WHERE version_id = ?",
@@ -451,6 +457,10 @@ class ProjectStore:
             )
             return
         conn.execute("UPDATE node_versions SET status = ? WHERE version_id = ?", (status, version_id))
+
+    def _assert_workflow_status(self, status: str) -> None:
+        if status not in WORKFLOW_STATUS_VALUES:
+            raise ValueError(f"Invalid workflow status: {status}")
 
     def record_state_transition(
         self,

@@ -544,7 +544,7 @@ def test_intro_video_asset_newapi_empty_response_persists_failed_task_and_node(m
     assert error["retryable"] is True
     assert "Expecting value" not in error["message"]
     asset_node = unwrap(client.get(f"/projects/{project_id}/nodes/intro_video_asset"))
-    assert asset_node["status"] == "failed"
+    assert asset_node["status"] == "blocked"
     assert asset_node["content"]["error_code"] == "IMAGE_RESPONSE_INVALID"
     tasks = unwrap(client.get(f"/projects/{project_id}/tasks"))
     assert len(tasks) == 1
@@ -1384,7 +1384,7 @@ def test_real_video_submit_failure_persists_failed_task_without_leaking_tokens(t
     assert "sk-test-secret" not in serialized_task
     assert "OCTO_API_KEY" not in serialized_task
     final_node = unwrap(client.get(f"/projects/{project_id}/nodes/final_video"))
-    assert final_node["status"] == "failed"
+    assert final_node["status"] == "blocked"
     assert final_node["content"]["error_code"] == "OCTO_REQUEST_FAILED"
 
 
@@ -1710,7 +1710,7 @@ def test_real_image_provider_failure_persists_failed_task_node_error_and_redacts
     assert task["retryable"] is True
     assert task["image_path"] == "assets/generated_images/asset_ref_01.png"
     asset_node = unwrap(client.get(f"/projects/{project_id}/nodes/intro_video_asset"))
-    assert asset_node["status"] == "failed"
+    assert asset_node["status"] == "blocked"
     assert asset_node["content"]["error_code"] == "IMAGE_REQUEST_FAILED"
     errors_log = Path(project["project_dir"]) / "logs" / "errors.log"
     assert "IMAGE_REQUEST_FAILED" in errors_log.read_text(encoding="utf-8")
@@ -1739,7 +1739,7 @@ def test_intro_video_asset_empty_llm_response_returns_diagnostic_provider_error(
     assert error["retryable"] is True
     assert "Expecting value" not in error["message"]
     asset_node = unwrap(client.get(f"/projects/{project_id}/nodes/intro_video_asset"))
-    assert asset_node["status"] == "failed"
+    assert asset_node["status"] == "blocked"
     assert asset_node["content"]["error_code"] == "INTRO_VIDEO_ASSET_JSON_EMPTY"
     assert unwrap(client.get(f"/projects/{project_id}/tasks")) == []
 
@@ -1766,7 +1766,7 @@ def test_intro_video_asset_non_json_llm_response_returns_diagnostic_provider_err
     assert "sk-real-secret" not in str(error)
     assert "secret-token" not in str(error)
     asset_node = unwrap(client.get(f"/projects/{project_id}/nodes/intro_video_asset"))
-    assert asset_node["status"] == "failed"
+    assert asset_node["status"] == "blocked"
     assert asset_node["content"]["error_code"] == "INTRO_VIDEO_ASSET_JSON_INVALID"
 
 
@@ -1790,7 +1790,7 @@ def test_intro_video_asset_missing_assets_returns_schema_error(tmp_path: Path):
     assert error["code"] == "INTRO_VIDEO_ASSET_SCHEMA_INVALID"
     assert "assets" in error["message"]
     asset_node = unwrap(client.get(f"/projects/{project_id}/nodes/intro_video_asset"))
-    assert asset_node["status"] == "failed"
+    assert asset_node["status"] == "blocked"
     assert asset_node["content"]["error_code"] == "INTRO_VIDEO_ASSET_SCHEMA_INVALID"
 
 
@@ -2214,7 +2214,7 @@ def test_sync_task_composes_final_video_after_all_real_clips_are_downloaded(tmp_
     assert composed["clips"] == ["clips/shot_01.mp4", "clips/shot_02.mp4"]
     assert (project_dir / "outputs" / "final_video.mp4").read_bytes() == b"real final video"
     final_node = unwrap(client.get(f"/projects/{project_id}/nodes/final_video"))
-    assert final_node["status"] == "completed"
+    assert final_node["status"] == "needs_review"
     assert final_node["content"]["video_path"] == "outputs/final_video.mp4"
 
 
@@ -2277,7 +2277,7 @@ def test_sync_task_composes_final_video_after_single_real_clip_when_limited(tmp_
     assert composed["clips"] == ["clips/shot_01.mp4"]
     assert (project_dir / "outputs" / "final_video.mp4").read_bytes() == b"single real final video"
     final_node = unwrap(client.get(f"/projects/{project_id}/nodes/final_video"))
-    assert final_node["status"] == "completed"
+    assert final_node["status"] == "needs_review"
     assert final_node["content"]["clip_count"] == 1
     assert final_node["content"]["video_path"] == "outputs/final_video.mp4"
 
@@ -2350,7 +2350,7 @@ def test_sync_task_marks_compose_failure_when_ffmpeg_missing(tmp_path: Path, mon
     assert synced["result"]["compose_status"] == "failed"
     assert "ffmpeg" in synced["result"]["compose_error"]
     final_node = unwrap(client.get(f"/projects/{project_id}/nodes/final_video"))
-    assert final_node["status"] == "failed"
+    assert final_node["status"] == "blocked"
     assert final_node["content"]["error_code"] == "FINAL_VIDEO_COMPOSE_FAILED"
     assert not (project_dir / "outputs" / "final_video.mp4").exists()
 

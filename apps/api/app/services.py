@@ -714,7 +714,7 @@ class WorkflowService:
             "retryable": exc.retryable,
         }
         self.store.record_error(conn, project_id, node_id, exc.code, content["error_message"])
-        self.store.write_version(conn, project_id, node_id, content, "ai", self.provider.name, "failed")
+        self.store.write_version(conn, project_id, node_id, content, "ai", self.provider.name, "blocked")
         conn.commit()
 
     def _build_prompt(self, node_id: str, context: dict[str, Any]) -> str:
@@ -951,7 +951,7 @@ class WorkflowService:
                         "model_audio_policy": "discarded_or_mute_later",
                         "english_audio_detected": False,
                     }
-                    self.store.write_version(conn, project_id, "final_video", failure_content, "ai", self.provider.name, "failed")
+                    self.store.write_version(conn, project_id, "final_video", failure_content, "ai", self.provider.name, "blocked")
                     conn.commit()
                     raise
                 task = self.store.update_task(
@@ -979,7 +979,7 @@ class WorkflowService:
         }
         if is_fake_video:
             content = self._finalize_final_video_artifacts(conn, project_id, project_dir, tasks, content)
-        final_status = "completed" if is_fake_video and self.tts_provider is not None else "running"
+        final_status = "needs_review" if is_fake_video and self.tts_provider is not None else "drafted"
         self.store.write_version(conn, project_id, "final_video", content, "ai", self.provider.name, final_status)
         return {"node_id": "final_video", "status": final_status, "content": content, "tasks": tasks, "video_path": FINAL_VIDEO_REL_PATH}
 
@@ -1051,7 +1051,7 @@ class WorkflowService:
                         "error_message": str(exc),
                         "failed_asset_id": failed_assets[-1].get("asset_id") if failed_assets else None,
                     }
-                    self.store.write_version(conn, project_id, "intro_video_asset", failure_content, "ai", self.provider.name, "failed")
+                    self.store.write_version(conn, project_id, "intro_video_asset", failure_content, "ai", self.provider.name, "blocked")
                     conn.commit()
                     raise exc
                 continue
@@ -1066,7 +1066,7 @@ class WorkflowService:
                 "error_message": str(last_error),
                 "failed_asset_id": failed_assets[-1].get("asset_id") if failed_assets else None,
             }
-            self.store.write_version(conn, project_id, "intro_video_asset", failure_content, "ai", self.provider.name, "failed")
+            self.store.write_version(conn, project_id, "intro_video_asset", failure_content, "ai", self.provider.name, "blocked")
             conn.commit()
             raise last_error
         if failed_assets:
@@ -1305,7 +1305,7 @@ class WorkflowService:
                 "model_audio_policy": "discarded_or_mute_later",
                 "english_audio_detected": False,
             }
-            self.store.write_version(conn, project_id, "final_video", failure_content, "ai", self.provider.name, "failed")
+            self.store.write_version(conn, project_id, "final_video", failure_content, "ai", self.provider.name, "blocked")
             return {
                 "compose_status": "failed",
                 "compose_error": message,
@@ -1332,7 +1332,7 @@ class WorkflowService:
             content = {**base_content, "output_size_bytes": output_path.stat().st_size}
         else:
             content = self._finalize_final_video_artifacts(conn, project_id, project_dir, video_tasks, base_content)
-        self.store.write_version(conn, project_id, "final_video", content, "ai", self.provider.name, "completed")
+        self.store.write_version(conn, project_id, "final_video", content, "ai", self.provider.name, "needs_review")
         return {"compose_status": "completed", "final_video_path": FINAL_VIDEO_REL_PATH}
 
     def _finalize_final_video_artifacts(

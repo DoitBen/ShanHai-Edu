@@ -456,6 +456,7 @@ class WorkflowService:
             tts_provider=self.tts_provider,
             video_model=self.video_model,
             reference_url_resolver=self._video_reference_urls,
+            reference_path_resolver=self._video_reference_paths,
         )
 
     def generate_node(self, project_id: str, node_id: str, options: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -1054,6 +1055,17 @@ class WorkflowService:
                 urls[str(asset_id)] = str(image_url)
         return urls
 
+    def _video_reference_paths(self, project_id: str) -> dict[str, str]:
+        paths: dict[str, str] = {}
+        for task in self.store.tasks(project_id):
+            if task["task_type"] != "image_generation" or task["status"] != "completed":
+                continue
+            asset_id = task["payload"].get("asset_id")
+            image_path = task.get("image_path") or task["result"].get("image_path") or task["payload"].get("image_path")
+            if asset_id and image_path:
+                paths[str(asset_id)] = str(image_path)
+        return paths
+
     def _generate_image_tasks(self, conn, project_id: str, project_dir: Path, content: dict[str, Any], options: dict[str, Any]) -> dict[str, Any]:
         assets = content.get("assets") if isinstance(content.get("assets"), list) else []
         image_limit = self._positive_int_option(options.get("image_limit"))
@@ -1307,12 +1319,22 @@ class WorkflowService:
                 "size": payload.get("size", "1280x720"),
             }
             reference_url_map = self._video_reference_urls(project_id)
+            reference_path_map = self._video_reference_paths(project_id)
+            project = self.store.get_project(project_id)
+            project_dir = Path(project["project_dir"])
             shot_reference_urls = [
                 reference_url_map[reference_id]
                 for reference_id in payload.get("reference_image_ids", [])
                 if reference_id in reference_url_map
             ]
-            if shot_reference_urls:
+            shot_reference_paths = [
+                reference_path_map[reference_id]
+                for reference_id in payload.get("reference_image_ids", [])
+                if reference_id in reference_path_map and (project_dir / reference_path_map[reference_id]).is_file()
+            ]
+            if shot_reference_paths:
+                submit_payload["reference_image_paths"] = [str(project_dir / path) for path in shot_reference_paths]
+            elif shot_reference_urls:
                 submit_payload["images"] = shot_reference_urls
             submitted = self.video_provider.submit_video(submit_payload)
         except ProviderError as exc:

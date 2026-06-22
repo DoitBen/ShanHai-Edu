@@ -18,6 +18,7 @@ class VideoOrchestrator:
         tts_provider: Any | None,
         video_model: str,
         reference_url_resolver: Callable[[str], dict[str, str]],
+        reference_path_resolver: Callable[[str], dict[str, str]] | None = None,
     ):
         self.store = store
         self.text_provider = text_provider
@@ -25,6 +26,7 @@ class VideoOrchestrator:
         self.tts_provider = tts_provider
         self.video_model = video_model
         self.reference_url_resolver = reference_url_resolver
+        self.reference_path_resolver = reference_path_resolver or (lambda _project_id: {})
 
     def generate(self, conn, project_id: str, project_dir: Path, options: dict[str, Any]) -> dict[str, Any]:
         storyboard = self.store.current_content(conn, project_id, "storyboard")
@@ -41,12 +43,19 @@ class VideoOrchestrator:
         size = options.get("size", "1280x720")
         mode = options.get("mode", "reference")
         reference_urls = self.reference_url_resolver(project_id)
+        reference_paths = self.reference_path_resolver(project_id)
         for shot in shots:
             clip_name = f"clips/{shot['shot_id']}.mp4"
+            reference_ids = shot.get("reference_image_ids", [])
             shot_reference_urls = [
                 reference_urls[reference_id]
-                for reference_id in shot.get("reference_image_ids", [])
+                for reference_id in reference_ids
                 if reference_id in reference_urls
+            ]
+            shot_reference_paths = [
+                reference_paths[reference_id]
+                for reference_id in reference_ids
+                if reference_id in reference_paths and (project_dir / reference_paths[reference_id]).is_file()
             ]
             payload = {
                 "shot_id": shot["shot_id"],
@@ -54,10 +63,15 @@ class VideoOrchestrator:
                 "size": size,
                 "mode": mode,
                 "prompt": shot["model_prompt"],
-                "reference_image_ids": shot["reference_image_ids"],
+                "reference_image_ids": reference_ids,
             }
+            if shot_reference_paths:
+                payload["reference_image_paths"] = shot_reference_paths
+                payload["reference_submission_mode"] = "multipart"
             if shot_reference_urls:
                 payload["reference_image_urls"] = shot_reference_urls
+                if not shot_reference_paths:
+                    payload["reference_submission_mode"] = "url"
             if is_fake_video:
                 task = self.store.create_task(
                     conn,
@@ -69,7 +83,7 @@ class VideoOrchestrator:
                     result={"download_path": clip_name},
                 )
             else:
-                task = self._submit_real_video_task(conn, project_id, shot, payload, clip_name, shot_reference_urls, model, size)
+                task = self._submit_real_video_task(conn, project_id, project_dir, shot, payload, clip_name, shot_reference_urls, shot_reference_paths, model, size)
             tasks.append(task)
             clips.append(
                 {
@@ -97,10 +111,12 @@ class VideoOrchestrator:
         self,
         conn,
         project_id: str,
+        project_dir: Path,
         shot: dict[str, Any],
         payload: dict[str, Any],
         clip_name: str,
         shot_reference_urls: list[str],
+        shot_reference_paths: list[str],
         model: str,
         size: str,
     ) -> dict[str, Any]:
@@ -115,7 +131,9 @@ class VideoOrchestrator:
         )
         try:
             submit_payload = {"model": model, "prompt": shot["model_prompt"], "size": size}
-            if shot_reference_urls:
+            if shot_reference_paths:
+                submit_payload["reference_image_paths"] = [str(project_dir / path) for path in shot_reference_paths]
+            elif shot_reference_urls:
                 submit_payload["images"] = shot_reference_urls
             submitted = self.video_provider.submit_video(submit_payload)
         except ProviderError as exc:
@@ -156,7 +174,7 @@ class VideoOrchestrator:
 
     def compose_if_ready(self, conn, project_id: str, project_dir: Path) -> dict[str, Any] | None:
         tasks = self.store.tasks(project_id)
-        video_tasks = [task for task in tasks if task["node_id"] == "final_video" and task["task_type"] == "video_clip_generation"]
+        video_tasks = _current_final_video_tasks(self.store.current_content(conn, project_id, "final_video"), tasks)
         if not video_tasks or any(task["status"] != "completed" or task["result"].get("download_status") != "downloaded" for task in video_tasks):
             return None
         clip_paths = [task["download_path"] for task in video_tasks if task.get("download_path")]
@@ -322,3 +340,15 @@ def _positive_int_option(value: Any) -> int | None:
     except (TypeError, ValueError):
         return None
     return number if number > 0 else None
+
+
+def _current_final_video_tasks(current_content: dict[str, Any] | None, tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    video_tasks = [task for task in tasks if task["node_id"] == "final_video" and task["task_type"] == "video_clip_generation"]
+    clips = current_content.get("clips") if isinstance(current_content, dict) else None
+    if not isinstance(clips, list):
+        return video_tasks
+    current_task_ids = [clip.get("api_task_id") for clip in clips if isinstance(clip, dict) and clip.get("api_task_id")]
+    if not current_task_ids:
+        return video_tasks
+    task_by_id = {task["task_id"]: task for task in video_tasks}
+    return [task_by_id[task_id] for task_id in current_task_ids if task_id in task_by_id]

@@ -87,7 +87,7 @@ These models were present in the same Apifox project but are not video-generatio
 
 ## Request Body Rules
 
-Use JSON for URL/base64 references:
+Use JSON for URL/base64 references only when the URL is verified as externally fetchable by the provider:
 
 ```json
 {
@@ -98,7 +98,7 @@ Use JSON for URL/base64 references:
 }
 ```
 
-Use multipart for local image or video files:
+Use multipart for local image or video files. This is the preferred ShanHaiEdu runtime path after `intro_video_asset` has already downloaded approved reference images into project storage:
 
 ```powershell
 curl.exe -X POST "https://otuapi.com/v1/videos" `
@@ -146,5 +146,7 @@ veo_3_1-fl-remix
 
 - The gateway may return both `id` and `task_id`; prefer the ID returned at creation, and keep both in manifests.
 - Completed downloads may be blocked by the file host if using a bare Python `urllib` request. Send a browser-like `User-Agent` and broad `Accept`, but do not force `Referer: https://otuapi.com/`; live Omni smoke on 2026-06-21 showed the OSS file host returned 403 when that Referer was present, while the same URL downloaded successfully without it.
+- Reference input URLs can fail earlier, during OTU media preprocessing, when the provider tries to fetch the image URL and the source host returns 403. This is not the same as completed MP4 download 403. For ShanHaiEdu, prefer multipart `input_reference=@local-image.png` from the already downloaded project asset; use JSON `images` only for URLs confirmed to be fetchable from outside the local machine without cookies, auth headers, or forced Referer.
+- Task manifests should record `reference_submission_mode=multipart|url`, local `reference_image_paths`, `reference_image_ids`, and a sanitized remote URL summary. This lets QA distinguish reference preprocessing, generation, query, download, and compose failures.
 - Inputs can fail with upstream image/content policy errors such as `PUBLIC_ERROR_IP_INPUT_IMAGE`; this is separate from token/auth failure.
 - Query without a token returns `401`; query with a valid token can still fail model authorization or content policy checks.

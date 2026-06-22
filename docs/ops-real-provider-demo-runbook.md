@@ -62,6 +62,14 @@
 
 API 内真实视频默认通过 `OctoVideoProvider` 调用 `POST /v1/videos`、`GET /v1/videos/{task_id}`，完成后下载返回的 URL。默认模型优先级为 `VIDEO_MODEL` > `OMNI_DEFAULT_MODEL` > `NEWAPI_DEFAULT_MODEL` > `omni_flash-10s`；T075 smoke 额外支持 `--video-model` 命令行参数作为最高优先级覆盖。
 
+真实参考图传输设计口径：
+
+- 生图成功后，后端必须先把图片下载到当前项目目录，例如 `<project_dir>\assets\generated_images\asset_001.png`。
+- 提交真实视频时，默认不得把临时公网图片 URL 作为唯一输入交给 OTU 拉取；应优先用 `multipart/form-data` 直接携带本地图片文件，字段名为 `input_reference`。
+- 只有在图片 URL 已通过外部机器无鉴权拉取验证时，才允许降级使用 JSON `images: ["https://..."]`。
+- task/result 中需要记录 `reference_submission_mode=multipart|url`、`reference_image_ids`、本地 `reference_image_paths`，以及脱敏后的远程 URL 摘要，便于区分输入预处理失败和视频生成失败。
+- 对象存储或临时签名 URL 是可选长期方案；签名 URL 必须允许 OTU 服务端直接 GET，不能只对本机或浏览器会话可见。
+
 ### Storage 与 Workflow
 
 | 变量名 | 所属模块 | 是否敏感 | 用途 |
@@ -310,16 +318,21 @@ python scripts\t075_real_fullchain_smoke.py --api-base http://127.0.0.1:8199 --p
 - `VIDEO_QUOTA_EXHAUSTED`
 - HTTP 401/403/429/500/502/503/504
 - task 没有 `provider_task_id`
+- OTU 返回 `fail_to_fetch_task`、`媒体预处理失败`、`HTTP 403 下载失败`，且错误中指向参考图 URL
 
 排查顺序：
 
 1. 确认 `VIDEO_PROVIDER_MODE=real`；`placeholder` 不会提交 Octo。
 2. 确认 `OCTO_API_KEY` 已在服务端进程环境或本地忽略文件中配置。
 3. 确认 `OCTO_BASE_URL` 指向 Octo/OTU NewAPI base URL。
-4. 使用 `scripts\smoke-octo-real-video.ps1` 单镜头复测，不要直接跑完整 E2E。
-5. HTTP 401/403：优先查密钥权限、账号余额、模型权限。
-6. HTTP 429/503：优先按上游限流或账号池不可用处理，稍后重试；不要改代码绕过。
-7. task 已创建但 submit 失败时，检查项目 `project.db` 的 tasks/errors 状态和 `<project_dir>\logs\errors.log`。
+4. 如果错误是参考图 `HTTP 403 下载失败`，先确认项目本地图片文件是否已存在于 `<project_dir>\assets\generated_images\`；该类错误优先按“参考图输入通道失败”处理，不要先归因到模型额度。
+5. 对参考图输入通道，默认修复方向是把视频提交改为 `multipart/form-data` + `input_reference=@本地图片`；公网 URL 只作为已验证可被 OTU 服务端拉取的降级路径。
+6. 使用 `scripts\smoke-octo-real-video.ps1` 单镜头复测，不要直接跑完整 E2E。
+7. HTTP 401/403 且不涉及参考图 URL：优先查密钥权限、账号余额、模型权限。
+8. HTTP 429/503：优先按上游限流或账号池不可用处理，稍后重试；不要改代码绕过。
+9. task 已创建但 submit 失败时，检查项目 `project.db` 的 tasks/errors 状态和 `<project_dir>\logs\errors.log`。
+
+注意：参考图预处理阶段的 403 与 completed MP4 下载阶段的 403 不是同一个问题。前者发生在创建视频任务前，OTU 服务端无法拉取输入图片；后者发生在任务 completed 后，本机下载 provider 返回的 MP4 URL。后者按 5.4 处理。
 
 ### 5.4 视频下载失败
 
@@ -334,8 +347,9 @@ python scripts\t075_real_fullchain_smoke.py --api-base http://127.0.0.1:8199 --p
 1. 轮询 `GET /projects/{project_id}/tasks/{task_id}`，确认 task 状态为 `completed`。
 2. 确认响应里有 `video_url_present=true` 或 result 中存在下载 URL。
 3. 检查运行机器是否能访问 provider 返回的 CDN URL。
-4. 检查 `<project_dir>\clips\` 是否可写。
-5. 下载失败后不要手工把无效文件改名为 `.mp4` 冒充成功；保留 task 错误供后端排查。
+4. 下载 completed MP4 时使用 browser-like `User-Agent` 和宽松 `Accept`，不要强制 `Referer: https://otuapi.com/`，避免文件主机防盗链返回 403。
+5. 检查 `<project_dir>\clips\` 是否可写。
+6. 下载失败后不要手工把无效文件改名为 `.mp4` 冒充成功；保留 task 错误供后端排查。
 
 ### 5.5 ffmpeg 合成失败
 
@@ -398,6 +412,7 @@ python scripts\t075_real_fullchain_smoke.py --api-base http://127.0.0.1:8199 --p
 - `python -c "from apps.api.app.settings import Settings; s=Settings.from_overrides(); print({'provider_mode': s.provider_mode, 'video_provider_mode': s.video_provider_mode, 'storage_root': str(s.storage_root)})"` 输出符合本轮演示口径。
 - `python skills\imagegen-myself\scripts\aircode_image_gen.py probe` 显示生图 provider ready。
 - 真实视频 smoke 前，`VIDEO_PROVIDER_MODE=real`，并且 `scripts\smoke-octo-real-video.ps1` 单独执行。
+- 真实视频参考图已落到 `<project_dir>\assets\generated_images\`，视频提交设计默认走本地文件 multipart；若仍走公网 URL，必须先从非本机网络验证该 URL 可无鉴权拉取。
 - 多 clip 合成前，`ffmpeg -version` 成功。
 - PPT 导出前，`outputs\final_video.mp4` 存在，且当前模式允许该视频类型。
 
@@ -407,4 +422,5 @@ python scripts\t075_real_fullchain_smoke.py --api-base http://127.0.0.1:8199 --p
 - `FFMPEG_PATH` 尚未被后端代码消费，仍需通过 `PATH` 配置 ffmpeg。
 - 生图 provider 属于项目内 skill 脚本能力，不是 API 服务内 endpoint。
 - 真实视频 provider 受上游账号池、模型可用性和网络波动影响，不能和完整课堂内容质量验收混为一谈。
+- 真实视频参考图如果继续依赖临时公网 URL，仍可能在 OTU 预处理阶段因源站防盗链、IP 限制、User-Agent 限制或签名过期返回 403；底层设计应优先走本地文件 multipart 上传。
 - 当前 `.gitignore` 定向忽略真实 provider 产物；如果后续真实产物目录变化，需要同步补规则。

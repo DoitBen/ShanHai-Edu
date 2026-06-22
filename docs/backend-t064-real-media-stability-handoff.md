@@ -58,5 +58,7 @@ T064 已完成后端加固：真实图片任务、真实视频 clip 任务都能
 
 - 本轮使用 stub provider 做自动化契约，不再次调用真实外部 API。
 - 图片 provider 当前默认接 OpenAI 兼容同步生图路径；若后续改走章鱼哥 `/v1/videos` 异步图片路线，需要新增 query/download 状态机。
-- 真实视频 reference image 进入 Omni 的公网 URL / multipart 映射仍是后续质量链路缺口。
+- 真实视频 reference image 进入 Omni/OTU 的输入通道仍是后续质量链路缺口；新的设计口径是优先使用本地已下载图片文件 multipart 上传，而不是只把临时公网 URL 放入 JSON `images` 让 OTU 服务端拉取。
+- 如果 OTU 返回 `媒体预处理失败` / 参考图 `HTTP 403 下载失败`，应归类为参考图输入通道失败；它不同于任务 completed 后本机下载 MP4 URL 失败。
+- 后续实现应在 video task payload/result 中记录 `reference_submission_mode=multipart|url`、`reference_image_ids`、本地 `reference_image_paths` 和脱敏远程 URL 摘要，方便判断是图片传输、模型生成、查询还是下载阶段失败。
 - 多 clip 合成仍依赖本机 `ffmpeg`，缺失时只记录可读错误，不伪造成片。

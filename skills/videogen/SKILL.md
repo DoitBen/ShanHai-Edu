@@ -143,7 +143,7 @@ result.url
 
 Normalize statuses from both lowercase and uppercase variants: `queued`, `processing`, `in_progress`, `completed`, `failed`, `SUBMITTED`, `IN_PROGRESS`, `SUCCESS`, `FAILURE`.
 
-Use JSON for URL or Base64 references. Use `--multipart` for local reference files, especially local video edits.
+Use JSON for URL or Base64 references only when the URL has been verified as externally fetchable by the provider. For ShanHaiEdu runtime, prefer `--multipart` for local reference files that already exist under the project storage directory; this avoids provider-side 403 failures when OTU tries to fetch a temporary image URL.
 
 ## Model Defaults
 
@@ -177,11 +177,13 @@ For lesson opening videos, prefer `[Static shot]`, `[Push in]`, `[Pull out]`, an
 
 1. Confirm the shot is a story setup or instructional explanation.
 2. For ShanHaiEdu, prefer image-to-video from approved keyframes when reference assets exist.
-3. Use 6-second clips first; only use 10 seconds for simple scenes with low continuity risk.
-4. Submit one shot and save a manifest before scaling batch generation.
-5. Query until `Success` or `Fail`.
-6. Download with `file_id`.
-7. Verify local file existence, size, duration, resolution, fps, and frame samples before accepting.
+3. Confirm each approved keyframe has been downloaded to local project storage, for example `assets\generated_images\asset_001.png`.
+4. Submit local keyframes as multipart `input_reference` by default. Do not rely on a temporary public image URL unless it is verified from a non-local machine without cookies, auth headers, or forced Referer.
+5. Use 6-second clips first; only use 10 seconds for simple scenes with low continuity risk.
+6. Submit one shot and save a manifest before scaling batch generation. Record whether the reference used `multipart` or `url`.
+7. Query until `Success` or `Fail`.
+8. Download the completed video URL promptly with browser-like headers.
+9. Verify local file existence, size, duration, resolution, fps, and frame samples before accepting.
 
 ## Webapp Promax Mapping
 
@@ -245,6 +247,7 @@ OTU/NewAPI-compatible video gateway:
 
 ```powershell
 .\scripts\videogen.ps1 newapi-create --model omni_flash-10s --prompt "A warm classroom story hook. [Static shot]" --size 1280x720 --dry-run
+.\scripts\videogen.ps1 newapi-create --model omni_flash-10s --image ".\storage-demo\projects\demo\assets\generated_images\asset_001.png" --prompt "A warm classroom story hook. [Static shot]" --size 1280x720 --multipart --dry-run
 .\scripts\videogen.ps1 newapi-create --model sora-2-12s --prompt "A warm classroom story hook. [Static shot]" --size 1920x1080 --dry-run
 .\scripts\videogen.ps1 newapi-create --model veo_3_1-fast-fl --image ".\video_task_packages\demo\keyframes\start.png" --image ".\video_task_packages\demo\keyframes\end.png" --prompt "A smooth transition between the approved frames." --size 1280x720 --multipart --allow-other-model --dry-run
 .\scripts\videogen.ps1 newapi-create --model veo_3_1-fast-extend --remix-id "video_xxx" --prompt "Continue the previous shot naturally." --allow-other-model --dry-run
@@ -264,6 +267,8 @@ Compatibility aliases are still available:
 For the `otuapi.com` gateway tested in this project, treat `omni_flash-10s` and the Apifox Sora/Veo models as OTU/NewAPI `/v1/videos` models, not as MiniMax official `/v1/video_generation` models.
 
 Live Omni smoke on 2026-06-21 confirmed `omni_flash-10s` can submit, reach `completed`, and return `video_url`. Download the completed URL promptly with browser-like `User-Agent` and broad `Accept`; do not force a `Referer` header, because the observed OSS download URL returned 403 when `Referer: https://otuapi.com/` was present.
+
+T075 real fullchain continuation on 2026-06-22 showed a different 403 class: the video task failed before generation because OTU media preprocessing could not fetch the submitted reference image URL (`HTTP 403`). Treat this as a reference input transport failure, not as completed MP4 download failure. For ShanHaiEdu, the default design is to download image assets locally first and submit those local files through multipart `input_reference`; URL-based JSON `images` is a fallback only after external fetchability is proven.
 
 Before a real paid generation, show the user the exact model, input images, prompt, size/aspect settings, and whether JSON or multipart will be used. Wait for approval unless the user has already explicitly approved that exact request.
 

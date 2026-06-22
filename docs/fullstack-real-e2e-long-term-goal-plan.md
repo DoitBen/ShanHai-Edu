@@ -15,7 +15,10 @@
 
 ## 当前真实进度
 
-截至 2026-06-21 最新证据 `docs\qa-audits\t075-real-fullchain-smoke-evidence\20260621-214857`：
+截至 2026-06-22 最新证据：
+
+- `docs\qa-audits\t075-real-fullchain-smoke-evidence\20260622-182434\summary.json`
+- `docs\qa-audits\manual-real-e2e-continuation\20260622-182731\summary-brief.json`
 
 已通过：
 
@@ -24,6 +27,7 @@
 - 教案生成。
 - 导入选择。
 - 视频脚本。
+- 角色字典和视觉契约经人工最小合法种子补齐后 approved。
 - 分场剧本。
 - 真实生图 1 张。
 - storyboard。
@@ -31,7 +35,10 @@
 
 未通过：
 
-- 唯一 `video_clip_generation` task 返回 `429 RESOURCE_EXHAUSTED / PUBLIC_ERROR_USER_QUOTA_REACHED`。
+- T075 自动化脚本首次漏跑 `character_dict` / `visual_contract`，导致 `intro_video_screenplay` 首次卡在 `UPSTREAM_NOT_APPROVED`。
+- 共享节点真实 LLM 输出曾缺 `characters`、`palette` 等必填字段，需要默认种子或 schema repair。
+- `final_video` 提交真实视频时把参考图公网 URL 放入 JSON `images`，OTU 预处理参考图时拉取该 URL 返回 `HTTP 403`。
+- OTU 纯文本 `omni_flash-10s` 对照任务可创建，但最终失败为 `upstream_error`，说明 provider 自身仍可能波动。
 - 未下载真实 clip。
 - 未触发 Minimax TTS、SRT、concat manifest、ffmpeg 合成。
 - 未产出 `outputs/final_video.mp4`。
@@ -41,8 +48,9 @@
 当前裁决：
 
 - 真实端到端尚未打通。
-- 主阻塞是视频 provider 配额、账号池、模型权限或可用模型，不是 PDF、教案、生图、storyboard 或 PPT 接口。
-- 在 provider 未恢复前，不继续盲目跑真实视频，以免浪费额度和时间。
+- 主阻塞已从早期配额/账号池问题收窄为视频参考图输入通道和视频 provider 稳定性，不是 PDF、教案、生图、storyboard 或 PPT 接口。
+- 真实图片已落本地，但当前视频提交路径让 OTU 服务端通过公网 URL 拉图；该 URL 对 OTU 返回 403，所以必须先把底层设计收敛为本地文件 multipart 上传或稳定对象存储/临时签名 URL。
+- 在参考图输入通道未收敛前，不继续盲目跑完整真实视频，以免浪费额度和时间。
 
 ## 长期成功门禁
 
@@ -73,7 +81,10 @@
 任务：
 
 - 后端补齐视频 provider 错误分类：`RESOURCE_EXHAUSTED / PUBLIC_ERROR_USER_QUOTA_REACHED` 归类为 `VIDEO_QUOTA_EXHAUSTED`，`retryable=false`。
+- 对 `fail_to_fetch_task`、`媒体预处理失败`、参考图 `HTTP 403 下载失败` 单独归类为参考图输入通道失败，例如 `VIDEO_REFERENCE_FETCH_FORBIDDEN`，并在 task/result 中保留脱敏 URL 摘要。
 - T075 smoke 在所有真实 clip failed 时停在 `sync_video_tasks`，不误报 `download_final_video`。
+- T075 自动化脚本必须先生成/确认共享前置节点 `character_dict` 和 `visual_contract`，再进入 `intro_video_screenplay`、`intro_video_asset`、`storyboard`。
+- `character_dict` / `visual_contract` 需要默认种子或 schema repair，避免真实 LLM 缺必填字段后阻塞视频链路。
 - 运维检查视频 provider 账号额度、模型权限、账号池、可用模型和 base URL，不打印密钥。
 - 更新真实 E2E gate 报告，明确“代码可继续，外部 provider 未恢复”。
 
@@ -83,10 +94,19 @@
 - 运行手册能指导切换可用 provider 或账号池。
 - 同类配额错误不再需要人工翻 `tasks.json` 才能判断。
 - T075 证据目录自动包含 `video_provider_readiness`，测试工程师可直接从 `summary.json`/证据 JSON 判断下一步是复跑、切模型还是恢复账号额度。
+- T075 证据目录能区分“参考图输入 403”和“completed MP4 下载 403”。
 
 ### 阶段 B：单 clip 真实打通
 
 目标：用最低成本先跑通 1 个真实视频 clip。
+
+参考图传输设计：
+
+- 生图完成后以 `<project_dir>\assets\generated_images\*.png` 本地文件作为视频参考图的主输入。
+- 后端提交 OTU 时默认使用 `multipart/form-data`，字段名 `input_reference`，直接上传本地图片字节。
+- JSON `images: ["https://..."]` 只作为降级路径，前提是该 URL 已通过非本机网络无鉴权 GET 验证。
+- 如果使用对象存储或临时签名 URL，签名必须允许 OTU 服务端直接下载，且证据中记录过期时间、HTTP 状态和脱敏 URL 摘要。
+- task/result 需要记录 `reference_submission_mode=multipart|url`、`reference_image_ids`、`reference_image_paths`，避免排障时只看到 provider 400。
 
 固定参数：
 
@@ -108,6 +128,7 @@ python scripts\t075_real_fullchain_smoke.py --api-base http://127.0.0.1:8199 --p
 - 真实 clip 下载到 `clips\*.mp4`。
 - `final_video/generate` 不再停在视频 provider。
 - 若失败，失败码必须是可分类码，而不是黑盒 `unknown`。
+- 若失败发生在参考图输入阶段，错误码必须指向参考图 fetch/upload，而不是泛化为模型生成失败。
 
 ### 阶段 C：真实 TTS 与 final video 合成
 

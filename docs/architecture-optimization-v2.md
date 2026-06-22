@@ -560,6 +560,19 @@ v1 最小 API：
 | `final_video` | 是 | 中文旁白视频 |
 | `final_delivery` | 是 | 最小真实交付包：教案 + PPTX + 视频 artifact + delivery manifest |
 
+### 6.5 final_video 参考图传输设计
+
+真实视频链路中，`intro_video_asset` 生成的参考图必须先下载到当前项目目录，再作为 `final_video` 的输入。`final_video` 不应默认把临时公网图片 URL 交给 OTU/NewAPI 服务端自行拉取，因为该 URL 可能只对本机或浏览器会话可见，第三方媒体预处理服务拉取时会出现 `HTTP 403`。
+
+底层设计口径：
+
+- `intro_video_asset` 成功后，图片落盘到 `<project_dir>\assets\generated_images\*.png`。
+- `storyboard.shots[].reference_image_ids` 只引用已落盘且已 approved 的视频资产。
+- `final_video` 提交真实视频时默认使用 `multipart/form-data`，字段名 `input_reference`，直接上传本地图片文件。
+- JSON `images: ["https://..."]` 仅作为降级路径，前提是 URL 已通过外部无鉴权 GET 验证，且不是依赖本机 Cookie、Referer、IP 白名单或短期会话的临时地址。
+- video task 必须记录 `reference_submission_mode=multipart|url`、`reference_image_ids`、`reference_image_paths`、脱敏远程 URL 摘要和 `provider_error_phase`。
+- OTU 媒体预处理阶段的参考图 `HTTP 403` 归类为 `reference_preprocess` 输入通道失败；它不同于任务 completed 后下载 MP4 URL 的 403。
+
 ---
 
 ## 7. 验收方案

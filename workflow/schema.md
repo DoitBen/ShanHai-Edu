@@ -294,7 +294,20 @@ v1.x 补：景别、运动、多层元素清单、转场。
 | download_path | path | required | 片段文件路径 |
 | status | enum | required | pending / generated / approved / failed |
 | reference_image_ids | list<string> | required | 必须非空（rules 强约束） |
+| reference_submission_mode | enum | required | multipart / url / none；真实视频默认 multipart |
+| reference_image_paths | list<path> | required when multipart | 引用当前项目内已下载图片文件，例如 assets/generated_images/*.png |
+| reference_image_urls | list<string> | optional | 仅在 URL 已验证可被 OTU 服务端无鉴权拉取时使用 |
+| provider_error_code | string | optional | provider 或输入通道错误码 |
+| provider_error_phase | enum | optional | submit / reference_preprocess / generation / query / download / compose |
 | failed_reason | text | optional | 失败原因 |
+
+真实视频参考图传输约束：
+
+- `intro_video_asset` 生成成功后，参考图必须先落到当前项目目录，再进入 `final_video`。
+- `final_video` 提交 OTU/NewAPI 时，默认用 `multipart/form-data` 的 `input_reference=@本地图片` 传输图片字节。
+- JSON `images` URL 只允许作为降级路径；该 URL 必须能被非本机、无登录态、无自定义 Referer 的外部服务直接 GET。
+- `HTTP 403 下载失败` 如果发生在 OTU 媒体预处理阶段，属于 `reference_preprocess` 输入通道失败，不等同于 completed MP4 下载失败。
+- completed MP4 下载阶段仍需使用 browser-like `User-Agent` 和宽松 `Accept`，不得强制 `Referer: https://otuapi.com/`。
 
 ## 节点 9：最终交付（final_delivery）
 

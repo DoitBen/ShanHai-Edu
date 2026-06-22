@@ -191,6 +191,38 @@ def test_octo_video_provider_uses_authorization_for_submit_and_query():
     assert calls[1]["headers"]["Authorization"] == "Bearer test-token"
 
 
+def test_octo_video_provider_submits_local_reference_as_multipart(tmp_path: Path):
+    image = tmp_path / "asset_ref_01.png"
+    image.write_bytes(b"\x89PNG\r\n\x1a\nlocal-ref")
+    calls: list[dict[str, Any]] = []
+
+    def transport(method: str, url: str, **kwargs: Any) -> dict[str, Any]:
+        calls.append({"method": method, "url": url, **kwargs})
+        return {"id": "task_remote_1", "status": "queued", "progress": 0}
+
+    provider = OctoVideoProvider(api_key="test-token", base_url="https://otuapi.com", transport=transport)
+
+    submitted = provider.submit_video(
+        {
+            "model": "omni_flash-10s",
+            "prompt": "课堂导入视频",
+            "size": "1280x720",
+            "images": ["https://cdn.example/asset_ref_01.png"],
+            "reference_image_paths": [str(image)],
+        }
+    )
+
+    assert submitted["provider_task_id"] == "task_remote_1"
+    assert calls[0]["headers"]["Authorization"] == "Bearer test-token"
+    assert calls[0]["headers"]["Content-Type"].startswith("multipart/form-data; boundary=")
+    assert "json" not in calls[0]
+    body = calls[0]["data"]
+    assert b'name="model"' in body
+    assert b"omni_flash-10s" in body
+    assert b'name="input_reference"; filename="asset_ref_01.png"' in body
+    assert b"https://cdn.example/asset_ref_01.png" not in body
+
+
 @pytest.mark.parametrize(
     ("raw", "expected_url"),
     [
@@ -1571,6 +1603,55 @@ def test_real_video_submit_creates_tasks_for_all_storyboard_shots_and_uses_refer
     assert submitted_payloads[1]["images"] == ["https://cdn.example/asset_ref_02.png"]
 
 
+def test_real_video_submit_prefers_local_reference_image_paths_for_multipart(tmp_path: Path):
+    client = make_client(tmp_path)
+    client.app.state.service.provider = type("StubTextProvider", (), {"name": "deepseek"})()
+    project = _create_project_with_approved_storyboard(client, "真实视频本地图提交")
+    project_id = project["project_id"]
+    project_dir = Path(project["project_dir"])
+    local_image = project_dir / "assets" / "generated_images" / "asset_ref_01.png"
+    local_image.parent.mkdir(parents=True, exist_ok=True)
+    local_image.write_bytes(b"\x89PNG\r\n\x1a\nlocal-ref")
+    with client.app.state.store.connect(project_dir) as conn:
+        client.app.state.store.create_task(
+            conn,
+            project_id,
+            "intro_video_asset",
+            "image_generation",
+            {"asset_id": "asset_ref_01", "image_path": "assets/generated_images/asset_ref_01.png"},
+            status="completed",
+            result={
+                "provider_task_id": "image_remote_01",
+                "image_path": "assets/generated_images/asset_ref_01.png",
+                "image_url": "https://cdn.example/asset_ref_01.png",
+                "download_status": "downloaded",
+            },
+        )
+    submitted_payloads: list[dict[str, Any]] = []
+
+    class SuccessfulVideoProvider:
+        def submit_video(self, payload: dict[str, Any]):
+            submitted_payloads.append(payload)
+            return {
+                "provider_task_id": "octo_task_001",
+                "status": "queued",
+                "progress": 0,
+                "video_url": None,
+                "raw": {},
+            }
+
+    client.app.state.service.video_provider = SuccessfulVideoProvider()
+
+    generated = unwrap(client.post(f"/projects/{project_id}/nodes/final_video/generate", json={"video_shot_limit": 1}))
+
+    assert submitted_payloads[0]["reference_image_paths"] == [str(local_image)]
+    assert "images" not in submitted_payloads[0]
+    task_payload = generated["tasks"][0]["payload"]
+    assert task_payload["reference_submission_mode"] == "multipart"
+    assert task_payload["reference_image_paths"] == ["assets/generated_images/asset_ref_01.png"]
+    assert task_payload["reference_image_urls"] == ["https://cdn.example/asset_ref_01.png"]
+
+
 def test_real_image_provider_success_persists_task_and_downloadable_path(tmp_path: Path):
     client = make_client(tmp_path)
     project = _create_project_with_approved_screenplay(client, "真实图片成功")
@@ -1938,7 +2019,23 @@ def test_retry_video_clip_task_resubmits_single_clip(tmp_path: Path):
     project = _create_project_with_approved_storyboard(client, "视频 clip 重试")
     project_id = project["project_id"]
     project_dir = Path(project["project_dir"])
+    local_image = project_dir / "assets" / "generated_images" / "asset_ref_01.png"
+    local_image.parent.mkdir(parents=True, exist_ok=True)
+    local_image.write_bytes(b"\x89PNG\r\n\x1a\nretry-ref")
     with client.app.state.store.connect(project_dir) as conn:
+        client.app.state.store.create_task(
+            conn,
+            project_id,
+            "intro_video_asset",
+            "image_generation",
+            {"asset_id": "asset_ref_01", "image_path": "assets/generated_images/asset_ref_01.png"},
+            status="completed",
+            result={
+                "image_path": "assets/generated_images/asset_ref_01.png",
+                "image_url": "https://cdn.example/asset_ref_01.png",
+                "download_status": "downloaded",
+            },
+        )
         task = client.app.state.store.create_task(
             conn,
             project_id,
@@ -1960,6 +2057,8 @@ def test_retry_video_clip_task_resubmits_single_clip(tmp_path: Path):
         def submit_video(self, payload: dict[str, Any]):
             assert payload["model"] == "omni_flash-10s"
             assert payload["prompt"] == "中文旁白：重试镜头"
+            assert payload["reference_image_paths"] == [str(local_image)]
+            assert "images" not in payload
             return {
                 "provider_task_id": "octo_retry_001",
                 "status": "queued",
@@ -2280,6 +2379,89 @@ def test_sync_task_composes_final_video_after_single_real_clip_when_limited(tmp_
     assert final_node["status"] == "needs_review"
     assert final_node["content"]["clip_count"] == 1
     assert final_node["content"]["video_path"] == "outputs/final_video.mp4"
+
+
+def test_sync_task_composes_latest_final_video_run_ignoring_historical_failed_tasks(tmp_path: Path, monkeypatch):
+    client = make_client(tmp_path)
+    project = unwrap(
+        client.post(
+            "/projects",
+            json={
+                "name": "真实单 clip 历史失败后合成",
+                "subject": "math",
+                "grade": "3",
+                "textbook_version": "renjiao",
+                "volume": "xia",
+                "lesson_type": "public",
+            },
+        )
+    )
+    project_id = project["project_id"]
+    project_dir = Path(project["project_dir"])
+    with client.app.state.store.connect(project_dir) as conn:
+        client.app.state.store.create_task(
+            conn,
+            project_id,
+            "final_video",
+            "video_clip_generation",
+            {"provider_task_id": "task_old_failed", "shot_id": "shot_01", "reference_image_ids": ["asset_ref_01"]},
+            status="failed",
+            result={"download_path": "clips/shot_01.mp4", "download_status": "not_started", "error_code": "OCTO_REQUEST_FAILED"},
+            error_message="HTTP 400",
+        )
+        task_1 = client.app.state.store.create_task(
+            conn,
+            project_id,
+            "final_video",
+            "video_clip_generation",
+            {"provider_task_id": "task_remote_1", "shot_id": "shot_01", "reference_image_ids": ["asset_ref_01"]},
+            status="processing",
+            result={"download_path": "clips/shot_01.mp4"},
+        )
+        client.app.state.store.write_version(
+            conn,
+            project_id,
+            "final_video",
+            {
+                "clip_count": 1,
+                "clips": [{"shot_id": "shot_01", "api_task_id": task_1["task_id"], "download_path": "clips/shot_01.mp4", "status": "queued"}],
+                "video_path": "outputs/final_video.mp4",
+            },
+            "ai",
+            "fixture",
+            "drafted",
+        )
+    composed: dict[str, Any] = {}
+
+    def fake_compose(project_dir_arg: Path, clip_rel_paths: list[str]) -> Path:
+        composed["clips"] = clip_rel_paths
+        output = project_dir_arg / "outputs" / "final_video.mp4"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"latest real final video")
+        return output
+
+    monkeypatch.setattr("app.video_orchestrator.compose_final_video_from_clips", fake_compose)
+
+    class StubVideoProvider:
+        def query_task(self, provider_task_id: str):
+            return {
+                "provider_task_id": provider_task_id,
+                "status": "completed",
+                "progress": 100,
+                "video_url": "https://cdn.example/shot_01.mp4",
+                "raw": {},
+            }
+
+        def download_video(self, video_url: str, target_path: Path):
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            target_path.write_bytes(b"clip-1")
+
+    client.app.state.service.video_provider = StubVideoProvider()
+
+    unwrap(client.get(f"/projects/{project_id}/tasks/{task_1['task_id']}"))
+
+    assert composed["clips"] == ["clips/shot_01.mp4"]
+    assert (project_dir / "outputs" / "final_video.mp4").read_bytes() == b"latest real final video"
 
 
 def test_sync_task_marks_compose_failure_when_ffmpeg_missing(tmp_path: Path, monkeypatch):

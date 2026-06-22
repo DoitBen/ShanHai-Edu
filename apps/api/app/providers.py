@@ -8,6 +8,7 @@ import socket
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +38,36 @@ def sanitize_provider_excerpt(value: str, limit: int = 600) -> str:
     redacted = re.sub(r"\b(?:sk|octo|deepseek)-[A-Za-z0-9._-]{8,}\b", "<redacted>", redacted)
     redacted = redacted.replace("\r", " ").replace("\n", " ")
     return redacted[:limit]
+
+
+def _multipart_video_body(fields: dict[str, Any], reference_paths: list[Path]) -> tuple[bytes, str]:
+    boundary = f"----ShanHaiEdu{uuid.uuid4().hex}"
+    chunks: list[bytes] = []
+    for key, value in fields.items():
+        if value is None:
+            continue
+        chunks.extend(
+            [
+                f"--{boundary}\r\n".encode("utf-8"),
+                f'Content-Disposition: form-data; name="{key}"\r\n\r\n'.encode("utf-8"),
+                str(value).encode("utf-8"),
+                b"\r\n",
+            ]
+        )
+    for path in reference_paths:
+        if not path.is_file():
+            raise ProviderError("OCTO_REFERENCE_FILE_MISSING", f"参考图文件不存在：{path}", retryable=False)
+        chunks.extend(
+            [
+                f"--{boundary}\r\n".encode("utf-8"),
+                f'Content-Disposition: form-data; name="input_reference"; filename="{path.name}"\r\n'.encode("utf-8"),
+                b"Content-Type: image/png\r\n\r\n",
+                path.read_bytes(),
+                b"\r\n",
+            ]
+        )
+    chunks.append(f"--{boundary}--\r\n".encode("utf-8"))
+    return b"".join(chunks), boundary
 
 
 def strip_json_fence(text: str) -> str:
@@ -304,7 +335,18 @@ class OctoVideoProvider:
         self.transport = transport or self._http_transport
 
     def submit_video(self, payload: dict[str, Any]) -> dict[str, Any]:
-        raw = self.transport("POST", f"{self.base_url}/v1/videos", headers=self._headers(), json=payload)
+        reference_paths = payload.get("reference_image_paths") or []
+        if reference_paths:
+            request_payload = {key: value for key, value in payload.items() if key not in {"images", "reference_image_paths"}}
+            data, boundary = _multipart_video_body(request_payload, [Path(path) for path in reference_paths])
+            raw = self.transport(
+                "POST",
+                f"{self.base_url}/v1/videos",
+                headers={**self._auth_headers(), "Content-Type": f"multipart/form-data; boundary={boundary}"},
+                data=data,
+            )
+        else:
+            raw = self.transport("POST", f"{self.base_url}/v1/videos", headers=self._json_headers(), json=payload)
         task_id = raw.get("id") or raw.get("task_id") or raw.get("data", {}).get("id")
         if not task_id:
             raise ProviderError("OCTO_RESPONSE_INVALID", "章鱼哥提交视频未返回任务 ID", retryable=True)
@@ -318,7 +360,7 @@ class OctoVideoProvider:
         }
 
     def query_task(self, provider_task_id: str) -> dict[str, Any]:
-        raw = self.transport("GET", f"{self.base_url}/v1/videos/{urllib.parse.quote(provider_task_id)}", headers=self._headers())
+        raw = self.transport("GET", f"{self.base_url}/v1/videos/{urllib.parse.quote(provider_task_id)}", headers=self._auth_headers())
         error_code, retryable = self._classify_query_error(raw)
         return {
             "provider_task_id": provider_task_id,
@@ -354,14 +396,19 @@ class OctoVideoProvider:
         except urllib.error.URLError as exc:
             raise ProviderError("OCTO_DOWNLOAD_FAILED", f"视频下载失败：{exc.reason}", retryable=True) from exc
 
-    def _headers(self) -> dict[str, str]:
+    def _auth_headers(self) -> dict[str, str]:
         if not self.api_key:
             raise ProviderError("OCTO_KEY_MISSING", "未配置 OCTO_API_KEY", retryable=False)
-        return {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+        return {"Authorization": f"Bearer {self.api_key}"}
+
+    def _json_headers(self) -> dict[str, str]:
+        return {**self._auth_headers(), "Content-Type": "application/json"}
 
     def _http_transport(self, method: str, url: str, **kwargs: Any) -> dict[str, Any]:
         body = kwargs.get("json")
-        data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
+        data = kwargs.get("data")
+        if data is None and body is not None:
+            data = json.dumps(body, ensure_ascii=False).encode("utf-8")
         request = urllib.request.Request(url, data=data, headers=kwargs.get("headers") or {}, method=method)
         return _request_json(request, "OCTO_REQUEST_FAILED")
 

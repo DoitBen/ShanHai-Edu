@@ -303,10 +303,10 @@ class ProjectStore:
             "review_reason": review_reason,
         }
 
-    def node_detail(self, project_id: str, node_id: str) -> dict[str, Any]:
+    def node_detail(self, project_id: str, node_id: str, workflow: WorkflowConfig | None = None) -> dict[str, Any]:
         project = self.get_project(project_id)
         with self.connect(Path(project["project_dir"])) as conn:
-            state = self.decorate_node_state(conn, project_id, self.node_state(conn, project_id, node_id))
+            state = self.decorate_node_state(conn, project_id, self.node_state(conn, project_id, node_id), workflow)
             content = self.current_content(conn, project_id, node_id)
         return {**state, "content": content}
 

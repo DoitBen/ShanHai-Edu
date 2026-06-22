@@ -262,7 +262,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
     @app.get("/projects/{project_id}/nodes/{node_id}", dependencies=protected)
     def get_node(project_id: str, node_id: str):
         try:
-            return ok(store.node_detail(project_id, node_id))
+            return ok(store.node_detail(project_id, node_id, workflow))
         except KeyError as exc:
             return fail(404, "NOT_FOUND", str(exc), retryable=False)
 

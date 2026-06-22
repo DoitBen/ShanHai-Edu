@@ -195,3 +195,25 @@ def test_manifest_exposes_workflow_contract_capabilities_and_artifacts(tmp_path:
         "pptx_path": artifact_result["content"]["pptx_path"],
         "video_path": artifact_result["content"]["video_path"],
     }
+
+
+def test_node_detail_uses_same_workflow_contract_as_manifest(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project(client)
+    project_id = project["project_id"]
+
+    manifest = unwrap_ok(client.get(f"/projects/{project_id}/manifest"))
+    manifest_node = {node["node_id"]: node for node in manifest["nodes"]}["ppt_page_script"]
+    detail = unwrap_ok(client.get(f"/projects/{project_id}/nodes/ppt_page_script"))
+
+    for key in ["title", "step", "branch", "depends_on", "schema"]:
+        assert detail[key] == manifest_node[key]
+    assert detail["title"] == "PPT 页面脚本"
+    assert detail["step"] == 3
+    assert detail["branch"] == "ppt"
+    assert detail["depends_on"] == ["ppt_assembly_plan", "character_dict", "visual_contract"]
+    assert detail["schema"] == "schemas/ppt_page_script.schema.json"
+    assert detail["capabilities"]["can_generate"] is False
+    assert detail["capabilities"] == manifest_node["capabilities"]
+    assert detail["artifact"] == manifest_node["artifact"]
+    assert detail["rule_summary"] == manifest_node["rule_summary"]

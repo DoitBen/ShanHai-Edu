@@ -219,6 +219,112 @@ def test_r026_ignores_notes_text_when_actual_pptx_visible_shapes_are_clean(tmp_p
     assert rows[0]["passed"] == 1
 
 
+def test_r026_blocks_pptx_artifact_without_pptx_path(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project(client)
+    project_id = project["project_id"]
+    content = {
+        "slide_count": 1,
+        "notes_count": 0,
+        "media_count": 1,
+        "svg_quality_passed": True,
+    }
+    write_current_version(client, project, "pptx_artifact", content)
+
+    response = client.post(f"/projects/{project_id}/nodes/pptx_artifact/approve", json={})
+
+    error = error_payload(response, 409, "RULE_VIOLATION_R026")
+    assert error["details"]["error_code"] == "PPTX_PATH_MISSING"
+    rows = rule_rows(project, "R026")
+    assert len(rows) == 1
+    assert rows[0]["passed"] == 0
+
+
+def test_r026_blocks_pptx_artifact_when_file_is_missing(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project(client)
+    project_id = project["project_id"]
+    content = {
+        "pptx_path": "exports/missing.pptx",
+        "slide_count": 1,
+        "notes_count": 0,
+        "media_count": 1,
+        "svg_quality_passed": True,
+    }
+    write_current_version(client, project, "pptx_artifact", content)
+
+    response = client.post(f"/projects/{project_id}/nodes/pptx_artifact/approve", json={})
+
+    error = error_payload(response, 409, "RULE_VIOLATION_R026")
+    assert error["details"]["error_code"] == "PPTX_FILE_NOT_FOUND"
+    rows = rule_rows(project, "R026")
+    assert len(rows) == 1
+    assert rows[0]["passed"] == 0
+
+
+def test_r026_blocks_pptx_artifact_when_path_is_outside_project(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project(client)
+    project_id = project["project_id"]
+    content = {
+        "pptx_path": "../outside.pptx",
+        "slide_count": 1,
+        "notes_count": 0,
+        "media_count": 1,
+        "svg_quality_passed": True,
+    }
+    write_current_version(client, project, "pptx_artifact", content)
+
+    response = client.post(f"/projects/{project_id}/nodes/pptx_artifact/approve", json={})
+
+    error = error_payload(response, 409, "RULE_VIOLATION_R026")
+    assert error["details"]["error_code"] == "PPTX_PATH_OUTSIDE_PROJECT"
+
+
+def test_r026_blocks_pptx_artifact_when_path_is_not_pptx(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project(client)
+    project_id = project["project_id"]
+    bad_path = Path(project["project_dir"]) / "exports" / "artifact.txt"
+    bad_path.parent.mkdir(parents=True, exist_ok=True)
+    bad_path.write_text("not a pptx", encoding="utf-8")
+    content = {
+        "pptx_path": "exports/artifact.txt",
+        "slide_count": 1,
+        "notes_count": 0,
+        "media_count": 1,
+        "svg_quality_passed": True,
+    }
+    write_current_version(client, project, "pptx_artifact", content)
+
+    response = client.post(f"/projects/{project_id}/nodes/pptx_artifact/approve", json={})
+
+    error = error_payload(response, 409, "RULE_VIOLATION_R026")
+    assert error["details"]["error_code"] == "PPTX_EXTENSION_INVALID"
+
+
+def test_r026_blocks_pptx_artifact_when_pptx_cannot_be_parsed(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project(client)
+    project_id = project["project_id"]
+    bad_path = Path(project["project_dir"]) / "exports" / "broken.pptx"
+    bad_path.parent.mkdir(parents=True, exist_ok=True)
+    bad_path.write_text("not a real pptx", encoding="utf-8")
+    content = {
+        "pptx_path": "exports/broken.pptx",
+        "slide_count": 1,
+        "notes_count": 0,
+        "media_count": 1,
+        "svg_quality_passed": True,
+    }
+    write_current_version(client, project, "pptx_artifact", content)
+
+    response = client.post(f"/projects/{project_id}/nodes/pptx_artifact/approve", json={})
+
+    error = error_payload(response, 409, "RULE_VIOLATION_R026")
+    assert error["details"]["error_code"] == "PPTX_PARSE_FAILED"
+
+
 def test_r001_blocks_final_video_non_male_zh_voice(tmp_path: Path):
     client = make_client(tmp_path)
     project = create_project(client)

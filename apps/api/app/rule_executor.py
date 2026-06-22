@@ -24,6 +24,9 @@ class RuleExecutionError(ValueError):
 
     @property
     def details(self) -> dict[str, Any]:
+        nested_details = self.result.get("details")
+        if isinstance(nested_details, dict):
+            return {**self.result, **nested_details, "details": nested_details}
         return self.result
 
 
@@ -267,10 +270,19 @@ class RuleExecutor:
             "draft",
             "candidate",
         ]
-        text_values = [{"source": "content_json", "text": value} for value in RuleExecutor._collect_strings(content)]
         pptx_path = content.get("pptx_path") if isinstance(content.get("pptx_path"), str) else None
-        if pptx_path:
-            text_values.extend(self._pptx_visible_text_values(conn, store, project_id, pptx_path))
+        if not pptx_path:
+            return False, {
+                "pptx_path": None,
+                "error_code": "PPTX_PATH_MISSING",
+                "violations": [{"source": "pptx_path", "error_code": "PPTX_PATH_MISSING", "text": ""}],
+            }
+        pptx_probe = self._pptx_visible_text_values(conn, store, project_id, pptx_path)
+        pptx_error = next((item for item in pptx_probe if "error_code" in item), None)
+        if pptx_error:
+            return False, {"pptx_path": pptx_path, "error_code": pptx_error["error_code"], "violations": [pptx_error]}
+        text_values = [{"source": "content_json", "text": value} for value in RuleExecutor._collect_strings(content)]
+        text_values.extend(pptx_probe)
         hits = []
         for item in text_values:
             value = item["text"]
@@ -287,10 +299,18 @@ class RuleExecutor:
         rel_path: str,
     ) -> list[dict[str, str]]:
         project_dir = Path(store.get_project(project_id)["project_dir"])
+        project_root = project_dir.resolve()
         pptx_path = (project_dir / rel_path).resolve()
-        if not _is_within(pptx_path, project_dir.resolve()) or pptx_path.suffix.lower() != ".pptx" or not pptx_path.exists():
-            return [{"source": "pptx_missing", "text": rel_path}]
-        presentation = Presentation(str(pptx_path))
+        if not _is_within(pptx_path, project_root):
+            return [{"source": "pptx_path", "error_code": "PPTX_PATH_OUTSIDE_PROJECT", "text": rel_path}]
+        if pptx_path.suffix.lower() != ".pptx":
+            return [{"source": "pptx_path", "error_code": "PPTX_EXTENSION_INVALID", "text": rel_path}]
+        if not pptx_path.exists():
+            return [{"source": "pptx_path", "error_code": "PPTX_FILE_NOT_FOUND", "text": rel_path}]
+        try:
+            presentation = Presentation(str(pptx_path))
+        except Exception:
+            return [{"source": "pptx_path", "error_code": "PPTX_PARSE_FAILED", "text": rel_path}]
         values: list[dict[str, str]] = []
         for slide_index, slide in enumerate(presentation.slides, start=1):
             for shape_index, shape in enumerate(slide.shapes, start=1):

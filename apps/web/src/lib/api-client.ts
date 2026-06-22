@@ -14,7 +14,7 @@ import type {
   VideoCapabilitiesResponse,
 } from "./types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+const API_BASE = "/api/backend";
 
 export function resolveApiDownloadUrl(downloadUrl: string): string {
   if (/^https?:\/\//i.test(downloadUrl)) return downloadUrl;

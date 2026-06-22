@@ -150,3 +150,48 @@ def test_ppt_runtime_manifest_and_artifact_generation(tmp_path: Path):
     final_states = {node["node_id"]: node["status"] for node in final_manifest["nodes"]}
     assert final_states["pptx_artifact"] == "approved"
     assert "final_delivery" not in final_states
+
+
+def test_manifest_exposes_workflow_contract_capabilities_and_artifacts(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project(client)
+    project_id = project["project_id"]
+
+    manifest = unwrap_ok(client.get(f"/projects/{project_id}/manifest"))
+    nodes = {node["node_id"]: node for node in manifest["nodes"]}
+
+    ppt_plan = nodes["ppt_assembly_plan"]
+    assert ppt_plan["title"] == "PPT 总装方案"
+    assert ppt_plan["step"] == 2
+    assert ppt_plan["branch"] == "ppt"
+    assert ppt_plan["depends_on"] == ["lesson_plan"]
+    assert ppt_plan["schema"] == "schemas/ppt_assembly_plan.schema.json"
+    assert ppt_plan["capabilities"] == {
+        "can_generate": False,
+        "can_edit": True,
+        "can_approve": False,
+        "can_redo": False,
+        "can_skip": False,
+    }
+    assert ppt_plan["artifact"] is None
+    assert ppt_plan["rule_summary"] == {
+        "hard_block_count": 0,
+        "warning_count": 0,
+        "failed_rule_ids": [],
+        "warning_rule_ids": [],
+    }
+
+    upload_textbook(client, project_id)
+    for node_id in ["textbook_parse", "lesson_plan", "visual_contract", "character_dict", "ppt_assembly_plan", "ppt_page_script", "ppt_visual_asset"]:
+        generate_and_approve(client, project_id, node_id)
+    artifact_result = unwrap_ok(client.post(f"/projects/{project_id}/nodes/pptx_artifact/generate", json={}))
+
+    artifact_manifest = unwrap_ok(client.get(f"/projects/{project_id}/manifest"))
+    artifact_node = {node["node_id"]: node for node in artifact_manifest["nodes"]}["pptx_artifact"]
+    assert artifact_node["capabilities"]["can_edit"] is False
+    assert artifact_node["capabilities"]["can_approve"] is True
+    assert artifact_node["artifact"] == {
+        "download_url": artifact_result["content"]["download_url"],
+        "pptx_path": artifact_result["content"]["pptx_path"],
+        "video_path": artifact_result["content"]["video_path"],
+    }

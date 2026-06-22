@@ -64,11 +64,40 @@ export interface CreateProjectPayload {
 export interface ApiNodeState {
   project_id: string;
   node_id: string;
+  title?: string | null;
+  step?: number | string | null;
+  branch?: "shared" | "ppt" | "intro_video" | string | null;
+  depends_on?: string[];
+  schema?: string | null;
   status: string;
   current_version_id: string | null;
   updated_at: string | null;
+  capabilities?: ApiNodeCapabilities;
+  artifact?: ApiNodeArtifact | null;
+  rule_summary?: ApiRuleSummary;
   latest_transition?: ApiStateTransition | null;
   review_reason?: ApiReviewReason | null;
+}
+
+export interface ApiNodeCapabilities {
+  can_generate: boolean;
+  can_edit: boolean;
+  can_approve: boolean;
+  can_redo: boolean;
+  can_skip: boolean;
+}
+
+export interface ApiNodeArtifact {
+  download_url?: string;
+  pptx_path?: string;
+  video_path?: string;
+}
+
+export interface ApiRuleSummary {
+  hard_block_count: number;
+  warning_count: number;
+  failed_rule_ids: string[];
+  warning_rule_ids: string[];
 }
 
 export interface ApiManifest {
@@ -205,6 +234,9 @@ export interface WorkflowStage {
   duration?: string;
   reviewReason?: string;
   reviewTrigger?: string;
+  capabilities?: ApiNodeCapabilities;
+  artifact?: ApiNodeArtifact | null;
+  ruleSummary?: ApiRuleSummary;
 }
 
 export interface TextbookParseResult {

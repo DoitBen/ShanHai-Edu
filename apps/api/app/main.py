@@ -178,7 +178,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
     @app.get("/projects/{project_id}/manifest", dependencies=protected)
     def get_manifest(project_id: str):
         try:
-            return ok(store.manifest(project_id))
+            return ok(store.manifest(project_id, workflow))
         except KeyError:
             return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
 

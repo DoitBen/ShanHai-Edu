@@ -328,19 +328,23 @@ function mapApiNodesToStages(nodes: ApiNodeState[]): WorkflowStage[] {
     .map((node, index) => {
       const def = NODE_DEFS[node.node_id] || fallbackNodeDef(node.node_id, index + 1);
       const reviewReason = formatReviewReason(node.review_reason);
+      const branch = mapWorkflowBranch(node.branch, def.branch);
       return {
         key: def.key,
         apiNodeId: node.node_id,
-        title: def.title,
-        branch: def.branch,
-        order: def.order,
+        title: node.title || def.title,
+        branch,
+        order: typeof node.step === "number" ? node.step : def.order,
         status: mapStageStatus(node.status),
         reviewReason,
         reviewTrigger: node.review_reason?.trigger,
-        summary: def.summary,
+        summary: formatNodeSummary(node, def.summary),
         input: "",
         result: "",
         evidence: [],
+        capabilities: node.capabilities,
+        artifact: node.artifact,
+        ruleSummary: node.rule_summary,
         logs: [
           {
             id: `manifest-${node.node_id}`,
@@ -362,6 +366,21 @@ function mapApiNodesToStages(nodes: ApiNodeState[]): WorkflowStage[] {
       } satisfies WorkflowStage;
     })
     .sort((a, b) => a.order - b.order);
+}
+
+function mapWorkflowBranch(apiBranch: ApiNodeState["branch"], fallback: WorkflowBranch): WorkflowBranch {
+  if (apiBranch === "ppt") return "ppt";
+  if (apiBranch === "intro_video" || apiBranch === "video") return "video";
+  if (apiBranch === "shared" || apiBranch === "common") return "common";
+  return fallback;
+}
+
+function formatNodeSummary(node: ApiNodeState, fallback: string): string {
+  const details = [
+    node.schema ? `schema: ${node.schema}` : null,
+    node.depends_on?.length ? `依赖: ${node.depends_on.join(", ")}` : null,
+  ].filter(Boolean);
+  return details.length ? details.join("；") : fallback;
 }
 
 function fallbackNodeDef(nodeId: string, order: number): NodeDef {

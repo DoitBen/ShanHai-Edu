@@ -253,13 +253,13 @@ class ProjectStore:
                     projects.append(data)
         return sorted(projects, key=lambda p: p["created_at"], reverse=True)
 
-    def manifest(self, project_id: str) -> dict[str, Any]:
+    def manifest(self, project_id: str, workflow: WorkflowConfig | None = None) -> dict[str, Any]:
         project = self.get_project(project_id)
         with self.connect(Path(project["project_dir"])) as conn:
             rows = conn.execute("SELECT * FROM node_state ORDER BY rowid").fetchall()
         return {
             "project": project,
-            "nodes": [self.decorate_node_state(conn, project_id, dict(row)) for row in rows],
+            "nodes": [self.decorate_node_state(conn, project_id, dict(row), workflow) for row in rows],
         }
 
     def node_state(self, conn: sqlite3.Connection, project_id: str, node_id: str) -> dict[str, Any]:
@@ -271,7 +271,13 @@ class ProjectStore:
             raise KeyError(f"Unknown node: {node_id}")
         return dict(row)
 
-    def decorate_node_state(self, conn: sqlite3.Connection, project_id: str, state: dict[str, Any]) -> dict[str, Any]:
+    def decorate_node_state(
+        self,
+        conn: sqlite3.Connection,
+        project_id: str,
+        state: dict[str, Any],
+        workflow: WorkflowConfig | None = None,
+    ) -> dict[str, Any]:
         latest_transition = self.latest_transition(conn, project_id, state["node_id"])
         review_reason = None
         if state.get("status") == "needs_review" and latest_transition and latest_transition.get("trigger") == "cascade_invalidate":
@@ -281,8 +287,15 @@ class ProjectStore:
                 "version_id_before": latest_transition.get("version_id_before"),
                 "version_id_after": latest_transition.get("version_id_after"),
             }
+        node_id = state["node_id"]
+        node_config = self._workflow_node_config(workflow, node_id)
+        content = self.current_content(conn, project_id, node_id) if state.get("current_version_id") else None
         return {
             **state,
+            **self._manifest_workflow_fields(node_config),
+            "capabilities": self._manifest_capabilities(conn, project_id, state, node_config),
+            "artifact": self._manifest_artifact(content),
+            "rule_summary": self._manifest_rule_summary(conn, project_id, node_id),
             "latest_transition": latest_transition,
             "review_reason": review_reason,
         }
@@ -293,6 +306,86 @@ class ProjectStore:
             state = self.decorate_node_state(conn, project_id, self.node_state(conn, project_id, node_id))
             content = self.current_content(conn, project_id, node_id)
         return {**state, "content": content}
+
+    def _workflow_node_config(self, workflow: WorkflowConfig | None, node_id: str) -> dict[str, Any] | None:
+        if workflow is None:
+            return None
+        try:
+            return workflow.get_node(node_id)
+        except KeyError:
+            return None
+
+    def _manifest_workflow_fields(self, node_config: dict[str, Any] | None) -> dict[str, Any]:
+        if node_config is None:
+            return {
+                "title": None,
+                "step": None,
+                "branch": None,
+                "depends_on": [],
+                "schema": None,
+            }
+        return {
+            "title": node_config.get("title"),
+            "step": node_config.get("step"),
+            "branch": node_config.get("branch"),
+            "depends_on": list(node_config.get("depends_on") or []),
+            "schema": node_config.get("schema"),
+        }
+
+    def _manifest_capabilities(
+        self,
+        conn: sqlite3.Connection,
+        project_id: str,
+        state: dict[str, Any],
+        node_config: dict[str, Any] | None,
+    ) -> dict[str, bool]:
+        status = state.get("status")
+        node_id = state["node_id"]
+        dependencies = list(node_config.get("depends_on") or []) if node_config else []
+        deps_passable = True
+        for dep in dependencies:
+            dep_row = conn.execute(
+                "SELECT status FROM node_state WHERE project_id = ? AND node_id = ?",
+                (project_id, dep),
+            ).fetchone()
+            if dep_row is None or dep_row["status"] not in {"approved", "skipped"}:
+                deps_passable = False
+                break
+        is_artifact = node_id in {"pptx_artifact", "final_video"}
+        has_version = bool(state.get("current_version_id"))
+        return {
+            "can_generate": deps_passable and status in {"not_started", "drafted", "needs_review", "blocked"},
+            "can_edit": not is_artifact,
+            "can_approve": status == "needs_review" and has_version,
+            "can_redo": status in {"needs_review", "approved", "blocked"} and has_version,
+            "can_skip": bool(node_config and node_config.get("optional") is True and status not in {"approved", "skipped"}),
+        }
+
+    def _manifest_artifact(self, content: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not isinstance(content, dict):
+            return None
+        artifact_keys = ["download_url", "pptx_path", "video_path"]
+        artifact = {key: content[key] for key in artifact_keys if content.get(key)}
+        return artifact or None
+
+    def _manifest_rule_summary(self, conn: sqlite3.Connection, project_id: str, node_id: str) -> dict[str, Any]:
+        rows = conn.execute(
+            """
+            SELECT rule_id, severity, passed FROM rule_result_log
+            WHERE project_id = ? AND node_id = ?
+            ORDER BY created_at
+            """,
+            (project_id, node_id),
+        ).fetchall()
+        failed_rule_ids = sorted({row["rule_id"] for row in rows if not row["passed"]})
+        warning_rule_ids = sorted({row["rule_id"] for row in rows if row["severity"] == "warning" and not row["passed"]})
+        hard_block_rule_ids = sorted({row["rule_id"] for row in rows if row["severity"] == "hard_block" and not row["passed"]})
+        return {
+            "hard_block_count": len(hard_block_rule_ids),
+            "warning_count": len(warning_rule_ids),
+            "failed_rule_ids": failed_rule_ids,
+            "warning_rule_ids": warning_rule_ids,
+        }
 
     def current_content(self, conn: sqlite3.Connection, project_id: str, node_id: str) -> dict[str, Any] | None:
         state = self.node_state(conn, project_id, node_id)

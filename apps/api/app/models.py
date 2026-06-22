@@ -36,6 +36,8 @@ class NodeEditRequest(BaseModel):
 
 class NodeApproveRequest(BaseModel):
     approve_note: str | None = None
+    override_warning_rule_ids: list[str] = Field(default_factory=list)
+    override_reason: str | None = None
 
 
 def dump_model(model: BaseModel, *, exclude_none: bool = False) -> dict[str, Any]:

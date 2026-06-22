@@ -5,6 +5,7 @@ import json
 from .ppt_exporter import export_project_ppt
 from .providers import DeepSeekTextProvider, FakeProvider, MinimaxTextProvider, NewApiImageProvider, OctoVideoProvider, ProviderError, sanitize_provider_excerpt
 from .prompt_loader import PromptTemplateMissing, PromptVariableMissing, render_prompt_file
+from .rule_executor import RuleExecutor
 from .state_engine import StateEngine
 from .store import ProjectStore, now_iso
 from .textbook_parser import TextbookParser, TextbookSource
@@ -444,6 +445,7 @@ class WorkflowService:
         self.tts_provider = tts_provider
         self.video_model = video_model
         self.state_engine = StateEngine(store, self._dependencies())
+        self.rule_executor = RuleExecutor(workflow.root / "rules" if workflow else None)
 
     def generate_node(self, project_id: str, node_id: str, options: dict[str, Any] | None = None) -> dict[str, Any]:
         project = self.store.get_project(project_id)
@@ -509,15 +511,28 @@ class WorkflowService:
         with self.store.connect(Path(project["project_dir"])) as conn:
             self._assert_dependencies(conn, project_id, node_id, allow_existing=True)
             validate_edit_content(node_id, content, self._edit_validation_context(conn, project_id))
+            self.rule_executor.run_for_event(conn, self.store, project_id, node_id, "on_save", content)
             return self._write_review_version(conn, project_id, node_id, content, "human_edit", None, "user_save_edit")
 
-    def approve_node(self, project_id: str, node_id: str) -> dict[str, Any]:
+    def approve_node(self, project_id: str, node_id: str, approve_options: dict[str, Any] | None = None) -> dict[str, Any]:
         project = self.store.get_project(project_id)
         project_dir = Path(project["project_dir"])
         with self.store.connect(project_dir) as conn:
             content = self.store.current_content(conn, project_id, node_id)
             if content is not None and node_id in {"intro_selection", "storyboard"}:
                 validate_approve_content(node_id, content, self._edit_validation_context(conn, project_id))
+            state = self.store.node_state(conn, project_id, node_id)
+            self.rule_executor.run_for_event(
+                conn,
+                self.store,
+                project_id,
+                node_id,
+                "on_approve_attempt",
+                content or {},
+                version_id=state.get("current_version_id"),
+                override_warning_rule_ids=(approve_options or {}).get("override_warning_rule_ids") or [],
+                override_reason=(approve_options or {}).get("override_reason"),
+            )
             return self.state_engine.approve(conn, project_id, node_id)
 
     def _write_review_version(
@@ -545,7 +560,29 @@ class WorkflowService:
         return context
 
     def _assert_dependencies(self, conn, project_id: str, node_id: str, allow_existing: bool = False) -> None:
-        self.state_engine.assert_upstreams_passable(conn, project_id, node_id)
+        dependencies = self._dependencies().get(node_id, [])
+        if not dependencies:
+            return
+        try:
+            self.state_engine.assert_upstreams_passable(conn, project_id, node_id)
+        except PermissionError as exc:
+            self.rule_executor.record_r010_result(
+                conn,
+                self.store,
+                project_id,
+                node_id,
+                False,
+                {"message": str(exc), "dependencies": dependencies},
+            )
+            raise
+        self.rule_executor.record_r010_result(
+            conn,
+            self.store,
+            project_id,
+            node_id,
+            True,
+            {"dependencies": dependencies},
+        )
 
     def _assert_selected_anchor(self, context: dict[str, Any]) -> None:
         if not _valid_anchor(_selected_anchor_from_context(context)):

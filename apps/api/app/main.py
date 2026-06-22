@@ -11,6 +11,7 @@ from .models import NodeApproveRequest, NodeEditRequest, NodeGenerateRequest, Pr
 from .providers import DeepSeekTextProvider, FakeProvider, MinimaxTextProvider, MinimaxTTSProvider, NewApiImageProvider, OctoVideoProvider, ProviderError, sanitize_provider_excerpt
 from .prompt_registry import PromptRegistry, PromptStore
 from .responses import fail, ok
+from .rule_executor import RuleHardBlockError, RuleWarningError
 from .security import require_api_token
 from .services import NodeContentValidationError, WorkflowService
 from .settings import Settings
@@ -212,17 +213,23 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
             return ok(service.edit_node(project_id, node_id, payload.content))
         except NodeContentValidationError as exc:
             return fail(400, "NODE_CONTENT_INVALID", str(exc), retryable=False, details=exc.details)
+        except RuleHardBlockError as exc:
+            return fail(400, exc.code, str(exc), retryable=False, details=exc.details)
         except PermissionError as exc:
             return fail(409, "UPSTREAM_NOT_APPROVED", str(exc), retryable=False)
         except KeyError as exc:
             return fail(404, "NOT_FOUND", str(exc), retryable=False)
 
     @app.post("/projects/{project_id}/nodes/{node_id}/approve", dependencies=protected)
-    def approve_node(project_id: str, node_id: str, _payload: NodeApproveRequest | None = None):
+    def approve_node(project_id: str, node_id: str, payload: NodeApproveRequest | None = None):
         try:
-            return ok(service.approve_node(project_id, node_id))
+            return ok(service.approve_node(project_id, node_id, dump_model(payload, exclude_none=True) if payload else {}))
         except NodeContentValidationError as exc:
             return fail(400, "NODE_CONTENT_INVALID", str(exc), retryable=False, details=exc.details)
+        except RuleWarningError as exc:
+            return fail(409, "RULE_WARNING", str(exc), retryable=False, details=exc.details)
+        except RuleHardBlockError as exc:
+            return fail(409, exc.code, str(exc), retryable=False, details=exc.details)
         except ValueError as exc:
             return fail(409, "NODE_NOT_READY", str(exc), retryable=False)
         except KeyError as exc:

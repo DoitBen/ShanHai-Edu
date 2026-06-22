@@ -165,6 +165,19 @@ class ProjectStore:
               version_id_after TEXT,
               reason TEXT
             );
+            CREATE TABLE IF NOT EXISTS rule_result_log (
+              result_id TEXT PRIMARY KEY,
+              project_id TEXT NOT NULL,
+              node_id TEXT NOT NULL,
+              version_id TEXT,
+              rule_id TEXT NOT NULL,
+              trigger_event TEXT NOT NULL,
+              severity TEXT NOT NULL,
+              passed INTEGER NOT NULL,
+              message TEXT NOT NULL,
+              details_json TEXT NOT NULL,
+              created_at TEXT NOT NULL
+            );
             """
         )
 
@@ -381,6 +394,71 @@ class ProjectStore:
             sql += " ORDER BY triggered_at"
             rows = conn.execute(sql, params).fetchall()
         return [dict(row) for row in rows]
+
+    def record_rule_result(
+        self,
+        conn: sqlite3.Connection,
+        project_id: str,
+        node_id: str,
+        version_id: str | None,
+        rule_id: str,
+        trigger_event: str,
+        severity: str,
+        passed: bool,
+        message: str,
+        details: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        result = {
+            "result_id": f"rule_{uuid.uuid4().hex[:12]}",
+            "project_id": project_id,
+            "node_id": node_id,
+            "version_id": version_id,
+            "rule_id": rule_id,
+            "trigger_event": trigger_event,
+            "severity": severity,
+            "passed": 1 if passed else 0,
+            "message": message,
+            "details": details or {},
+            "created_at": now_iso(),
+        }
+        conn.execute(
+            """
+            INSERT INTO rule_result_log
+            (result_id, project_id, node_id, version_id, rule_id, trigger_event, severity, passed, message, details_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                result["result_id"],
+                result["project_id"],
+                result["node_id"],
+                result["version_id"],
+                result["rule_id"],
+                result["trigger_event"],
+                result["severity"],
+                result["passed"],
+                result["message"],
+                json.dumps(result["details"], ensure_ascii=False),
+                result["created_at"],
+            ),
+        )
+        return result
+
+    def rule_results(self, project_id: str, node_id: str | None = None) -> list[dict[str, Any]]:
+        project = self.get_project(project_id)
+        with self.connect(Path(project["project_dir"])) as conn:
+            params: list[str] = [project_id]
+            sql = "SELECT * FROM rule_result_log WHERE project_id = ?"
+            if node_id is not None:
+                sql += " AND node_id = ?"
+                params.append(node_id)
+            sql += " ORDER BY created_at"
+            rows = conn.execute(sql, params).fetchall()
+        results = []
+        for row in rows:
+            data = dict(row)
+            data["details"] = json.loads(data.pop("details_json") or "{}")
+            results.append(data)
+        return results
 
     def approve_node(self, project_id: str, node_id: str) -> dict[str, Any]:
         project = self.get_project(project_id)

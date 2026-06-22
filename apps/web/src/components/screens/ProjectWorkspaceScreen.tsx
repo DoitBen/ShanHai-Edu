@@ -2558,7 +2558,7 @@ function FinalVideoAudioPanel({ content }: { content: Record<string, unknown> })
             </ToneBadge>
           </div>
           <p className="mt-1 t-caption text-muted-foreground">
-            最终视频应使用中文男声旁白，视频原声在合成阶段丢弃或静音。
+            最终视频应使用中文旁白，声线可配置；视频原声在合成阶段丢弃或静音。
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

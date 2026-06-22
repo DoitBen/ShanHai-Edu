@@ -700,7 +700,7 @@ function Step1BasicInfo({
             id="np-compliance"
             value={draft.complianceNotes}
             onChange={(e) => setDraft({ complianceNotes: e.target.value })}
-            placeholder="如：中文男声、禁英文配音、完整视频必须多分镜拼接、候选不得冒充终版..."
+            placeholder="如：中文旁白可配置声线、禁英文配音、完整视频必须多分镜拼接、候选不得冒充终版..."
             className="min-h-24 bg-card"
           />
         </FieldGroup>

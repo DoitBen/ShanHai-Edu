@@ -61,6 +61,39 @@ assert(stage.summary.includes("lesson_plan"), "stage summary must expose API dep
 assert(stage.capabilities?.can_edit === true, "stage capabilities must come from API manifest");
 assert(stage.ruleSummary?.warning_rule_ids.includes("R023"), "stage rule summary must come from API manifest");
 
+const deliveryManifest: ApiManifest = {
+  ...manifest,
+  nodes: [
+    {
+      project_id: "proj_manifest",
+      node_id: "final_delivery",
+      title: "最终交付",
+      step: 9,
+      branch: "shared",
+      depends_on: ["pptx_artifact", "final_video"],
+      schema: "schemas/final_delivery.schema.json",
+      status: "needs_review",
+      current_version_id: "ver_delivery",
+      updated_at: "2026-06-22T00:00:04Z",
+      artifact: {
+        lesson_plan_path: "exports/final_delivery/lesson_plan.md",
+        pptx_final_path: "exports/final_delivery/deck.pptx",
+        video_final_path: "exports/final_delivery/final_video.mp4",
+        delivery_manifest_path: "exports/final_delivery/delivery_manifest.json",
+        gate_result_json_path: "exports/final_delivery/gate_result.json",
+      },
+    },
+  ],
+};
+
+const deliveryStage = mapApiManifest(deliveryManifest).stages[0];
+assert(
+  deliveryStage.artifact?.delivery_manifest_path === "exports/final_delivery/delivery_manifest.json",
+  "final_delivery artifact paths must be preserved from API manifest",
+);
+assert(deliveryStage.artifact?.pptx_final_path?.endsWith(".pptx"), "final_delivery PPTX path must be preserved");
+assert(deliveryStage.artifact?.video_final_path?.endsWith(".mp4"), "final_delivery video path must be preserved");
+
 const skippedManifest: ApiManifest = {
   ...manifest,
   nodes: [

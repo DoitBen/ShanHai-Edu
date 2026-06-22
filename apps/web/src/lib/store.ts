@@ -119,7 +119,7 @@ export const EMPTY_DRAFT: NewProjectDraft = {
   visualStyleKeywords: "温润、克制、真实生活情境、可编辑 PPT 视觉资产",
   fontPreference: "系统无衬线中文优先，正文清晰，数学内容必须可编辑",
   complianceNotes:
-    "中文男声旁白；禁英文配音；完整视频必须多分镜拼接；候选不得冒充终版。",
+    "中文旁白可配置声线；禁英文配音；完整视频必须多分镜拼接；候选不得冒充终版。",
   apiProjectId: null,
   textbookFileName: "",
   textbookContent: "",

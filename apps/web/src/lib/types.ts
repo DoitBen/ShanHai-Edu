@@ -112,6 +112,14 @@ export interface ApiNodeArtifact {
   download_url?: string;
   pptx_path?: string;
   video_path?: string;
+  lesson_plan_path?: string;
+  pptx_final_path?: string;
+  video_final_path?: string | null;
+  delivery_manifest_path?: string;
+  gate_result_json_path?: string;
+  time_stats_md_path?: string;
+  error_code?: string;
+  error_message?: string;
 }
 
 export interface ApiRuleSummary {

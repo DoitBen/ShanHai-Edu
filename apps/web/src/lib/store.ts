@@ -7,8 +7,8 @@ import type {
   LoadStatus,
   PendingRuleWarning,
   ProjectMeta,
+  ApiProjectWorkspace,
   ApiTask,
-  ApiTextbookParseContent,
   WorkflowStage,
   VideoIntroPlan,
   ScreenKey,
@@ -25,18 +25,27 @@ import { DEMO_PASSWORD, isDemoMode } from "./demo-mode";
 import { nextStageKey } from "./workflow";
 import {
   approveProjectNode,
+  attachProjectTextbookFromLibrary,
   createProject,
   editProjectNode,
+  fetchLessonPlanLibrary,
+  fetchTextbookLibrary,
+  fetchTextbookParseJob,
+  fetchTextbookKnowledgePointAsset,
+  splitTextbookKnowledgePointAssets,
+  extractTextbookKnowledgePointAssets,
   fetchProjectManifest,
   fetchProjectNode,
+  fetchProjectWorkspace,
   fetchProjectTask,
   fetchProjectTasks,
   fetchProjects,
   generateProjectNode,
   retryProjectTask as retryProjectTaskRequest,
   submitProjectFeedback,
+  updateProject,
   uploadProjectTextbook,
-  uploadProjectTextbookFile,
+  uploadTextbookToLibrary,
   isApiClientError,
 } from "./api-client";
 import {
@@ -45,6 +54,7 @@ import {
   mapApiNodeDetailToStage,
   mapApiNodeMutationToStage,
   mapApiProject,
+  mapTextbookParseContent,
 } from "./api-mappers";
 
 const AUTH_KEY = "shanhai_auth";
@@ -82,9 +92,12 @@ function loadAuth(): AuthUser | null {
 function saveAuth(user: AuthUser | null) {
   if (typeof window === "undefined") return;
   if (user) {
+    const encoded = encodeURIComponent(JSON.stringify(user));
     window.localStorage.setItem(AUTH_KEY, JSON.stringify(user));
+    document.cookie = `${AUTH_KEY}=${encoded}; Path=/; SameSite=Lax`;
   } else {
     window.localStorage.removeItem(AUTH_KEY);
+    document.cookie = `${AUTH_KEY}=; Path=/; Max-Age=0; SameSite=Lax`;
   }
 }
 
@@ -105,7 +118,9 @@ function extractRuleWarnings(details: unknown): PendingRuleWarning["warnings"] {
 
 export const EMPTY_DRAFT: NewProjectDraft = {
   step: 1,
+  sourceMode: "textbook-library",
   name: "",
+  nameEdited: false,
   subject: "数学",
   grade: "三年级",
   textbookVersion: "人教版",
@@ -127,6 +142,13 @@ export const EMPTY_DRAFT: NewProjectDraft = {
   parseStatus: "idle",
   parseError: null,
   selectedKnowledgePointId: "",
+  selectedAssetKnowledgePointIds: [],
+  assetActionStatus: "idle",
+  selectedLessonReferenceId: undefined,
+  lessonReferences: [],
+  lessonPlanFileName: "",
+  lessonPlanContent: "",
+  lessonPlanSummary: "",
   videoPurpose: "课堂导入",
   videoTypes: ["science", "application", "story"],
   videoCountPerType: 3,
@@ -176,9 +198,13 @@ interface AppState {
   tasksByProject: Record<string, ApiTask[]>;
   tasksStatusByProject: Record<string, LoadStatus>;
   tasksErrorByProject: Record<string, string | null>;
+  workspaceByProject: Record<string, ApiProjectWorkspace>;
+  workspaceStatusByProject: Record<string, LoadStatus>;
+  workspaceErrorByProject: Record<string, string | null>;
   loadProjects: () => Promise<void>;
   createProjectFromDraft: () => Promise<string>;
   loadProjectManifest: (projectId: string) => Promise<void>;
+  loadProjectWorkspace: (projectId: string) => Promise<void>;
   loadProjectNode: (projectId: string, stageKey: string) => Promise<void>;
   loadProjectTasks: (projectId: string) => Promise<void>;
   refreshProjectTask: (projectId: string, taskId: string) => Promise<{ ok: boolean; msg?: string }>;
@@ -189,7 +215,12 @@ interface AppState {
   ) => Promise<{ ok: boolean; msg?: string }>;
   selectDraftKnowledgePoint: (
     knowledgePointId: string,
+    options?: { force?: boolean },
   ) => Promise<{ ok: boolean; msg?: string }>;
+  loadTextbookFromLibrary: (textbookId?: string) => Promise<{ ok: boolean; msg?: string }>;
+  splitDraftTextbookAssets: (knowledgePointIds?: string[]) => Promise<{ ok: boolean; msg?: string }>;
+  extractDraftTextbookAssets: (knowledgePointIds?: string[]) => Promise<{ ok: boolean; msg?: string }>;
+  selectDraftLessonReference: (lessonPlanId: string) => Promise<{ ok: boolean; msg?: string }>;
   generateStage: (
     projectId: string,
     stageKey: string,
@@ -314,6 +345,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   tasksByProject: {},
   tasksStatusByProject: {},
   tasksErrorByProject: {},
+  workspaceByProject: {},
+  workspaceStatusByProject: {},
+  workspaceErrorByProject: {},
 
   loadProjects: async () => {
     if (get().dataMode === "demo") {
@@ -327,11 +361,29 @@ export const useAppStore = create<AppState>((set, get) => ({
       const manifestResults = await Promise.allSettled(
         apiProjects.map((project) => fetchProjectManifest(project.project_id)),
       );
+      const workspaceResults = await Promise.allSettled(
+        apiProjects.map((project) => fetchProjectWorkspace(project.project_id)),
+      );
       const nextStagesByProject = { ...get().stagesByProject };
       const nextManifestStatusByProject = { ...get().manifestStatusByProject };
       const nextManifestErrorByProject = { ...get().manifestErrorByProject };
+      const nextWorkspaceByProject = { ...get().workspaceByProject };
+      const nextWorkspaceStatusByProject = { ...get().workspaceStatusByProject };
+      const nextWorkspaceErrorByProject = { ...get().workspaceErrorByProject };
       const projects = apiProjects.map((project, index) => {
         const manifestResult = manifestResults[index];
+        const workspaceResult = workspaceResults[index];
+        if (workspaceResult?.status === "fulfilled") {
+          nextWorkspaceByProject[project.project_id] = workspaceResult.value;
+          nextWorkspaceStatusByProject[project.project_id] = "ready";
+          nextWorkspaceErrorByProject[project.project_id] = null;
+        } else {
+          nextWorkspaceStatusByProject[project.project_id] = "error";
+          nextWorkspaceErrorByProject[project.project_id] =
+            workspaceResult?.status === "rejected" && workspaceResult.reason instanceof Error
+              ? workspaceResult.reason.message
+              : "workspace 摘要读取失败";
+        }
         if (manifestResult?.status === "fulfilled") {
           const mapped = mapApiManifest(manifestResult.value);
           nextStagesByProject[mapped.project.id] = mapped.stages;
@@ -353,6 +405,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         stagesByProject: nextStagesByProject,
         manifestStatusByProject: nextManifestStatusByProject,
         manifestErrorByProject: nextManifestErrorByProject,
+        workspaceByProject: nextWorkspaceByProject,
+        workspaceStatusByProject: nextWorkspaceStatusByProject,
+        workspaceErrorByProject: nextWorkspaceErrorByProject,
         projectsStatus: "ready",
         projectsError: null,
       });
@@ -369,9 +424,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       return get().commitDraftToProject();
     }
     const draft = get().draft;
+    const payload = draftToCreateProjectPayload(draft);
     const project = draft.apiProjectId
-      ? null
-      : await createProject(draftToCreateProjectPayload(draft));
+      ? await updateProject(draft.apiProjectId, payload)
+      : await createProject(payload);
     const projectId = draft.apiProjectId || project?.project_id;
     if (!projectId) {
       throw new Error("项目创建失败：缺少后端项目 ID");
@@ -391,7 +447,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           project_dir: "",
         });
     const textbookContent = buildTextbookUploadContent(draft);
-    if (!draft.apiProjectId && textbookContent.trim()) {
+    if (draft.sourceMode === "textbook-library" && !draft.apiProjectId && textbookContent.trim()) {
       await uploadProjectTextbook(
         mapped.id,
         textbookContent,
@@ -403,6 +459,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       draft: { ...EMPTY_DRAFT },
     });
     await get().loadProjectManifest(mapped.id);
+    await get().loadProjectWorkspace(mapped.id);
     return mapped.id;
   },
 
@@ -411,9 +468,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       return { ok: false, msg: "demo 模式不调用真实教材解析接口" };
     }
     const draft = get().draft;
-    if (!draft.name.trim()) {
-      return { ok: false, msg: "请先填写项目名称" };
-    }
     set({
       draft: {
         ...draft,
@@ -426,7 +480,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       const latestDraft = get().draft;
       let projectId = latestDraft.apiProjectId;
       if (!projectId) {
-        const project = await createProject(draftToCreateProjectPayload(latestDraft));
+        const project = await createProject(
+          draftToCreateProjectPayload(latestDraft, {
+            fallbackName: `教材解析临时项目-${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "")}`,
+          }),
+        );
         projectId = project.project_id;
         set({
           projects: [
@@ -440,30 +498,63 @@ export const useAppStore = create<AppState>((set, get) => ({
         });
       }
 
-      await uploadProjectTextbookFile(projectId, file);
+      const uploaded = await uploadTextbookToLibrary(file);
+      const job = await fetchTextbookParseJob(uploaded.job_id);
+      if (job.status === "failed") {
+        throw new Error(job.error_message || "教材入库解析失败");
+      }
+      await updateProject(projectId, {
+        textbook_id: uploaded.textbook_id,
+        textbook_version_id: uploaded.textbook_version_id,
+      });
+      await attachProjectTextbookFromLibrary(projectId, uploaded.textbook_id);
       const generated = await generateProjectNode(
         projectId,
         "textbook_parse",
         knowledgePointId ? { knowledge_point_id: knowledgePointId } : undefined,
       );
-      const parsed = mapTextbookParseContent(
+      let parsed = mapTextbookParseContent(
         generated.content,
         get().draft,
       );
+      parsed = await enrichParseResultWithLibraryAsset(parsed);
+      const currentDraft = get().draft;
+      const nextDraft: NewProjectDraft = {
+        ...currentDraft,
+        name: currentDraft.nameEdited ? currentDraft.name : suggestedProjectName(parsed),
+        subject: parsed.subject,
+        grade: parsed.grade,
+        textbookVersion: parsed.textbookVersion,
+        volume: parsed.volume,
+        audience: currentDraft.audience === EMPTY_DRAFT.audience ? `${parsed.grade}学生` : currentDraft.audience,
+        parseStatus: "done" as const,
+        parseResult: parsed,
+        parseError: null,
+        selectedKnowledgePointId:
+          parsed.selectedKnowledgePointId ||
+          parsed.knowledgePoints?.[0]?.id ||
+          "",
+        selectedAssetKnowledgePointIds: [
+          parsed.selectedKnowledgePointId ||
+          parsed.knowledgePoints?.[0]?.id ||
+          "",
+        ].filter(Boolean),
+        assetActionStatus: "imported",
+        lessonReferences: [],
+      };
+      const references = await fetchLessonPlanLibrary({
+        textbookId: parsed.textbookId,
+        knowledgePointId: nextDraft.selectedKnowledgePointId,
+      });
+      nextDraft.lessonReferences = references.lesson_plans || [];
+      const updatedProject = await updateProject(projectId, draftToCreateProjectPayload(nextDraft));
       set({
+        projects: [
+          mapApiProject(updatedProject),
+          ...get().projects.filter((item) => item.id !== updatedProject.project_id),
+        ],
         draft: {
-          ...get().draft,
-          subject: parsed.subject,
-          grade: parsed.grade,
-          textbookVersion: parsed.textbookVersion,
-          volume: parsed.volume,
-          parseStatus: "done",
-          parseResult: parsed,
-          parseError: null,
-          selectedKnowledgePointId:
-            parsed.selectedKnowledgePointId ||
-            parsed.knowledgePoints?.[0]?.id ||
-            "",
+          ...nextDraft,
         },
       });
       await get().loadProjectManifest(projectId);
@@ -481,9 +572,112 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  selectDraftKnowledgePoint: async (knowledgePointId) => {
+  loadTextbookFromLibrary: async (textbookId) => {
+    if (get().dataMode === "demo") {
+      return { ok: false, msg: "demo 模式不调用真实教材库接口" };
+    }
+    set({
+      draft: {
+        ...get().draft,
+        parseStatus: "parsing",
+        parseError: null,
+      },
+    });
+    try {
+      const library = await fetchTextbookLibrary();
+      const textbook =
+        (textbookId
+          ? library.textbooks?.find((item) => item.textbook_id === textbookId)
+          : undefined) ||
+        library.textbooks?.[0];
+      if (!textbook?.textbook_id) {
+        throw new Error("教材库为空，请先上传教材");
+      }
+      const latestDraft = get().draft;
+      let projectId = latestDraft.apiProjectId;
+      if (!projectId) {
+        const project = await createProject(
+          draftToCreateProjectPayload(latestDraft, {
+            fallbackName: `${textbook.title || "教材库"}-临时项目`,
+          }),
+        );
+        projectId = project.project_id;
+        set({
+          projects: [
+            mapApiProject(project),
+            ...get().projects.filter((item) => item.id !== project.project_id),
+          ],
+          draft: {
+            ...get().draft,
+            apiProjectId: projectId,
+          },
+        });
+      }
+      await attachProjectTextbookFromLibrary(projectId, textbook.textbook_id);
+      const generated = await generateProjectNode(projectId, "textbook_parse", undefined);
+      let parsed = mapTextbookParseContent(generated.content, get().draft);
+      parsed = await enrichParseResultWithLibraryAsset(parsed);
+      const currentDraft = get().draft;
+      const nextDraft: NewProjectDraft = {
+        ...currentDraft,
+        textbookFileName: "教材库：" + (textbook.title || textbook.textbook_id),
+        name: currentDraft.nameEdited ? currentDraft.name : suggestedProjectName(parsed),
+        subject: parsed.subject,
+        grade: parsed.grade,
+        textbookVersion: parsed.textbookVersion,
+        volume: parsed.volume,
+        audience: currentDraft.audience === EMPTY_DRAFT.audience ? `${parsed.grade}学生` : currentDraft.audience,
+        parseStatus: "done" as const,
+        parseResult: parsed,
+        parseError: null,
+        selectedKnowledgePointId:
+          parsed.selectedKnowledgePointId ||
+          parsed.knowledgePoints?.[0]?.id ||
+          "",
+        selectedAssetKnowledgePointIds: [
+          parsed.selectedKnowledgePointId ||
+          parsed.knowledgePoints?.[0]?.id ||
+          "",
+        ].filter(Boolean),
+        assetActionStatus: "imported",
+        lessonReferences: [],
+      };
+      const references = await fetchLessonPlanLibrary({
+        textbookId: parsed.textbookId,
+        knowledgePointId: nextDraft.selectedKnowledgePointId,
+      });
+      nextDraft.lessonReferences = references.lesson_plans || [];
+      const updatedProject = await updateProject(projectId, draftToCreateProjectPayload(nextDraft));
+      set({
+        projects: [
+          mapApiProject(updatedProject),
+          ...get().projects.filter((item) => item.id !== updatedProject.project_id),
+        ],
+        draft: {
+          ...nextDraft,
+        },
+      });
+      await get().loadProjectManifest(projectId);
+      return { ok: true };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "教材库读取失败";
+      set({
+        draft: {
+          ...get().draft,
+          parseStatus: "failed",
+          parseError: msg,
+        },
+      });
+      return { ok: false, msg };
+    }
+  },
+
+  selectDraftKnowledgePoint: async (knowledgePointId, options) => {
     if (get().dataMode === "demo") {
       return { ok: false, msg: "demo 模式不调用真实教材解析接口" };
+    }
+    if (!options?.force && knowledgePointId === get().draft.selectedKnowledgePointId) {
+      return { ok: true };
     }
     const projectId = get().draft.apiProjectId;
     if (!projectId) {
@@ -501,18 +695,40 @@ export const useAppStore = create<AppState>((set, get) => ({
       const generated = await generateProjectNode(projectId, "textbook_parse", {
         knowledge_point_id: knowledgePointId,
       });
-      const parsed = mapTextbookParseContent(generated.content, get().draft);
+      let parsed = mapTextbookParseContent(generated.content, get().draft);
+      parsed = await enrichParseResultWithLibraryAsset(parsed);
+      const currentDraft = get().draft;
+      const nextDraft: NewProjectDraft = {
+        ...currentDraft,
+        name: currentDraft.nameEdited ? currentDraft.name : suggestedProjectName(parsed),
+        subject: parsed.subject,
+        grade: parsed.grade,
+        textbookVersion: parsed.textbookVersion,
+        volume: parsed.volume,
+        audience: currentDraft.audience === EMPTY_DRAFT.audience ? `${parsed.grade}学生` : currentDraft.audience,
+        parseStatus: "done" as const,
+        parseResult: parsed,
+        parseError: null,
+        selectedKnowledgePointId: parsed.selectedKnowledgePointId || knowledgePointId,
+        selectedAssetKnowledgePointIds: [
+          parsed.selectedKnowledgePointId || knowledgePointId,
+        ].filter(Boolean),
+        selectedLessonReferenceId: undefined,
+        lessonReferences: [],
+      };
+      const references = await fetchLessonPlanLibrary({
+        textbookId: parsed.textbookId,
+        knowledgePointId: nextDraft.selectedKnowledgePointId,
+      });
+      nextDraft.lessonReferences = references.lesson_plans || [];
+      const updatedProject = await updateProject(projectId, draftToCreateProjectPayload(nextDraft));
       set({
+        projects: [
+          mapApiProject(updatedProject),
+          ...get().projects.filter((item) => item.id !== updatedProject.project_id),
+        ],
         draft: {
-          ...get().draft,
-          subject: parsed.subject,
-          grade: parsed.grade,
-          textbookVersion: parsed.textbookVersion,
-          volume: parsed.volume,
-          parseStatus: "done",
-          parseResult: parsed,
-          parseError: null,
-          selectedKnowledgePointId: parsed.selectedKnowledgePointId || knowledgePointId,
+          ...nextDraft,
         },
       });
       await get().loadProjectManifest(projectId);
@@ -527,6 +743,124 @@ export const useAppStore = create<AppState>((set, get) => ({
         },
       });
       return { ok: false, msg };
+    }
+  },
+
+  splitDraftTextbookAssets: async (knowledgePointIds) => {
+    if (get().dataMode === "demo") {
+      return { ok: false, msg: "demo 模式不调用真实教材切分接口" };
+    }
+    const parsed = get().draft.parseResult;
+    const textbookId = parsed?.textbookId;
+    if (!textbookId) {
+      return { ok: false, msg: "请先导入或载入教材" };
+    }
+    set({
+      draft: {
+        ...get().draft,
+        parseStatus: "parsing",
+        assetActionStatus: "splitting",
+        parseError: null,
+      },
+    });
+    try {
+      const result = await splitTextbookKnowledgePointAssets(textbookId, knowledgePointIds);
+      const nextParsed = applyAssetBatchToParseResult(get().draft.parseResult, result.assets);
+      set({
+        draft: {
+          ...get().draft,
+          parseStatus: "done",
+          assetActionStatus: "split_ready",
+          selectedAssetKnowledgePointIds: knowledgePointIds || get().draft.selectedAssetKnowledgePointIds,
+          parseResult: nextParsed,
+          parseError: null,
+        },
+      });
+      return { ok: true };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "教材切分失败";
+      set({
+        draft: {
+          ...get().draft,
+          parseStatus: "failed",
+          assetActionStatus: "failed",
+          parseError: msg,
+        },
+      });
+      return { ok: false, msg };
+    }
+  },
+
+  extractDraftTextbookAssets: async (knowledgePointIds) => {
+    if (get().dataMode === "demo") {
+      return { ok: false, msg: "demo 模式不调用真实教材内容解析接口" };
+    }
+    const parsed = get().draft.parseResult;
+    const textbookId = parsed?.textbookId;
+    if (!textbookId) {
+      return { ok: false, msg: "请先导入或载入教材" };
+    }
+    set({
+      draft: {
+        ...get().draft,
+        parseStatus: "parsing",
+        assetActionStatus: "extracting",
+        parseError: null,
+      },
+    });
+    try {
+      const result = await extractTextbookKnowledgePointAssets(textbookId, knowledgePointIds);
+      let nextParsed = applyAssetBatchToParseResult(get().draft.parseResult, result.assets);
+      const selectedAsset = result.assets.find((asset) => asset.knowledge_point_id === nextParsed?.selectedKnowledgePointId);
+      if (!selectedAsset && nextParsed?.selectedKnowledgePointId) {
+        nextParsed = await enrichParseResultWithLibraryAsset(nextParsed);
+      }
+      set({
+        draft: {
+          ...get().draft,
+          parseStatus: "done",
+          assetActionStatus: "needs_review",
+          selectedAssetKnowledgePointIds: knowledgePointIds || get().draft.selectedAssetKnowledgePointIds,
+          parseResult: nextParsed,
+          parseError: null,
+        },
+      });
+      return { ok: true };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "教材内容解析失败";
+      set({
+        draft: {
+          ...get().draft,
+          parseStatus: "failed",
+          assetActionStatus: "failed",
+          parseError: msg,
+        },
+      });
+      return { ok: false, msg };
+    }
+  },
+
+  selectDraftLessonReference: async (lessonPlanId) => {
+    const projectId = get().draft.apiProjectId;
+    if (!projectId) {
+      return { ok: false, msg: "请先完成教材解析并创建临时项目" };
+    }
+    const nextDraft = {
+      ...get().draft,
+      selectedLessonReferenceId: lessonPlanId,
+    };
+    try {
+      const updatedProject = await updateProject(projectId, draftToCreateProjectPayload(nextDraft));
+      set({
+        projects: [
+          mapApiProject(updatedProject),
+          ...get().projects.filter((item) => item.id !== updatedProject.project_id),
+        ],
+        draft: nextDraft,
+      });
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, msg: error instanceof Error ? error.message : "参考教案绑定失败" };
     }
   },
 
@@ -565,6 +899,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           [projectId]: null,
         },
       });
+      await get().loadProjectWorkspace(projectId);
     } catch (error) {
       set({
         manifestStatusByProject: {
@@ -574,6 +909,50 @@ export const useAppStore = create<AppState>((set, get) => ({
         manifestErrorByProject: {
           ...get().manifestErrorByProject,
           [projectId]: error instanceof Error ? error.message : "manifest 读取失败",
+        },
+      });
+    }
+  },
+
+  loadProjectWorkspace: async (projectId) => {
+    if (get().dataMode === "demo") return;
+    const status = get().workspaceStatusByProject[projectId];
+    if (status === "loading") return;
+    set({
+      workspaceStatusByProject: {
+        ...get().workspaceStatusByProject,
+        [projectId]: "loading",
+      },
+      workspaceErrorByProject: {
+        ...get().workspaceErrorByProject,
+        [projectId]: null,
+      },
+    });
+    try {
+      const workspace = await fetchProjectWorkspace(projectId);
+      set({
+        workspaceByProject: {
+          ...get().workspaceByProject,
+          [projectId]: workspace,
+        },
+        workspaceStatusByProject: {
+          ...get().workspaceStatusByProject,
+          [projectId]: "ready",
+        },
+        workspaceErrorByProject: {
+          ...get().workspaceErrorByProject,
+          [projectId]: null,
+        },
+      });
+    } catch (error) {
+      set({
+        workspaceStatusByProject: {
+          ...get().workspaceStatusByProject,
+          [projectId]: "error",
+        },
+        workspaceErrorByProject: {
+          ...get().workspaceErrorByProject,
+          [projectId]: error instanceof Error ? error.message : "workspace 读取失败",
         },
       });
     }
@@ -1163,7 +1542,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       currentStage: "textbook-parse",
       progress: 8,
       status: "active",
-      nextAction: "进入教材解析阶段",
+      nextAction: "进入工作区继续备课",
       owner: get().user?.displayName || "教师",
       createdAt: nowStr(),
       updatedAt: nowStr(),
@@ -1204,98 +1583,121 @@ function buildTextbookUploadContent(draft: NewProjectDraft): string {
     .join("\n");
 }
 
-function mapTextbookParseContent(
-  content: unknown,
-  fallback: NewProjectDraft,
-): NonNullable<NewProjectDraft["parseResult"]> {
-  const data = isRecord(content) ? (content as ApiTextbookParseContent) : {};
-  const meta = isRecord(data.textbook_meta) ? data.textbook_meta : {};
-  const knowledgePoints = Array.isArray(data.knowledge_points)
-    ? data.knowledge_points
-        .filter(isRecord)
-        .map((point) => ({
-          id: stringValue(point.id),
-          title: stringValue(point.title) || "未命名知识点",
-          unit: stringValue(point.unit),
-          pageStart: numberValue(point.page_start),
-          pageEnd: numberValue(point.page_end),
-          pdfPageStart: numberValue(point.pdf_page_start),
-          pdfPageEnd: numberValue(point.pdf_page_end),
-          keywords: Array.isArray(point.keywords)
-            ? point.keywords.filter((item): item is string => typeof item === "string")
-            : [],
-        }))
-        .filter((point) => point.id)
-    : [];
-  const selected = isRecord(data.selected_knowledge_point)
-    ? data.selected_knowledge_point
-    : {};
-  const selectedPages = isRecord(selected.source_pages) ? selected.source_pages : {};
-  const subject = apiSubjectToLabel(stringValue(meta.subject) || stringValue(data.subject), fallback.subject);
-  const grade = apiGradeToLabel(stringValue(meta.grade) || stringValue(data.grade), fallback.grade);
-  const textbookVersion = apiVersionToLabel(
-    stringValue(meta.textbook_version) || stringValue(data.textbook_version),
-    fallback.textbookVersion,
-  );
-  const volume = apiVolumeToLabel(stringValue(meta.volume) || stringValue(data.volume), fallback.volume);
-  const selectedTitle = stringValue(selected.title);
-  const lesson = stringValue(data.lesson_title) || selectedTitle || fallback.name || "教材知识点";
-  const coreKnowledgePoints =
-    Array.isArray(data.core_knowledge_points) && data.core_knowledge_points.length
-      ? data.core_knowledge_points.filter((item): item is string => typeof item === "string")
-      : knowledgePoints.map((point) => point.title);
+async function enrichParseResultWithLibraryAsset(
+  parsed: NonNullable<NewProjectDraft["parseResult"]>,
+): Promise<NonNullable<NewProjectDraft["parseResult"]>> {
+  if (!parsed.textbookId || !parsed.selectedKnowledgePointId) return parsed;
+  try {
+    const asset = await fetchTextbookKnowledgePointAsset(
+      parsed.textbookId,
+      parsed.selectedKnowledgePointId,
+    );
+    return {
+      ...parsed,
+      selectedKnowledgePointAssetPackage: {
+        ...parsed.selectedKnowledgePointAssetPackage,
+        ...mapApiTextbookAssetToDraftAsset(asset),
+      },
+    };
+  } catch {
+    return parsed;
+  }
+}
 
+function applyAssetBatchToParseResult(
+  parsed: NewProjectDraft["parseResult"],
+  assets: Array<{
+    asset_id?: string;
+    knowledge_point_id: string;
+    source_pdf_path?: string;
+    slice_pdf_path?: string;
+    mineru_md_path?: string;
+    markdown_path?: string;
+    textbook_pages?: string;
+    pdf_pages?: string;
+    parse_status?: string;
+    review_status?: string;
+    mineru_job_id?: string;
+    checksum?: string;
+    download_urls?: {
+      slice_pdf?: string;
+      mineru_md?: string;
+    };
+  }>,
+): NewProjectDraft["parseResult"] {
+  if (!parsed) return parsed;
+  const byId = new Map(assets.map((asset) => [asset.knowledge_point_id, asset]));
+  const selected = parsed.selectedKnowledgePointId ? byId.get(parsed.selectedKnowledgePointId) : undefined;
   return {
-    source: "api",
-    subject,
-    grade,
-    textbookVersion,
-    volume,
-    lesson,
-    coreKnowledgePoints,
-    teachingGoalSummary:
-      stringValue(data.teaching_goal_summary) ||
-      `已从后端教材解析结果中选定“${lesson}”。`,
-    keyPoints:
-      Array.isArray(data.key_points) && data.key_points.length
-        ? data.key_points.filter((item): item is string => typeof item === "string")
-        : coreKnowledgePoints,
-    difficulties:
-      Array.isArray(data.difficulties) && data.difficulties.length
-        ? data.difficulties.filter((item): item is string => typeof item === "string")
-        : ["请结合 Markdown 预览核对教学难点"],
-    textbookTitle: stringValue(meta.title),
-    knowledgePoints,
-    selectedKnowledgePointId:
-      stringValue(data.selected_knowledge_point_id) ||
-      stringValue(selected.knowledge_point_id) ||
-      knowledgePoints[0]?.id ||
-      "",
-    selectedKnowledgePointMarkdown: stringValue(selected.markdown),
-    selectedKnowledgePointMarkdownPath: stringValue(selected.markdown_path),
-    selectedKnowledgePointPages: {
-      textbookPages: stringValue(selectedPages.textbook_pages),
-      pdfPages: stringValue(selectedPages.pdf_pages),
-    },
+    ...parsed,
+    knowledgePoints: parsed.knowledgePoints?.map((point) => {
+      const asset = byId.get(point.id);
+      if (!asset) return point;
+      return {
+        ...point,
+        parseStatus: asset.parse_status || point.parseStatus,
+        reviewStatus: asset.review_status || point.reviewStatus,
+        assetPackage: {
+          ...point.assetPackage,
+          ...mapApiTextbookAssetToDraftAsset(asset),
+        },
+      };
+    }),
+    selectedKnowledgePointAssetPackage: selected
+      ? {
+          ...parsed.selectedKnowledgePointAssetPackage,
+          ...mapApiTextbookAssetToDraftAsset(selected),
+        }
+      : parsed.selectedKnowledgePointAssetPackage,
   };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function stringValue(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
-
-function numberValue(value: unknown): number | undefined {
-  return typeof value === "number" ? value : undefined;
+function mapApiTextbookAssetToDraftAsset(asset: {
+  asset_id?: string;
+  source_pdf_path?: string;
+  slice_pdf_path?: string;
+  mineru_md_path?: string;
+  markdown_path?: string;
+  textbook_pages?: string;
+  pdf_pages?: string;
+  parse_status?: string;
+  review_status?: string;
+  mineru_job_id?: string;
+  checksum?: string;
+  download_urls?: {
+    slice_pdf?: string;
+    mineru_md?: string;
+  };
+}) {
+  return {
+    assetId: asset.asset_id,
+    sourcePdfPath: asset.source_pdf_path,
+    slicePdfPath: asset.slice_pdf_path,
+    mineruMdPath: asset.mineru_md_path,
+    markdownPath: asset.markdown_path,
+    textbookPages: asset.textbook_pages,
+    pdfPages: asset.pdf_pages,
+    parseStatus: asset.parse_status,
+    reviewStatus: asset.review_status,
+    mineruJobId: asset.mineru_job_id,
+    checksum: asset.checksum,
+    downloadUrls: {
+      slicePdf: asset.download_urls?.slice_pdf,
+      mineruMd: asset.download_urls?.mineru_md,
+    },
+  };
 }
 
 function upsertTask(tasks: ApiTask[], task: ApiTask): ApiTask[] {
   const index = tasks.findIndex((item) => item.task_id === task.task_id);
   if (index < 0) return [task, ...tasks];
   return tasks.map((item) => (item.task_id === task.task_id ? task : item));
+}
+
+function suggestedProjectName(parseResult: NonNullable<NewProjectDraft["parseResult"]>): string {
+  const subject = parseResult.subject || "课程";
+  const title = parseResult.lesson || "教材知识点";
+  return `${parseResult.textbookVersion}${parseResult.grade}${parseResult.volume}${subject} - ${title}`;
 }
 
 function apiNodeIdToStageKey(nodeId: string): string {
@@ -1309,47 +1711,6 @@ function apiNodeIdToStageKey(nodeId: string): string {
     final_video: "video-generation",
   };
   return map[nodeId] || nodeId;
-}
-
-function apiSubjectToLabel(value: string, fallback: string): string {
-  const map: Record<string, string> = {
-    math: "数学",
-    chinese: "语文",
-    science: "科学",
-    english: "英语",
-    art: "艺术",
-  };
-  return map[value] || value || fallback;
-}
-
-function apiGradeToLabel(value: string, fallback: string): string {
-  const map: Record<string, string> = {
-    "1": "一年级",
-    "2": "二年级",
-    "3": "三年级",
-    "4": "四年级",
-    "5": "五年级",
-    "6": "六年级",
-  };
-  return map[value] || value || fallback;
-}
-
-function apiVersionToLabel(value: string, fallback: string): string {
-  const map: Record<string, string> = {
-    renjiao: "人教版",
-    jiaoke: "教科版",
-    tongbian: "统编版",
-    sujiao: "苏教版",
-  };
-  return map[value] || value || fallback;
-}
-
-function apiVolumeToLabel(value: string, fallback: string): string {
-  const map: Record<string, string> = {
-    shang: "上册",
-    xia: "下册",
-  };
-  return map[value] || value || fallback;
 }
 
 /** 客户端初始化：从 localStorage 恢复登录态 */

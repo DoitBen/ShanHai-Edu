@@ -26,11 +26,16 @@ NODE_CHAIN = [
     "textbook_parse",
     "lesson_plan",
     "intro_selection",
+    "visual_contract",
+    "character_dict",
     "intro_video_script",
     "intro_video_screenplay",
     "intro_video_asset",
     "storyboard",
 ]
+SHARED_CONTEXT_NODE_CHAIN = ["visual_contract", "character_dict"]
+VIDEO_NODE_CHAIN = ["intro_video_script", "intro_video_screenplay", "intro_video_asset", "storyboard"]
+PPT_NODE_CHAIN = ["ppt_assembly_plan", "ppt_page_script", "ppt_visual_asset", "pptx_artifact"]
 
 FINAL_VIDEO_REL_PATH = "outputs/final_video.mp4"
 DEFAULT_VIDEO_MODEL = "omni_flash-10s"
@@ -357,6 +362,44 @@ def build_node_generate_body(node_id: str, args: argparse.Namespace) -> dict[str
     }
 
 
+def build_project_create_payload(project_name: str, timestamp: str) -> dict[str, Any]:
+    return {
+        "name": project_name or f"T075 real fullchain smoke {timestamp}",
+        "subject": "math",
+        "grade": "1",
+        "textbook_version": "renjiao",
+        "volume": "shang",
+        "lesson_type": "public",
+        "needs_intro_video": True,
+        "embed_video_in_ppt": True,
+        "character_profile": "课堂引导员为非写实卡通数学伙伴，圆润、友好、适合一年级公开课导入视频。",
+        "character_safety_rule": "禁止真人、photorealistic、real child、真实儿童照片和真实课堂实拍感。",
+        "visual_palette": "深青绿 #0F766E、暖琥珀 #F59E0B、纸白 #F8FAFC",
+        "visual_style_keywords": "非写实卡通、生活化数学情境、清晰数量表达、公开课作品感",
+        "font_preference": "Microsoft YaHei",
+        "compliance_notes": "学生可见层不得暴露内部提示词、规则编号、生成器名称或调试信息。",
+    }
+
+
+def generate_and_approve_if_needed(
+    client: EvidenceClient,
+    writer: EvidenceWriter,
+    project_id: str,
+    node_id: str,
+    body: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    current = client.request_json(
+        f"{node_id}_get_before_generate",
+        "GET",
+        f"/projects/{project_id}/nodes/{node_id}",
+    )
+    if current.get("status") in {"approved", "skipped"}:
+        writer.evidence["node_results"][node_id] = summarize_node(current)
+        writer.flush()
+        return current
+    return generate_and_approve(client, writer, project_id, node_id, body)
+
+
 def build_final_video_generate_body(args: argparse.Namespace) -> dict[str, Any]:
     body = {
         "model": args.video_model,
@@ -678,14 +721,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "create_project",
             "POST",
             "/projects",
-            {
-                "name": args.project_name or f"T075 real fullchain smoke {timestamp}",
-                "subject": "math",
-                "grade": "1",
-                "textbook_version": "renjiao",
-                "volume": "shang",
-                "lesson_type": "public",
-            },
+            build_project_create_payload(args.project_name, timestamp),
         )
         project_id = project["project_id"]
         evidence["project_id"] = project_id
@@ -696,7 +732,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         generate_and_approve(client, writer, project_id, "textbook_parse", {"knowledge_point_id": args.knowledge_point_id})
         generate_and_approve(client, writer, project_id, "lesson_plan")
         edit_and_approve_intro_selection(client, writer, project_id)
-        for node_id in ["intro_video_script", "intro_video_screenplay", "intro_video_asset", "storyboard"]:
+        for node_id in SHARED_CONTEXT_NODE_CHAIN:
+            generate_and_approve_if_needed(client, writer, project_id, node_id)
+        for node_id in VIDEO_NODE_CHAIN:
             body = build_node_generate_body(node_id, args)
             generate_and_approve(client, writer, project_id, node_id, body)
             if node_id == "intro_video_asset":
@@ -723,6 +761,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             allow_placeholder_media=args.allow_placeholder_media,
         )
         download_completed_clips(client, writer, project_id, latest_video_tasks)
+        for node_id in PPT_NODE_CHAIN:
+            generate_and_approve(client, writer, project_id, node_id)
         download_final_artifacts(client, writer, project_id)
         collect_final_video_node_content(client, evidence, project_id)
         final_local_path = Path((evidence.get("final_video_path") or {}).get("local_path") or "")

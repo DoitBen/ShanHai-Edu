@@ -93,9 +93,9 @@ export function DashboardScreen() {
         {projectsStatus === "loading" ? (
           <Card className="border-border bg-card p-10 text-center">
             <Activity className="mx-auto h-8 w-8 animate-pulse text-muted-foreground" />
-            <p className="mt-3 t-module">正在读取真实项目列表</p>
+            <p className="mt-3 t-module">正在同步项目列表</p>
             <p className="mt-1 t-caption text-muted-foreground">
-              数据来源：GET /projects
+              稍后会显示你最近的备课项目。
             </p>
           </Card>
         ) : projectsStatus === "error" ? (
@@ -121,7 +121,7 @@ export function DashboardScreen() {
             <p className="mt-3 t-module">暂无进行中的项目</p>
             {dataMode === "api" && (
               <p className="mt-1 t-caption text-muted-foreground">
-                当前为真实 API 模式，项目列表不会使用 demo mock 数据。
+                当前连接真实后端项目数据。
               </p>
             )}
             <Button className="mt-4 gap-2" onClick={() => go("new-project")}>
@@ -158,8 +158,8 @@ export function DashboardScreen() {
               </ul>
             ) : (
               <EmptyState
-                title="暂无真实待办"
-                desc="真实 API 模式下待办事项需等待任务接口接入。"
+                title="暂无待处理事项"
+                desc="后续接入任务提醒后会显示在这里。"
                 icon={<Inbox className="h-5 w-5" />}
               />
             )}

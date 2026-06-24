@@ -18,7 +18,10 @@ import {
 import { MOCK_VIDEO_PLANS } from "@/lib/mock-data";
 import type {
   ApiPptExport,
+  ApiWorkspaceStep,
+  ApiWorkspaceSubGate,
   ApiTask,
+  DataMode,
   LoadStatus,
   PendingRuleWarning,
   ProjectMeta,
@@ -83,7 +86,9 @@ import {
   Maximize2,
   Film,
   ListChecks,
+  Lock,
 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 
 /* ---------------- 常量 ---------------- */
 
@@ -104,6 +109,98 @@ const LOG_LEVEL_META = {
 } as const;
 
 type TabKey = "input" | "run" | "result" | "evidence" | "logs";
+
+type UserStepId =
+  | "project-info"
+  | "textbook-content"
+  | "lesson-plan"
+  | "intro-video-plan"
+  | "ppt-draft"
+  | "video-generation"
+  | "final-delivery";
+
+type UserStepState = "completed" | "current" | "locked";
+
+type UserWorkspaceStep = {
+  id: UserStepId;
+  label: string;
+  stageKeys: string[];
+  goal: string;
+  todo: string;
+  basis: string;
+};
+
+type TextbookContentSummary = {
+  title: string;
+  pages: string;
+  knowledge: string[];
+  status: string;
+  basis: string;
+  markdown: string;
+  sliceUrl: string;
+};
+
+const SELECTED_ANCHOR_KEY = ["selected", "anchor"].join("_");
+const TASK_NODE_KEY = ["node", "id"].join("_") as "node_id";
+
+const USER_WORKSPACE_STEPS: UserWorkspaceStep[] = [
+  {
+    id: "project-info",
+    label: "项目信息",
+    stageKeys: ["project-meta", "project-config", "visual-contract", "character-dict"],
+    goal: "确认这节公开课的基本信息、风格方向和合规边界。",
+    todo: "回看年级、教材、课型、角色与视觉约束是否符合本班公开课。",
+    basis: "来自新建项目时填写的项目配置、视觉契约和角色设定。",
+  },
+  {
+    id: "textbook-content",
+    label: "教材内容",
+    stageKeys: ["textbook-parse"],
+    goal: "确认当前课时对应的教材页段、知识点和解析内容。",
+    todo: "检查教材内容是否对应本节课，确认无误后再生成教案。",
+    basis: "来自教材库知识点资产包、教材页段和教材内容。",
+  },
+  {
+    id: "lesson-plan",
+    label: "教案生成",
+    stageKeys: ["open-lesson-plan"],
+    goal: "生成并修改一版可用于公开课磨课的教案草稿。",
+    todo: "在 Markdown 编辑和预览中检查教学目标、流程、提问和板书。",
+    basis: "基于已确认的教材内容、知识点资产包和可选教案参考。",
+  },
+  {
+    id: "intro-video-plan",
+    label: "导入视频方案",
+    stageKeys: ["video-design-import"],
+    goal: "选择一套有吸引力、又能通过课程锚点回到课堂的导入视频方案。",
+    todo: "比较视频主题、吸睛点、课程锚点、课堂落点问题和不提前讲解内容。",
+    basis: "基于教案中的导入设计候选和当前课程锚点。",
+  },
+  {
+    id: "ppt-draft",
+    label: "PPT 草稿",
+    stageKeys: ["ppt-plan", "ppt-script", "ppt-assets", "pptx-generation"],
+    goal: "形成公开课 PPT 的结构、逐页脚本、视觉素材和可下载草稿。",
+    todo: "检查每页要讲什么、学生做什么、数学内容是否可编辑可核对。",
+    basis: "基于教案、PPT 模板结构、视觉契约和角色设定。",
+  },
+  {
+    id: "video-generation",
+    label: "视频生成",
+    stageKeys: ["video-script", "video-screenplay", "video-assets", "storyboard", "video-generation"],
+    goal: "把已选导入方案推进为文稿、分场、素材、分镜和视频任务。",
+    todo: "依次检查文稿、分场剧本、资产与首帧、分镜、clip/TTS/合成，不把本地演示文件当真实成片。",
+    basis: "基于导入视频方案、课程锚点、素材清单和分镜脚本。",
+  },
+  {
+    id: "final-delivery",
+    label: "最终交付",
+    stageKeys: ["final-delivery"],
+    goal: "整理教案、PPT 草稿、导入视频和最终下载材料。",
+    todo: "确认可下载内容齐全，记录还需要带回试讲修改的地方。",
+    basis: "基于前面已确认的教案、PPT、视频和生成资产。",
+  },
+];
 
 /* ============================================================
  * 主组件 —— 项目工作区指挥台
@@ -147,6 +244,7 @@ function EmptyWorkspace({ onBack }: { onBack: () => void }) {
 function ProjectWorkspace({ project }: { project: ProjectMeta }) {
   const dataMode = useAppStore((s) => s.dataMode);
   const stagesByProject = useAppStore((s) => s.stagesByProject);
+  const workspaceByProject = useAppStore((s) => s.workspaceByProject);
   const videoPlansByProject = useAppStore((s) => s.videoPlansByProject);
   const manifestStatus = useAppStore((s) => s.manifestStatusByProject[project.id] || "idle");
   const manifestError = useAppStore((s) => s.manifestErrorByProject[project.id]);
@@ -179,6 +277,7 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
     useAppStore((s) => s.projects.find((p) => p.id === project.id)) || project;
 
   const stages = stagesByProject[project.id] || [];
+  const workspace = workspaceByProject[project.id] || null;
 
   const [selectedKey, setSelectedKey] = useState<string>(project.currentStage);
   const [tab, setTab] = useState<TabKey>("input");
@@ -207,6 +306,7 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
   const [feedbackStatus, setFeedbackStatus] = useState<LoadStatus>("idle");
   const [ruleOverrideOpen, setRuleOverrideOpen] = useState(false);
   const [ruleOverrideReason, setRuleOverrideReason] = useState("");
+  const [selectedUserStepOverride, setSelectedUserStepOverride] = useState<UserStepId | null>(null);
 
   const selectedStage =
     stages.find((s) => s.key === selectedKey) || stages[0];
@@ -255,6 +355,17 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
     }
   }
 
+  function returnToWorkspaceCurrentStep() {
+    setSelectedUserStepOverride(null);
+    const currentStepView = findUserStepViewForWorkspaceStep(userStepViews, workspace?.current_step_id);
+    const currentStageKey = currentStepView
+      ? getDefaultStageKeyForUserStep(currentStepView.step, stages)
+      : null;
+    if (currentStageKey) {
+      syncToStage(currentStageKey);
+    }
+  }
+
   function handleSelectStage(key: string) {
     syncToStage(key);
   }
@@ -263,7 +374,7 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
     if (dataMode === "api") {
       if (!selectedStage) return;
       if (!canEditStageInWorkspace(dataMode, selectedStage)) {
-        toast.info("真实 API 模式下当前节点不开放手工编辑保存");
+        toast.info("当前内容暂不支持在页面内直接修改");
         return;
       }
       const value =
@@ -282,7 +393,9 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
         toast.warning("请先填写要保存的内容");
         return;
       }
-      const payload = parseEditableNodeContent(value);
+      const payload = selectedStage.key === "open-lesson-plan"
+        ? { markdown: value }
+        : parseEditableNodeContent(value);
       const res = await editStageRemote(project.id, selectedStage.key, payload);
       if (!res.ok) {
         toast.error(res.msg || "保存到后端失败");
@@ -324,7 +437,7 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
 
   async function handleExportPpt() {
     if (dataMode !== "api") {
-      toast.info("演示模式不导出真实 PPT，请切换真实 API 模式");
+      toast.info("当前练习环境不导出正式 PPT，请进入已连接的备课环境后再导出");
       return;
     }
     if (pptExportStatus === "loading") return;
@@ -334,11 +447,11 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
     try {
       const pptStage = stages.find((stage) => stage.key === "pptx-generation");
       if (!pptStage) {
-        throw new Error("未找到 pptx_artifact 节点，请先同步 manifest");
+        throw new Error("还没有找到可生成 PPTX 的步骤，请先刷新备课进度");
       }
       const res = await generateStage(project.id, pptStage.key);
       if (!res.ok) {
-        throw new Error(res.msg || "PPTX artifact 生成失败");
+        throw new Error(res.msg || "PPTX 文件生成失败");
       }
       const latestStage =
         useAppStore
@@ -346,13 +459,13 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
           .stagesByProject[project.id]?.find((item) => item.key === pptStage.key) || pptStage;
       const result = pptArtifactExportFromStage(latestStage);
       if (!result) {
-        throw new Error("pptx_artifact 已生成但缺少下载信息");
+        throw new Error("PPTX 文件已生成，但暂时缺少下载入口");
       }
       setPptExportResult(result);
       setPptExportStatus("ready");
-      toast.success("PPTX artifact 已生成，可下载查看");
+      toast.success("PPTX 文件已生成，可下载查看");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "PPTX artifact 生成失败";
+      const message = error instanceof Error ? error.message : "PPTX 文件生成失败";
       setPptExportResult(null);
       setPptExportStatus("error");
       setPptExportError(message);
@@ -385,7 +498,8 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
         toast.error(res.msg || "节点确认失败");
         return;
       }
-      toast.success("已确认，后端 manifest 已刷新");
+      toast.success("已确认，备课进度已刷新");
+      setSelectedUserStepOverride(null);
       const next = orderedStageKeys[currentIndex + 1];
       if (next) syncToStage(next);
       return;
@@ -414,15 +528,17 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
     setRuleOverrideOpen(false);
     setRuleOverrideReason("");
     toast.success("已记录 warning override 并确认通过");
+    setSelectedUserStepOverride(null);
     const next = orderedStageKeys[currentIndex + 1];
     if (next) syncToStage(next);
   }
 
   async function handleRefreshStage() {
     if (dataMode !== "api") {
-      toast.info("演示模式使用本地状态，无需刷新后端");
+      toast.info("当前练习环境使用本地状态，无需刷新");
       return;
     }
+    setSelectedUserStepOverride(null);
     await loadProjectManifest(project.id);
     if (selectedStage) {
       await loadProjectNode(project.id, selectedStage.key);
@@ -439,7 +555,7 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
 
   function handleReject() {
     if (dataMode === "api") {
-      toast.info("真实 API 模式下退回编辑待接 /nodes/{node_id}/edit");
+      toast.info("当前版本暂不支持从页面退回修改");
       return;
     }
     rejectStage(project.id, selectedStage.key);
@@ -449,6 +565,7 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
 
   function handleNextStep() {
     if (dataMode === "api") {
+      setSelectedUserStepOverride(null);
       const next = orderedStageKeys[currentIndex + 1];
       if (next) {
         syncToStage(next);
@@ -470,7 +587,7 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
 
   function handleAcceptVideoPlan(planId: string) {
     if (dataMode === "api") {
-      toast.info("真实 API 模式下视频方案采纳待接后端接口");
+      toast.info("请在方案卡中选择并保存最终导入视频方案");
       return;
     }
     acceptVideoPlan(project.id, planId);
@@ -556,6 +673,10 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
   }, [dataMode, loadProjectNode, project.id, selectedNodeStatus, selectedStage]);
 
   useEffect(() => {
+    setSelectedUserStepOverride(null);
+  }, [workspace?.current_step_id]);
+
+  useEffect(() => {
     if (dataMode !== "api" || !selectedStage) return;
     if (!["video-assets", "video-generation"].includes(selectedStage.key)) return;
     if (projectTasksStatus === "idle" || projectTasksStatus === "error") {
@@ -615,6 +736,142 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
   const stageDef = stageDefByKey(selectedStage?.key || "");
   const videoPlans =
     dataMode === "demo" ? videoPlansByProject[project.id] || MOCK_VIDEO_PLANS : [];
+  const userStepViews =
+    buildUserStepViewsFromWorkspace(USER_WORKSPACE_STEPS, workspace, stages) ||
+    buildUserStepViews(USER_WORKSPACE_STEPS, stages);
+  const explicitOverrideStepView =
+    findValidUserStepOverride(userStepViews, selectedUserStepOverride);
+  const workspaceCurrentStepView =
+    findUserStepViewForWorkspaceStep(userStepViews, workspace?.current_step_id);
+  const selectedStepView =
+    explicitOverrideStepView ||
+    workspaceCurrentStepView ||
+    userStepViews.find((step) => step.state === "current") ||
+    userStepViews[0];
+  const selectedStepStages = selectedStepView
+    ? stages.filter((stage) => selectedStepView.step.stageKeys.includes(stage.key))
+    : [];
+  const selectedStepStageKey = selectedStepView
+    ? getDefaultStageKeyForUserStep(
+        selectedStepView.step,
+        stages,
+        explicitOverrideStepView ? selectedStage?.key : undefined,
+      )
+    : null;
+  const selectedStepStage =
+    (selectedStepStageKey
+      ? stages.find((stage) => stage.key === selectedStepStageKey)
+      : undefined) ||
+    (selectedStage && selectedStepView?.step.stageKeys.includes(selectedStage.key)
+      ? selectedStage
+      : undefined) ||
+    selectedStepStages[0] ||
+    selectedStage;
+
+  useEffect(() => {
+    if (selectedUserStepOverride || !workspaceCurrentStepView || !selectedStepStageKey) return;
+    if (selectedStage?.key === selectedStepStageKey) return;
+    const nextStage = stages.find((stage) => stage.key === selectedStepStageKey);
+    setSelectedKey(selectedStepStageKey);
+    setTab("input");
+    setInputDraft(nextStage?.input || "");
+    setResultDraft(nextStage?.result || "");
+    if (dataMode === "api") {
+      void loadProjectNode(project.id, selectedStepStageKey);
+    }
+  }, [
+    dataMode,
+    loadProjectNode,
+    project.id,
+    selectedStage?.key,
+    selectedStepStageKey,
+    selectedUserStepOverride,
+    workspaceCurrentStepView,
+    stages,
+  ]);
+  const selectedWorkspaceStep = selectedStepView
+    ? findWorkspaceStepForUserStep(workspace, selectedStepView.step)
+    : undefined;
+  const workspaceStepSubGates = selectedWorkspaceStep?.sub_gates || [];
+  const selectedStepStatus = selectedStepView?.state || "locked";
+  const selectedTaskStage = selectedStepStage;
+  const selectedTaskActionStatus = selectedTaskStage
+    ? stageActionStatusByProject[project.id]?.[selectedTaskStage.key] || "idle"
+    : "idle";
+  const selectedTaskNodeStatus = selectedTaskStage
+    ? nodeStatusByProject[project.id]?.[selectedTaskStage.key] || "idle"
+    : "idle";
+  const selectedTaskNodeError = selectedTaskStage
+    ? nodeErrorByProject[project.id]?.[selectedTaskStage.key]
+    : null;
+  const selectedTaskActionError = selectedTaskStage
+    ? stageActionErrorByProject[project.id]?.[selectedTaskStage.key]
+    : null;
+  const isTaskFinalVideoStage = selectedTaskStage?.key === "video-generation";
+  const canEditSelectedTaskStage = canEditStageInWorkspace(dataMode, selectedTaskStage);
+  const workspaceHeaderCurrentStepLabel = selectedStepView?.step.label;
+  const workspaceHeaderNextAction = selectedTaskStage
+    ? selectedStepStatus === "completed"
+      ? `回看「${selectedStepView?.step.label || selectedTaskStage.title}」`
+      : `继续处理「${selectedTaskStage.title}」`
+    : undefined;
+  const primaryActionLabel = selectedTaskStage
+    ? getPrimaryActionLabel(selectedStepStatus, selectedTaskStage, selectedTaskActionStatus, isTaskFinalVideoStage)
+    : "";
+  const primaryActionDisabled =
+    !selectedTaskStage ||
+    selectedStepStatus === "locked" ||
+    selectedTaskActionStatus === "loading" ||
+    (selectedTaskStage.status === "running" && !isTaskFinalVideoStage);
+
+  function handleSelectUserStep(stepId: UserStepId) {
+    const target = userStepViews.find((item) => item.step.id === stepId);
+    if (!target) return;
+    if (target.state === "locked") {
+      toast.info(getLockedStepMessage(target, userStepViews));
+      return;
+    }
+    const targetKey = getDefaultStageKeyForUserStep(target.step, stages, selectedStage?.key);
+    if (!targetKey) {
+      toast.info("这一步还没有可查看内容。");
+      return;
+    }
+    if (target.state === "completed") {
+      setSelectedUserStepOverride(target.step.id);
+    } else {
+      setSelectedUserStepOverride(null);
+    }
+    syncToStage(targetKey);
+  }
+
+  function handlePrimaryTaskAction() {
+    if (!selectedTaskStage || selectedStepStatus === "locked") return;
+    if (selectedStage?.key !== selectedTaskStage.key) {
+      syncToStage(selectedTaskStage.key);
+    }
+    if (selectedStepStatus === "completed") {
+      returnToWorkspaceCurrentStep();
+      return;
+    }
+    if (selectedTaskActionStatus === "loading") return;
+    if (!selectedTaskStage.result || selectedTaskStage.status === "not_started") {
+      void handleRegenerate();
+      return;
+    }
+    if (selectedTaskStage.status === "input_required") {
+      void handleSave();
+      return;
+    }
+    if (selectedTaskStage.status === "running" && isTaskFinalVideoStage) {
+      void handleRefreshStage();
+      return;
+    }
+    if (["ready", "pending_confirm", "approved"].includes(selectedTaskStage.status)) {
+      void handleApproveAndNext();
+      return;
+    }
+    void handleRegenerate();
+  }
 
   if (dataMode === "api" && (manifestStatus === "idle" || manifestStatus === "loading")) {
     return (
@@ -625,6 +882,8 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
           onBack={() => go("dashboard")}
           feedbackStatus={feedbackStatus}
           onSubmitFeedback={dataMode === "api" ? handleOpenDeliveryFeedback : undefined}
+          currentStepLabel={workspaceHeaderCurrentStepLabel}
+          nextActionOverride={workspaceHeaderNextAction}
         />
         <DeliveryFeedbackDialog
           open={feedbackOpen}
@@ -635,7 +894,7 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
           onSubmit={handleSubmitDeliveryFeedback}
         />
         <Card className="mt-6 border-border bg-card p-10">
-          <LoadingState label="正在读取项目 manifest..." />
+          <LoadingState label="正在读取备课进度..." />
         </Card>
       </div>
     );
@@ -650,6 +909,8 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
           onBack={() => go("dashboard")}
           feedbackStatus={feedbackStatus}
           onSubmitFeedback={dataMode === "api" ? handleOpenDeliveryFeedback : undefined}
+          currentStepLabel={workspaceHeaderCurrentStepLabel}
+          nextActionOverride={workspaceHeaderNextAction}
         />
         <DeliveryFeedbackDialog
           open={feedbackOpen}
@@ -661,8 +922,8 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
         />
         <Card className="mt-6 border-dashed bg-card p-10">
           <EmptyState
-            title="manifest 读取失败"
-            desc={manifestError || "请确认后端 API 状态后重试。"}
+            title="备课进度读取失败"
+            desc={formatUserFacingError(manifestError || "请稍后重试。")}
             icon={<AlertTriangle className="h-5 w-5" />}
           />
           <div className="flex justify-center pb-2">
@@ -685,6 +946,8 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
           onBack={() => go("dashboard")}
           feedbackStatus={feedbackStatus}
           onSubmitFeedback={dataMode === "api" ? handleOpenDeliveryFeedback : undefined}
+          currentStepLabel={workspaceHeaderCurrentStepLabel}
+          nextActionOverride={workspaceHeaderNextAction}
         />
         <DeliveryFeedbackDialog
           open={feedbackOpen}
@@ -696,8 +959,8 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
         />
         <Card className="mt-6 border-dashed bg-card p-10">
           <EmptyState
-            title="暂无流程节点"
-            desc="后端 manifest 未返回节点，当前不使用 mock 节点补齐。"
+            title="暂无备课步骤"
+            desc="还没有读取到这个项目的备课进度，请稍后刷新。"
             icon={<FileText className="h-5 w-5" />}
           />
         </Card>
@@ -714,270 +977,159 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
           onBack={() => go("dashboard")}
           feedbackStatus={feedbackStatus}
           onSubmitFeedback={dataMode === "api" ? handleOpenDeliveryFeedback : undefined}
+          currentStepLabel={workspaceHeaderCurrentStepLabel}
+          nextActionOverride={workspaceHeaderNextAction}
         />
 
-      {/* ===== 工作流节点轨 ===== */}
+      {/* ===== 用户态备课步骤 ===== */}
       <section className="mt-6">
         <SectionLabel
           index="01"
-          title="流程节点"
-          desc={
-            dataMode === "api"
-              ? `${stages.length} 个后端 manifest 节点，点击节点读取详情`
-              : "14 个阶段按顺序推进，点击节点切换详情"
-          }
-          right={<KeyboardHint keys={["←", "→"]} label="切换节点" />}
+          title="备课步骤"
+          desc="按公开课备课顺序推进：完成的步骤可回看，未解锁的步骤先保持锁定。"
+          right={<KeyboardHint keys={["←", "→"]} label="回看已完成步骤" />}
         />
         <Card className="border-border bg-card p-3 shadow-soft">
-          <WorkflowRail
-            stages={stages}
-            selectedKey={selectedStage?.key || ""}
-            onSelect={handleSelectStage}
+          <UserStepRail
+            steps={userStepViews}
+            selectedStepId={selectedStepView?.step.id}
+            onSelect={handleSelectUserStep}
           />
         </Card>
       </section>
 
-      {/* ===== 详情区 5 Tabs + 底部操作 ===== */}
+      {/* ===== 用户态任务卡 ===== */}
       <section className="mt-8">
         <SectionLabel
           index="02"
-          title="节点详情"
-          desc={
-            stageDef
-              ? `${stageDef.title} · ${stageDef.desc}`
-              : selectedStage
-              ? `${selectedStage.title} · ${selectedStage.summary}`
-              : "选择一个节点查看详情"
-          }
+          title="当前任务"
+          desc="只看这一步要做什么、现在需要做什么、当前结果和下一步按钮。"
           right={
-            selectedStage ? <StatusBadge status={selectedStage.status} /> : null
+            selectedTaskStage ? <StatusBadge status={selectedTaskStage.status} /> : null
           }
         />
-        <Card className="border-border bg-card p-0 shadow-soft">
-          {/* 节点标题条 */}
-          {selectedStage && (
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-6">
-              <div className="flex min-w-0 items-center gap-3">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary t-body font-semibold">
-                  {stageDef?.order || selectedStage.order}
-                </span>
-                <div className="min-w-0">
-                  <div className="t-module truncate">{selectedStage.title}</div>
-                  <div className="mt-0.5 t-caption text-muted-foreground line-clamp-1">
-                    {BRANCH_LABEL[selectedStage.branch]}
-                    {selectedStage.summary ? ` · ${selectedStage.summary}` : ""}
-                  </div>
-                  {selectedStage.reviewReason && (
-                    <div className="mt-1 flex items-center gap-1.5 t-caption text-warning">
-                      <RefreshCw className="h-3.5 w-3.5 shrink-0" />
-                      <span className="line-clamp-1">{selectedStage.reviewReason}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-              {selectedStage.duration && (
-                <div className="flex shrink-0 items-center gap-1.5 t-caption text-muted-foreground">
-                  <Clock className="h-3.5 w-3.5" />
-                  耗时 {selectedStage.duration}
-                </div>
-              )}
-            </div>
-          )}
-
-          <Tabs
-            value={tab}
-            onValueChange={(v) => setTab(v as TabKey)}
-            className="gap-0"
-          >
-            <div className="overflow-x-auto scroll-fine px-3 py-2 sm:px-5">
-              <TabsList className="bg-muted/60">
-                <TabsTrigger value="input" className="gap-1.5">
-                  输入
-                  <kbd className="hidden sm:inline-flex h-4 w-4 items-center justify-center rounded bg-background/70 font-mono text-[9px] text-muted-foreground">1</kbd>
-                </TabsTrigger>
-                <TabsTrigger value="run" className="gap-1.5">
-                  运行
-                  <kbd className="hidden sm:inline-flex h-4 w-4 items-center justify-center rounded bg-background/70 font-mono text-[9px] text-muted-foreground">2</kbd>
-                </TabsTrigger>
-                <TabsTrigger value="result" className="gap-1.5">
-                  结果
-                  <kbd className="hidden sm:inline-flex h-4 w-4 items-center justify-center rounded bg-background/70 font-mono text-[9px] text-muted-foreground">3</kbd>
-                </TabsTrigger>
-                <TabsTrigger value="evidence" className="gap-1.5">
-                  证据
-                  <kbd className="hidden sm:inline-flex h-4 w-4 items-center justify-center rounded bg-background/70 font-mono text-[9px] text-muted-foreground">4</kbd>
-                </TabsTrigger>
-                <TabsTrigger value="logs" className="gap-1.5">
-                  日志
-                  <kbd className="hidden sm:inline-flex h-4 w-4 items-center justify-center rounded bg-background/70 font-mono text-[9px] text-muted-foreground">5</kbd>
-                </TabsTrigger>
-              </TabsList>
-            </div>
-
-            <div className="px-4 pb-5 pt-4 sm:px-6">
-              <TabsContent value="input" className="mt-0">
-                {dataMode === "api" && (
-                  <>
-                    <ApiNodeNotice status={selectedNodeStatus} error={selectedNodeError} />
-                    <ApiActionNotice
-                      status={selectedActionStatus}
-                      error={selectedActionError}
-                    />
-                  </>
-                )}
-                <InputTab
-                  stage={selectedStage}
-                  value={inputDraft}
-                  onChange={setInputDraft}
-                  onSave={() => handleSave()}
-                />
-              </TabsContent>
-              <TabsContent value="run" className="mt-0">
-                {dataMode === "api" && (
-                  <>
-                    <ApiNodeNotice status={selectedNodeStatus} error={selectedNodeError} />
-                    <ApiActionNotice
-                      status={selectedActionStatus}
-                      error={selectedActionError}
-                    />
-                  </>
-                )}
-                {selectedStage?.key === "video-generation" ? (
-                  <VideoGenerationRunTab
-                    stage={selectedStage}
-                    capabilities={videoCapabilities}
-                    option={videoOption}
-                    onChange={setVideoOption}
-                    onRegenerate={handleRegenerate}
-                  />
-                ) : (
-                  <RunTab stage={selectedStage} onRegenerate={handleRegenerate} />
-                )}
-              </TabsContent>
-              <TabsContent value="result" className="mt-0">
-                {dataMode === "api" && (
-                  <>
-                    <ApiNodeNotice status={selectedNodeStatus} error={selectedNodeError} />
-                    <ApiActionNotice
-                      status={selectedActionStatus}
-                      error={selectedActionError}
-                    />
-                  </>
-                )}
-                {dataMode === "demo" && selectedStage?.key === "video-script" ? (
-                  <VideoPlanGrid
-                    plans={videoPlans}
-                    selectedIds={compareIds}
-                    onToggleSelect={(id) =>
-                      setCompareIds((prev) =>
-                        prev.includes(id)
-                          ? prev.filter((x) => x !== id)
-                          : prev.length >= 3
-                            ? (toast.warning("最多对比 3 套方案"), prev)
-                            : [...prev, id],
-                      )
-                    }
-                    onAccept={handleAcceptVideoPlan}
-                    onEdit={() => toast.info("演示版暂不支持编辑")}
-                    onCompare={() => {
-                      if (compareIds.length < 2) {
-                        toast.warning("请至少选择 2 套方案进行对比");
-                        return;
-                      }
-                      setCompareOpen(true);
-                    }}
-                    onRegenerate={handleRegenerate}
-                  />
-                ) : dataMode === "api" && selectedStage?.key === "video-design-import" ? (
-                  <IntroSelectionResult
-                    stage={selectedStage}
-                    value={resultDraft || selectedStage.result}
-                    lessonPlanResult={
-                      stages.find((item) => item.key === "open-lesson-plan")?.result || ""
-                    }
-                    onChange={setResultDraft}
-                    onSave={() => handleSave(resultDraft || selectedStage.result)}
-                    saving={selectedActionStatus === "loading"}
-                    actionError={selectedActionError}
-                  />
-                ) : dataMode === "api" && selectedStage?.key === "video-generation" ? (
-                  <FinalVideoResult
-                    projectId={project.id}
-                    stage={selectedStage}
-                    tasks={projectTasks}
-                    tasksStatus={projectTasksStatus}
-                    tasksError={projectTasksError}
-                    actionError={selectedActionError}
-                    pptExportStatus={pptExportStatus}
-                    pptExportError={pptExportError}
-                    pptExportResult={pptExportResult}
-                    onRefresh={() => void loadProjectTasks(project.id)}
-                    onRefreshTask={refreshProjectTask}
-                    onRetryTask={retryProjectTask}
-                    onExportPpt={() => void handleExportPpt()}
-                  />
-                ) : dataMode === "api" && selectedStage?.key === "video-assets" ? (
-                  <VideoAssetResult
-                    projectId={project.id}
-                    stage={selectedStage}
-                    value={resultDraft || selectedStage.result}
-                    tasks={projectTasks}
-                    tasksStatus={projectTasksStatus}
-                    tasksError={projectTasksError}
-                    onChange={setResultDraft}
-                    onSave={() => handleSave(resultDraft || selectedStage.result)}
-                    saving={selectedActionStatus === "loading"}
-                    onRefresh={() => void loadProjectTasks(project.id)}
-                    onRetryTask={retryProjectTask}
-                  />
-                ) : dataMode === "api" && selectedStage && canEditSelectedStage ? (
-                  <EditableNodeResult
-                    stage={selectedStage}
-                    value={resultDraft || selectedStage.result}
-                    courseAnchor={resolveCourseAnchorForStage(selectedStage.key, stages)}
-                    onChange={setResultDraft}
-                    onSave={() => handleSave(resultDraft || selectedStage.result)}
-                    saving={selectedActionStatus === "loading"}
-                  />
-                ) : (
-                  <ResultTab stage={selectedStage} />
-                )}
-              </TabsContent>
-              <TabsContent value="evidence" className="mt-0">
-                <EvidenceTab
-                  stage={selectedStage}
-                  onPreview={(file) => setPreviewFile(file)}
-                />
-              </TabsContent>
-              <TabsContent value="logs" className="mt-0">
-                <LogsTab stage={selectedStage} />
-              </TabsContent>
-            </div>
-          </Tabs>
-
-          {/* 底部操作（在 Card 内） */}
-          <div className="border-t border-border bg-muted/20 px-4 py-3 sm:px-6">
-            <StageActions
-              canSave={canSave}
-              canRegenerate={canRegenerate}
-              canApprove={canApprove}
-              canReject={canReject}
-              canNext={canNext}
-              isRunning={isRunning}
-              taskCreated={isFinalVideoStage && status === "running"}
-              regenerateLabel={isFinalVideoStage ? "重新创建任务" : undefined}
-              primaryRegenerateLabel={isFinalVideoStage ? "创建视频任务" : undefined}
-              actionLoading={selectedActionStatus === "loading"}
-              showRefresh={dataMode === "api"}
-              onSave={() => handleSave()}
-              onRefresh={handleRefreshStage}
-              onRegenerate={handleRegenerate}
-              onApprove={handleApproveAndNext}
-              onReject={handleReject}
-              onNext={handleNextStep}
-            />
-          </div>
-        </Card>
+        {selectedStepView?.state === "locked" ? (
+          <LockedStepCard stepView={selectedStepView} steps={userStepViews} />
+        ) : (
+          <WorkspaceTaskCard
+            dataMode={dataMode}
+            projectId={project.id}
+            stepView={selectedStepView}
+            stepStages={selectedStepStages}
+            workspaceStepSubGates={workspaceStepSubGates}
+            stage={selectedTaskStage}
+            value={resultDraft || selectedTaskStage?.result || ""}
+            inputValue={inputDraft}
+            lessonPlanResult={stages.find((item) => item.key === "open-lesson-plan")?.result || ""}
+            courseAnchor={selectedTaskStage ? resolveCourseAnchorForStage(selectedTaskStage.key, stages) : ""}
+            selectedNodeStatus={selectedTaskNodeStatus}
+            selectedNodeError={selectedTaskNodeError}
+            selectedActionStatus={selectedTaskActionStatus}
+            selectedActionError={selectedTaskActionError}
+            canEdit={canEditSelectedTaskStage}
+            videoPlans={videoPlans}
+            compareIds={compareIds}
+            projectTasks={projectTasks}
+            projectTasksStatus={projectTasksStatus}
+            projectTasksError={projectTasksError}
+            pptExportStatus={pptExportStatus}
+            pptExportError={pptExportError}
+            pptExportResult={pptExportResult}
+            primaryActionLabel={primaryActionLabel}
+            primaryActionDisabled={primaryActionDisabled}
+            onChangeResult={setResultDraft}
+            onChangeInput={setInputDraft}
+            onSave={() => handleSave(resultDraft || selectedTaskStage?.result)}
+            onPrimaryAction={handlePrimaryTaskAction}
+            onPreview={(file) => setPreviewFile(file)}
+            onToggleSelect={(id) =>
+              setCompareIds((prev) =>
+                prev.includes(id)
+                  ? prev.filter((x) => x !== id)
+                  : prev.length >= 3
+                    ? (toast.warning("最多对比 3 套方案进行对比"), prev)
+                    : [...prev, id],
+              )
+            }
+            onAcceptVideoPlan={handleAcceptVideoPlan}
+            onCompare={() => {
+              if (compareIds.length < 2) {
+                toast.warning("请至少选择 2 套方案进行对比");
+                return;
+              }
+              setCompareOpen(true);
+            }}
+            onRegenerate={handleRegenerate}
+            onRefreshTasks={() => void loadProjectTasks(project.id)}
+            onRefreshTask={refreshProjectTask}
+            onRetryTask={retryProjectTask}
+            onExportPpt={() => void handleExportPpt()}
+          />
+        )}
+        <DeveloperDiagnostics
+          dataMode={dataMode}
+          tab={tab}
+          stage={selectedStage}
+          inputDraft={inputDraft}
+          resultDraft={resultDraft}
+          selectedNodeStatus={selectedNodeStatus}
+          selectedNodeError={selectedNodeError}
+          selectedActionStatus={selectedActionStatus}
+          selectedActionError={selectedActionError}
+          canSave={canSave}
+          canRegenerate={canRegenerate}
+          canApprove={canApprove}
+          canReject={canReject}
+          canNext={canNext}
+          isRunning={isRunning}
+          isFinalVideoStage={isFinalVideoStage}
+          videoPlans={videoPlans}
+          compareIds={compareIds}
+          stages={stages}
+          projectId={project.id}
+          projectTasks={projectTasks}
+          projectTasksStatus={projectTasksStatus}
+          projectTasksError={projectTasksError}
+          pptExportStatus={pptExportStatus}
+          pptExportError={pptExportError}
+          pptExportResult={pptExportResult}
+          canEditSelectedStage={canEditSelectedStage}
+          videoCapabilities={videoCapabilities}
+          videoOption={videoOption}
+          onTabChange={setTab}
+          onChangeInput={setInputDraft}
+          onChangeResult={setResultDraft}
+          onSave={() => handleSave()}
+          onSaveResult={() => handleSave(resultDraft || selectedStage?.result)}
+          onRefresh={handleRefreshStage}
+          onRegenerate={handleRegenerate}
+          onApprove={handleApproveAndNext}
+          onReject={handleReject}
+          onNext={handleNextStep}
+          onChangeVideoOption={setVideoOption}
+          onToggleSelect={(id) =>
+            setCompareIds((prev) =>
+              prev.includes(id)
+                ? prev.filter((x) => x !== id)
+                : prev.length >= 3
+                  ? (toast.warning("最多对比 3 套方案"), prev)
+                  : [...prev, id],
+            )
+          }
+          onAcceptVideoPlan={handleAcceptVideoPlan}
+          onCompare={() => {
+            if (compareIds.length < 2) {
+              toast.warning("请至少选择 2 套方案进行对比");
+              return;
+            }
+            setCompareOpen(true);
+          }}
+          onPreview={(file) => setPreviewFile(file)}
+          onRefreshTasks={() => void loadProjectTasks(project.id)}
+          onRefreshTask={refreshProjectTask}
+          onRetryTask={retryProjectTask}
+          onExportPpt={() => void handleExportPpt()}
+        />
       </section>
 
       {/* 视频方案对比 */}
@@ -1131,9 +1283,9 @@ function RuleWarningOverrideDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[640px]">
         <DialogHeader>
-          <DialogTitle>规则 warning override</DialogTitle>
+          <DialogTitle>确认继续</DialogTitle>
           <DialogDescription>
-            当前节点命中 warning 规则，填写原因后可继续确认，并写入 Flywheel override 记录。
+            当前内容有需要注意的地方。填写原因后可以继续确认，系统会保留本次说明。
           </DialogDescription>
         </DialogHeader>
         <div className="max-h-[320px] space-y-3 overflow-y-auto pr-1">
@@ -1153,7 +1305,7 @@ function RuleWarningOverrideDialog({
           ))}
         </div>
         <div className="space-y-2">
-          <Label htmlFor="rule-override-reason">Override 原因</Label>
+          <Label htmlFor="rule-override-reason">继续确认的原因</Label>
           <Textarea
             id="rule-override-reason"
             value={reason}
@@ -1179,6 +1331,1175 @@ function RuleWarningOverrideDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function UserStepRail({
+  steps,
+  selectedStepId,
+  onSelect,
+}: {
+  steps: UserStepView[];
+  selectedStepId?: UserStepId;
+  onSelect: (stepId: UserStepId) => void;
+}) {
+  return (
+    <div className="overflow-x-auto scroll-fine pb-1">
+      <div className="flex min-w-max items-stretch px-1 py-1">
+        {steps.map((item, index) => {
+          const selected = item.step.id === selectedStepId;
+          const completed = item.state === "completed";
+          const locked = item.state === "locked";
+          return (
+            <div key={item.step.id} className="flex items-stretch">
+              <button
+                type="button"
+                aria-current={selected ? "step" : undefined}
+                onClick={() => onSelect(item.step.id)}
+                className={cn(
+                  "relative flex h-[96px] w-[116px] shrink-0 flex-col items-center justify-center gap-2 rounded-md border px-3 text-center transition-colors focus-ring",
+                  selected && "border-primary bg-primary/[0.04] shadow-soft",
+                  !selected && completed && "border-transparent hover:bg-success/5",
+                  !selected && !completed && !locked && "border-transparent hover:bg-muted/60",
+                  locked && "border-transparent bg-muted/25 text-muted-foreground",
+                )}
+              >
+                <span
+                  className={cn(
+                    "flex h-8 w-8 items-center justify-center rounded-full text-[0.72rem] font-semibold",
+                    completed && "bg-success/15 text-success",
+                    item.state === "current" && "bg-primary text-primary-foreground",
+                    locked && "bg-muted text-muted-foreground",
+                  )}
+                >
+                  {completed ? (
+                    <CheckCircle2 className="h-4 w-4" />
+                  ) : locked ? (
+                    <Lock className="h-3.5 w-3.5" />
+                  ) : (
+                    index + 1
+                  )}
+                </span>
+                <span className={cn("t-caption leading-tight", selected && "font-medium text-foreground")}>
+                  {item.step.label}
+                </span>
+                <span className="t-overline text-[0.55rem] leading-none text-muted-foreground/70">
+                  {completed ? "可回看" : item.state === "current" ? "当前步骤" : "未解锁"}
+                </span>
+              </button>
+              {index < steps.length - 1 && (
+                <div className="flex w-4 justify-center pt-8">
+                  <span className={cn("h-px w-full", completed ? "bg-success/50" : "bg-border")} />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function LockedStepCard({
+  stepView,
+  steps,
+}: {
+  stepView: UserStepView;
+  steps: UserStepView[];
+}) {
+  return (
+    <Card className="border-dashed bg-card p-8 text-center shadow-soft">
+      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+        <Lock className="h-5 w-5" />
+      </div>
+      <h3 className="mt-4 t-module">还不能进入【{stepView.step.label}】</h3>
+      <p className="mx-auto mt-2 max-w-xl t-body text-muted-foreground">
+        {getLockedStepMessage(stepView, steps)}
+      </p>
+    </Card>
+  );
+}
+
+function WorkspaceTaskCard({
+  dataMode,
+  projectId,
+  stepView,
+  stepStages,
+  workspaceStepSubGates,
+  stage,
+  value,
+  inputValue,
+  lessonPlanResult,
+  courseAnchor,
+  selectedNodeStatus,
+  selectedNodeError,
+  selectedActionStatus,
+  selectedActionError,
+  canEdit,
+  videoPlans,
+  compareIds,
+  projectTasks,
+  projectTasksStatus,
+  projectTasksError,
+  pptExportStatus,
+  pptExportError,
+  pptExportResult,
+  primaryActionLabel,
+  primaryActionDisabled,
+  onChangeResult,
+  onChangeInput,
+  onSave,
+  onPrimaryAction,
+  onPreview,
+  onToggleSelect,
+  onAcceptVideoPlan,
+  onCompare,
+  onRegenerate,
+  onRefreshTasks,
+  onRefreshTask,
+  onRetryTask,
+  onExportPpt,
+}: {
+  dataMode: DataMode;
+  projectId: string;
+  stepView?: UserStepView;
+  stepStages: WorkflowStage[];
+  workspaceStepSubGates: ApiWorkspaceSubGate[];
+  stage?: WorkflowStage;
+  value: string;
+  inputValue: string;
+  lessonPlanResult: string;
+  courseAnchor: string;
+  selectedNodeStatus: "idle" | "loading" | "ready" | "error";
+  selectedNodeError?: string | null;
+  selectedActionStatus: "idle" | "loading" | "ready" | "error";
+  selectedActionError?: string | null;
+  canEdit: boolean;
+  videoPlans: VideoIntroPlan[];
+  compareIds: string[];
+  projectTasks: ApiTask[];
+  projectTasksStatus: LoadStatus;
+  projectTasksError?: string | null;
+  pptExportStatus: LoadStatus;
+  pptExportError: string | null;
+  pptExportResult: ApiPptExport | null;
+  primaryActionLabel: string;
+  primaryActionDisabled: boolean;
+  onChangeResult: (value: string) => void;
+  onChangeInput: (value: string) => void;
+  onSave: () => void;
+  onPrimaryAction: () => void;
+  onPreview: (file: string) => void;
+  onToggleSelect: (id: string) => void;
+  onAcceptVideoPlan: (id: string) => void;
+  onCompare: () => void;
+  onRegenerate: () => void;
+  onRefreshTasks: () => void;
+  onRefreshTask: (projectId: string, taskId: string) => Promise<{ ok: boolean; msg?: string }>;
+  onRetryTask: (projectId: string, taskId: string) => Promise<{ ok: boolean; msg?: string }>;
+  onExportPpt: () => void;
+}) {
+  if (!stepView || !stage) return null;
+  const editable = stepView.state === "current" && canEdit;
+  const shouldShowOrdinaryEvidence = stepView.step.id !== "final-delivery";
+  return (
+    <Card className="border-border bg-card p-0 shadow-soft">
+      <div className="border-b border-border px-4 py-4 sm:px-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="t-overline text-muted-foreground/70">{stepView.step.label}</div>
+            <h3 className="mt-1 t-module">{stage.title}</h3>
+            <p className="mt-1 t-body text-muted-foreground">{stepView.step.goal}</p>
+          </div>
+          <StatusBadge status={stage.status} />
+        </div>
+      </div>
+      <div className="grid gap-5 p-4 sm:p-6 xl:grid-cols-[0.86fr_1.14fr]">
+        <div className="space-y-4">
+          <InfoBlock title="这一步要做什么" text={stepView.step.goal} />
+          <InfoBlock title="你现在需要做什么" text={stepView.state === "completed" ? "这一步已完成，可以回看配置和内容；需要调整时先评估后续步骤是否要重新确认。" : stepView.step.todo} />
+          <InfoBlock title="依据" text={stepView.step.basis} />
+          <UserActionNotice
+            nodeStatus={selectedNodeStatus}
+            nodeError={selectedNodeError}
+            actionStatus={selectedActionStatus}
+            actionError={selectedActionError}
+          />
+          <StepStageList stages={stepStages} activeKey={stage.key} />
+          {stepView.step.id === "ppt-draft" && (
+            <PptDraftSubStatusList stages={stepStages} subGates={workspaceStepSubGates} />
+          )}
+          {stepView.step.id === "video-generation" && (
+            <VideoGenerationSubStatusList stages={stepStages} subGates={workspaceStepSubGates} />
+          )}
+          {shouldShowOrdinaryEvidence && stage.evidence.length > 0 && (
+            <div className="rounded-md border border-border bg-muted/20 p-3">
+              <div className="t-caption font-medium text-foreground">可回看的依据材料</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {stage.evidence.slice(0, 4).map((file) => (
+                  <Button key={file} type="button" size="sm" variant="outline" onClick={() => onPreview(file)}>
+                    查看{getUserEvidenceLabel(file)}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="min-w-0 space-y-4">
+          <CurrentResultPanel
+            dataMode={dataMode}
+            projectId={projectId}
+            stage={stage}
+            value={value}
+            inputValue={inputValue}
+            lessonPlanResult={lessonPlanResult}
+            courseAnchor={courseAnchor}
+            editable={editable}
+            saving={selectedActionStatus === "loading"}
+            videoPlans={videoPlans}
+            compareIds={compareIds}
+            projectTasks={projectTasks}
+            projectTasksStatus={projectTasksStatus}
+            projectTasksError={projectTasksError}
+            pptExportStatus={pptExportStatus}
+            pptExportError={pptExportError}
+            pptExportResult={pptExportResult}
+            actionError={selectedActionError}
+            onChangeResult={onChangeResult}
+            onChangeInput={onChangeInput}
+            onSave={onSave}
+            onToggleSelect={onToggleSelect}
+            onAcceptVideoPlan={onAcceptVideoPlan}
+            onCompare={onCompare}
+            onRegenerate={onRegenerate}
+            onRefreshTasks={onRefreshTasks}
+            onRefreshTask={onRefreshTask}
+            onRetryTask={onRetryTask}
+            onExportPpt={onExportPpt}
+          />
+          <div className="flex justify-end border-t border-border pt-4">
+            <Button className="gap-2" disabled={primaryActionDisabled} onClick={onPrimaryAction}>
+              {selectedActionStatus === "loading" || stage.status === "running" ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <ArrowRight className="h-4 w-4" />
+              )}
+              {primaryActionLabel}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function InfoBlock({ title, text }: { title: string; text: string }) {
+  return (
+    <div className="rounded-md border border-border bg-muted/20 p-3">
+      <div className="t-caption font-medium text-foreground">{title}</div>
+      <p className="mt-1 t-body text-muted-foreground">{text}</p>
+    </div>
+  );
+}
+
+function StepStageList({ stages, activeKey }: { stages: WorkflowStage[]; activeKey: string }) {
+  if (stages.length <= 1) return null;
+  return (
+    <div className="rounded-md border border-border bg-card p-3">
+      <div className="t-caption font-medium text-foreground">本步骤包含的内容</div>
+      <div className="mt-2 grid gap-1.5">
+        {stages.map((stage) => (
+          <div key={stage.key} className={cn("flex items-center justify-between gap-3 rounded px-2 py-1.5 t-caption", stage.key === activeKey ? "bg-primary/5 text-foreground" : "text-muted-foreground")}>
+            <span>{stage.title}</span>
+            <StatusBadge status={stage.status} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PptDraftSubStatusList({
+  stages,
+  subGates,
+}: {
+  stages: WorkflowStage[];
+  subGates?: ApiWorkspaceSubGate[];
+}) {
+  return (
+    <SubStatusList
+      title="PPT 草稿检查点"
+      desc="PPT 草稿不是一步到位，先看结构，再看逐页讲法、视觉素材和可下载文件。"
+      items={[
+        {
+          label: "结构方案",
+          detail: "页数、页面类型、整体风格和课堂环节安排。",
+          stage: findStageByKey(stages, "ppt-plan"),
+          subGate: findSubGateByLabel(subGates, "结构方案", "ppt-plan"),
+        },
+        {
+          label: "逐页脚本",
+          detail: "每页讲什么、学生做什么、板书和练习怎么衔接。",
+          stage: findStageByKey(stages, "ppt-script"),
+          subGate: findSubGateByLabel(subGates, "逐页脚本", "ppt-script"),
+        },
+        {
+          label: "视觉资产",
+          detail: "每页需要的图片、角色和可替换素材；未生成时标明占位。",
+          stage: findStageByKey(stages, "ppt-assets"),
+          subGate: findSubGateByLabel(subGates, "视觉资产", "ppt-assets"),
+        },
+        {
+          label: "PPTX 文件",
+          detail: "可下载的 PPTX 草稿文件；真实质量仍需逐页检查。",
+          stage: findStageByKey(stages, "pptx-generation"),
+          subGate: findSubGateByLabel(subGates, "PPTX 文件", "pptx-generation"),
+        },
+      ]}
+    />
+  );
+}
+
+function VideoGenerationSubStatusList({
+  stages,
+  subGates,
+}: {
+  stages: WorkflowStage[];
+  subGates?: ApiWorkspaceSubGate[];
+}) {
+  return (
+    <SubStatusList
+      title="视频生成检查点"
+      desc="视频生成按素材链路逐步推进，不能把本地演示文件当成真实成片。"
+      items={[
+        {
+          label: "文稿",
+          detail: "旁白正文、时长和禁用清单，必须沿用课程锚点。",
+          stage: findStageByKey(stages, "video-script"),
+          subGate: findSubGateByLabel(subGates, "文稿", "video-script"),
+        },
+        {
+          label: "分场剧本",
+          detail: "分成几个场景，每场画面、角色和旁白是什么。",
+          stage: findStageByKey(stages, "video-screenplay"),
+          subGate: findSubGateByLabel(subGates, "分场剧本", "video-screenplay"),
+        },
+        {
+          label: "资产与首帧",
+          detail: "参考图、首帧方向、角色和场景素材，未真实生成时写明占位。",
+          stage: findStageByKey(stages, "video-assets"),
+          subGate: findSubGateByLabel(subGates, "资产与首帧", "video-assets"),
+        },
+        {
+          label: "分镜",
+          detail: "逐镜头看画面主体、时长、旁白切片和镜头节奏。",
+          stage: findStageByKey(stages, "storyboard"),
+          subGate: findSubGateByLabel(subGates, "分镜", "storyboard"),
+        },
+        {
+          label: "clip/TTS/合成",
+          detail: "视频片段、中文旁白、字幕和合成文件都完成后，才算真实成片可验收。",
+          stage: findStageByKey(stages, "video-generation"),
+          subGate: findSubGateByLabel(subGates, "clip/TTS/合成", "video-generation"),
+        },
+      ]}
+    />
+  );
+}
+
+function SubStatusList({
+  title,
+  desc,
+  items,
+}: {
+  title: string;
+  desc: string;
+  items: Array<{ label: string; detail: string; stage?: WorkflowStage; subGate?: ApiWorkspaceSubGate }>;
+}) {
+  return (
+    <div className="rounded-md border border-border bg-card p-3">
+      <div className="t-caption font-medium text-foreground">{title}</div>
+      <p className="mt-1 t-caption text-muted-foreground">{desc}</p>
+      <div className="mt-3 grid gap-2">
+        {items.map((item, index) => (
+          <div key={`${item.label}-${index}`} className="rounded-md border border-border bg-muted/20 px-3 py-2">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="t-body font-medium text-foreground">{item.label}</div>
+                <p className="mt-0.5 t-caption text-muted-foreground">{item.detail}</p>
+              </div>
+              {item.subGate ? (
+                <ToneBadge tone={workspaceSubGateTone(item.subGate)}>
+                  {workspaceSubGateLabel(item.subGate)}
+                </ToneBadge>
+              ) : item.stage ? (
+                <StatusBadge status={item.stage.status} />
+              ) : (
+                <ToneBadge tone="neutral">待开始</ToneBadge>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function findStageByKey(stages: WorkflowStage[], key: string): WorkflowStage | undefined {
+  return stages.find((stage) => stage.key === key);
+}
+
+function findSubGateByLabel(
+  subGates: ApiWorkspaceSubGate[] | undefined,
+  label: string,
+  fallbackId: string,
+): ApiWorkspaceSubGate | undefined {
+  return subGates?.find((gate) => {
+    const gateLabel = String(gate.title || gate.label || gate.gate_id || gate.id || "");
+    return gateLabel === label || gate.gate_id === fallbackId || gate.id === fallbackId;
+  });
+}
+
+function workspaceSubGateState(gate: ApiWorkspaceSubGate): string {
+  return String(gate.state || gate.status || "not_started");
+}
+
+function workspaceSubGateLabel(gate: ApiWorkspaceSubGate): string {
+  const state = workspaceSubGateState(gate);
+  if (["completed", "complete", "approved", "done", "passed"].includes(state)) return "已完成";
+  if (["current", "ready", "pending_confirm", "needs_review", "review"].includes(state)) return "待确认";
+  if (["running", "loading", "processing"].includes(state)) return "进行中";
+  if (["blocked", "locked"].includes(state)) return "未解锁";
+  if (["failed", "error"].includes(state)) return "需处理";
+  return "待开始";
+}
+
+function workspaceSubGateTone(gate: ApiWorkspaceSubGate): React.ComponentProps<typeof ToneBadge>["tone"] {
+  const state = workspaceSubGateState(gate);
+  if (["completed", "complete", "approved", "done", "passed"].includes(state)) return "success";
+  if (["current", "ready", "pending_confirm", "needs_review", "review"].includes(state)) return "warning";
+  if (["running", "loading", "processing"].includes(state)) return "brand";
+  if (["blocked", "locked", "failed", "error"].includes(state)) return "danger";
+  return "neutral";
+}
+
+function UserActionNotice({
+  nodeStatus,
+  nodeError,
+  actionStatus,
+  actionError,
+}: {
+  nodeStatus: "idle" | "loading" | "ready" | "error";
+  nodeError?: string | null;
+  actionStatus: "idle" | "loading" | "ready" | "error";
+  actionError?: string | null;
+}) {
+  if (nodeStatus === "loading" || actionStatus === "loading") {
+    return (
+      <div className="flex items-start gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2">
+        <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-primary" />
+        <p className="t-body text-primary">系统正在处理，请稍候。</p>
+      </div>
+    );
+  }
+  if (nodeStatus === "error" || actionStatus === "error") {
+    return (
+      <div className="flex items-start gap-2 rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+        <div>
+          <p className="t-body font-medium text-destructive">这一步暂时没有处理成功</p>
+          <p className="mt-0.5 t-caption text-destructive/90">
+            {formatUserFacingError(actionError || nodeError || "请检查上一阶段是否已经确认，再重试当前步骤。")}
+          </p>
+        </div>
+      </div>
+    );
+  }
+  return null;
+}
+
+function CurrentResultPanel({
+  dataMode,
+  projectId,
+  stage,
+  value,
+  inputValue,
+  lessonPlanResult,
+  courseAnchor,
+  editable,
+  saving,
+  videoPlans,
+  compareIds,
+  projectTasks,
+  projectTasksStatus,
+  projectTasksError,
+  pptExportStatus,
+  pptExportError,
+  pptExportResult,
+  actionError,
+  onChangeResult,
+  onChangeInput,
+  onSave,
+  onToggleSelect,
+  onAcceptVideoPlan,
+  onCompare,
+  onRegenerate,
+  onRefreshTasks,
+  onRefreshTask,
+  onRetryTask,
+  onExportPpt,
+}: {
+  dataMode: DataMode;
+  projectId: string;
+  stage: WorkflowStage;
+  value: string;
+  inputValue: string;
+  lessonPlanResult: string;
+  courseAnchor: string;
+  editable: boolean;
+  saving: boolean;
+  videoPlans: VideoIntroPlan[];
+  compareIds: string[];
+  projectTasks: ApiTask[];
+  projectTasksStatus: LoadStatus;
+  projectTasksError?: string | null;
+  pptExportStatus: LoadStatus;
+  pptExportError: string | null;
+  pptExportResult: ApiPptExport | null;
+  actionError?: string | null;
+  onChangeResult: (value: string) => void;
+  onChangeInput: (value: string) => void;
+  onSave: () => void;
+  onToggleSelect: (id: string) => void;
+  onAcceptVideoPlan: (id: string) => void;
+  onCompare: () => void;
+  onRegenerate: () => void;
+  onRefreshTasks: () => void;
+  onRefreshTask: (projectId: string, taskId: string) => Promise<{ ok: boolean; msg?: string }>;
+  onRetryTask: (projectId: string, taskId: string) => Promise<{ ok: boolean; msg?: string }>;
+  onExportPpt: () => void;
+}) {
+  if (stage.key === "open-lesson-plan") {
+    return (
+      <LessonPlanMarkdownEditor
+        value={resolveMarkdownForStage(stage, value)}
+        editable={editable}
+        saving={saving}
+        onChange={onChangeResult}
+        onSave={onSave}
+      />
+    );
+  }
+  if (stage.key === "textbook-parse") {
+    return (
+      <TextbookContentResult
+        projectId={projectId}
+        stage={stage}
+        value={value}
+      />
+    );
+  }
+  if (stage.key === "pptx-generation") {
+    return <PptxArtifactResult stage={stage} value={value} />;
+  }
+  if (dataMode === "demo" && stage.key === "video-script") {
+    return (
+      <VideoPlanGrid
+        plans={videoPlans}
+        selectedIds={compareIds}
+        onToggleSelect={onToggleSelect}
+        onAccept={onAcceptVideoPlan}
+        onEdit={() => toast.info("演示版暂不支持编辑")}
+        onCompare={onCompare}
+        onRegenerate={onRegenerate}
+      />
+    );
+  }
+  if (dataMode === "api" && stage.key === "video-design-import") {
+    return (
+      <IntroSelectionResult
+        stage={stage}
+        value={value}
+        lessonPlanResult={lessonPlanResult}
+        onChange={onChangeResult}
+        onSave={onSave}
+        saving={saving}
+        actionError={actionError}
+        showAdvancedJson={false}
+      />
+    );
+  }
+  if (dataMode === "api" && stage.key === "video-generation") {
+    return (
+      <FinalVideoResult
+        projectId={projectId}
+        stage={stage}
+        tasks={projectTasks}
+        tasksStatus={projectTasksStatus}
+        tasksError={projectTasksError}
+        actionError={actionError}
+        showProviderDetails={false}
+        pptExportStatus={pptExportStatus}
+        pptExportError={pptExportError}
+        pptExportResult={pptExportResult}
+        onRefresh={onRefreshTasks}
+        onRefreshTask={onRefreshTask}
+        onRetryTask={onRetryTask}
+        onExportPpt={onExportPpt}
+      />
+    );
+  }
+  if (dataMode === "api" && stage.key === "video-assets") {
+    return (
+      <VideoAssetResult
+        projectId={projectId}
+        stage={stage}
+        value={value}
+        tasks={projectTasks}
+        tasksStatus={projectTasksStatus}
+        tasksError={projectTasksError}
+        onChange={onChangeResult}
+        onSave={onSave}
+        saving={saving}
+        onRefresh={onRefreshTasks}
+        onRetryTask={onRetryTask}
+        showAdvancedJson={false}
+        showProviderDetails={false}
+      />
+    );
+  }
+  if (editable) {
+    return <UserReadableResult stage={stage} value={value} courseAnchor={courseAnchor} />;
+  }
+  if (stage.status === "input_required") {
+    return (
+      <Card className="border-border bg-muted/20 p-4">
+        <div className="t-module">可编辑区域</div>
+        <p className="mt-1 t-caption text-muted-foreground">补充本步骤需要的要求或修改意见。</p>
+        <Textarea value={inputValue} onChange={(event) => onChangeInput(event.target.value)} className="mt-3 min-h-32 bg-card" />
+      </Card>
+    );
+  }
+  return <UserReadableResult stage={stage} value={value} courseAnchor={courseAnchor} />;
+}
+
+function LessonPlanMarkdownEditor({
+  value,
+  editable,
+  saving,
+  onChange,
+  onSave,
+}: {
+  value: string;
+  editable: boolean;
+  saving: boolean;
+  onChange: (value: string) => void;
+  onSave: () => void;
+}) {
+  const [mode, setMode] = useState<"edit" | "preview">("edit");
+  return (
+    <Card className="border-border bg-card p-0">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+        <div>
+          <div className="t-module">教案 Markdown</div>
+          <p className="mt-1 t-caption text-muted-foreground">普通教师只编辑教案正文，不需要接触结构化原文。</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button type="button" size="sm" variant={mode === "edit" ? "default" : "outline"} onClick={() => setMode("edit")}>
+            Markdown 编辑
+          </Button>
+          <Button type="button" size="sm" variant={mode === "preview" ? "default" : "outline"} onClick={() => setMode("preview")}>
+            Markdown 预览
+          </Button>
+          {editable && (
+            <Button type="button" size="sm" className="gap-1.5" disabled={saving || !value.trim()} onClick={onSave}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              保存修改
+            </Button>
+          )}
+        </div>
+      </div>
+      <div className="p-4">
+        {mode === "edit" ? (
+          <Textarea
+            value={value}
+            readOnly={!editable}
+            onChange={(event) => onChange(event.target.value)}
+            className="min-h-[420px] bg-card font-sans text-[0.92rem] leading-relaxed"
+            placeholder="生成教案后可在这里编辑 Markdown..."
+          />
+        ) : (
+          <div className="prose prose-sm max-w-none rounded-md border border-border bg-muted/20 p-4 text-foreground">
+            <ReactMarkdown>{value || "暂无教案内容。"}</ReactMarkdown>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function TextbookContentResult({
+  projectId,
+  stage,
+  value,
+}: {
+  projectId: string;
+  stage: WorkflowStage;
+  value: string;
+}) {
+  const [preview, setPreview] = useState<"pdf" | "markdown" | null>(null);
+  const summary = buildTextbookContentSummary(projectId, stage, value || stage.result);
+  const previewMarkdown =
+    summary.markdown.trim() ||
+    "暂未读取到教材内容预览。请刷新状态，或稍后在开发诊断中查看生成详情。";
+
+  return (
+    <Card className="border-border bg-muted/20 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="t-module">教材解析与核验摘要</div>
+          <p className="mt-1 t-caption text-muted-foreground">
+            先核对课时、页码和知识点，再确认进入教案生成。
+          </p>
+        </div>
+        <ToneBadge tone="info">待核验</ToneBadge>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <SummaryField label="课时标题" value={summary.title} />
+        <SummaryField label="教材页码" value={summary.pages} />
+        <SummaryField label="解析状态" value={summary.status} />
+        <SummaryField label="教材依据" value={summary.basis} />
+      </div>
+
+      <div className="mt-4 rounded-md border border-border bg-card p-3">
+        <div className="t-caption text-muted-foreground">知识点摘要</div>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {summary.knowledge.length > 0 ? (
+            summary.knowledge.map((item) => (
+              <span
+                key={item}
+                className="rounded-full border border-primary/20 bg-primary/5 px-2 py-1 t-caption text-primary"
+              >
+                {item}
+              </span>
+            ))
+          ) : (
+            <span className="t-body text-muted-foreground">等待教材解析结果。</span>
+          )}
+        </div>
+      </div>
+
+      {summary.markdown.trim() && (
+        <div className="mt-4 rounded-md border border-border bg-card p-3">
+          <div className="t-caption text-muted-foreground">教材内容预览</div>
+          <div className="mt-2 max-h-32 overflow-hidden whitespace-pre-wrap t-body leading-relaxed text-foreground/90">
+            {clipText(summary.markdown, 260)}
+          </div>
+        </div>
+      )}
+
+      <TextbookContentPreviewActions
+        canOpenSlice={Boolean(summary.sliceUrl)}
+        canOpenMarkdown={Boolean(summary.markdown.trim())}
+        onOpenSlice={() => setPreview("pdf")}
+        onOpenMarkdown={() => setPreview("markdown")}
+      />
+
+      <Dialog open={preview !== null} onOpenChange={(open) => !open && setPreview(null)}>
+        <DialogContent className="max-h-[86vh] max-w-5xl overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>
+              {preview === "pdf" ? "教材页段预览" : "教材内容预览"}
+            </DialogTitle>
+            <DialogDescription>
+              {preview === "pdf"
+                ? `当前课时教材页 ${summary.pages}，通过项目预览入口打开。`
+                : "当前课时的教材内容摘要，用于生成教案前核对。"}
+            </DialogDescription>
+          </DialogHeader>
+          {preview === "pdf" ? (
+            summary.sliceUrl ? (
+              <iframe
+                title="教材页段预览"
+                src={summary.sliceUrl}
+                className="h-[68vh] w-full rounded-md border border-border bg-muted"
+              />
+            ) : (
+              <div className="rounded-md border border-border bg-muted/30 p-4 t-body text-muted-foreground">
+                当前课时还没有可预览的教材页段。
+              </div>
+            )
+          ) : (
+            <ScrollArea className="max-h-[68vh] rounded-md border border-border bg-muted/30">
+              <pre className="whitespace-pre-wrap p-4 font-sans text-sm leading-relaxed text-foreground">
+                {previewMarkdown}
+              </pre>
+            </ScrollArea>
+          )}
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+}
+
+function SummaryField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-border bg-card px-3 py-2.5">
+      <div className="t-caption text-muted-foreground">{label}</div>
+      <div className="mt-1 t-body text-foreground/90">{value || "待确认"}</div>
+    </div>
+  );
+}
+
+function TextbookContentPreviewActions({
+  canOpenSlice,
+  canOpenMarkdown,
+  onOpenSlice,
+  onOpenMarkdown,
+}: {
+  canOpenSlice: boolean;
+  canOpenMarkdown: boolean;
+  onOpenSlice: () => void;
+  onOpenMarkdown: () => void;
+}) {
+  return (
+    <div className="mt-4 flex flex-wrap gap-2">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="gap-1.5"
+        disabled={!canOpenSlice}
+        onClick={onOpenSlice}
+      >
+        <Eye className="h-4 w-4" />
+        查看教材页段
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="gap-1.5"
+        disabled={!canOpenMarkdown}
+        onClick={onOpenMarkdown}
+      >
+        <FileText className="h-4 w-4" />
+        查看教材内容
+      </Button>
+    </div>
+  );
+}
+
+function PptxArtifactResult({
+  stage,
+  value,
+}: {
+  stage: WorkflowStage;
+  value: string;
+}) {
+  const summary = buildPptxArtifactSummary(stage, value || stage.result);
+  return (
+    <Card className="border-border bg-muted/20 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <FileType2 className="h-4 w-4 text-primary" />
+            <span className="t-module">PPTX 文件</span>
+            <ToneBadge tone={summary.ready ? "success" : "info"}>
+              {summary.ready ? "待确认" : "待生成"}
+            </ToneBadge>
+          </div>
+          <p className="mt-1 t-caption text-muted-foreground">
+            这里提供可下载的 PPTX 草稿。真实上课前仍需要逐页检查讲法、素材和排版。
+          </p>
+        </div>
+        {summary.downloadHref && (
+          <Button asChild size="sm" className="gap-1.5">
+            <a href={summary.downloadHref} target="_blank" rel="noreferrer">
+              <Download className="h-4 w-4" />
+              下载 PPTX
+            </a>
+          </Button>
+        )}
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <SummaryField label="文件名" value={summary.filename} />
+        <SummaryField label="当前状态" value={summary.ready ? "文件已生成，等待确认" : "还没有可下载文件"} />
+      </div>
+    </Card>
+  );
+}
+
+function UserReadableEditableResult({
+  stage,
+  value,
+  courseAnchor,
+  saving,
+  onChange,
+  onSave,
+}: {
+  stage: WorkflowStage;
+  value: string;
+  courseAnchor: string;
+  saving: boolean;
+  onChange: (value: string) => void;
+  onSave: () => void;
+}) {
+  const summary = buildEditableNodeSummary(stage, value || stage.result, courseAnchor);
+  return (
+    <div className="space-y-4">
+      <UserReadableSummaryCard summary={summary} />
+      <details className="rounded-md border border-border bg-card">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
+          <span className="t-module">可编辑区域</span>
+          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+        </summary>
+        <div className="border-t border-border p-4">
+          <Textarea
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            className="min-h-[260px] bg-card text-[0.9rem] leading-relaxed"
+            placeholder={`生成${stage.title}后可在这里修改摘要内容...`}
+          />
+          <div className="mt-3 flex justify-end">
+            <Button size="sm" className="gap-1.5" disabled={saving || !value.trim()} onClick={onSave}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              保存修改
+            </Button>
+          </div>
+        </div>
+      </details>
+    </div>
+  );
+}
+
+function UserReadableResult({
+  stage,
+  value,
+  courseAnchor,
+}: {
+  stage: WorkflowStage;
+  value: string;
+  courseAnchor: string;
+}) {
+  if (!stage.result && !value) {
+    return (
+      <EmptyState
+        title="当前还没有草稿"
+        desc="点击下方主按钮生成这一阶段草稿。"
+        icon={<FileText className="h-5 w-5" />}
+      />
+    );
+  }
+  const summary = buildEditableNodeSummary(stage, value || stage.result, courseAnchor);
+  return <UserReadableSummaryCard summary={summary} />;
+}
+
+function UserReadableSummaryCard({ summary }: { summary: EditableSummary }) {
+  return (
+    <Card className="border-border bg-muted/20 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="t-module">{summary.title}</div>
+          <p className="mt-1 t-caption text-muted-foreground">{summary.desc}</p>
+        </div>
+        <ToneBadge tone="info">{summary.badge}</ToneBadge>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        {summary.items.length > 0 ? summary.items.map((item, index) => (
+          <div key={`${item.label}-${index}`} className="rounded-md border border-border bg-card px-3 py-2.5">
+            <div className="t-caption text-muted-foreground">{item.label}</div>
+            <div className="mt-1 t-body text-foreground/90">{item.value}</div>
+          </div>
+        )) : (
+          <div className="rounded-md border border-dashed border-border bg-card px-3 py-6 text-center t-caption text-muted-foreground">
+            暂无可读摘要。
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function DeveloperDiagnostics({
+  dataMode,
+  tab,
+  stage,
+  inputDraft,
+  resultDraft,
+  selectedNodeStatus,
+  selectedNodeError,
+  selectedActionStatus,
+  selectedActionError,
+  canSave,
+  canRegenerate,
+  canApprove,
+  canReject,
+  canNext,
+  isRunning,
+  isFinalVideoStage,
+  videoPlans,
+  compareIds,
+  stages,
+  projectId,
+  projectTasks,
+  projectTasksStatus,
+  projectTasksError,
+  pptExportStatus,
+  pptExportError,
+  pptExportResult,
+  canEditSelectedStage,
+  videoCapabilities,
+  videoOption,
+  onTabChange,
+  onChangeInput,
+  onChangeResult,
+  onSave,
+  onSaveResult,
+  onRefresh,
+  onRegenerate,
+  onApprove,
+  onReject,
+  onNext,
+  onChangeVideoOption,
+  onToggleSelect,
+  onAcceptVideoPlan,
+  onCompare,
+  onPreview,
+  onRefreshTasks,
+  onRefreshTask,
+  onRetryTask,
+  onExportPpt,
+}: {
+  dataMode: DataMode;
+  tab: TabKey;
+  stage?: WorkflowStage;
+  inputDraft: string;
+  resultDraft: string;
+  selectedNodeStatus: "idle" | "loading" | "ready" | "error";
+  selectedNodeError?: string | null;
+  selectedActionStatus: "idle" | "loading" | "ready" | "error";
+  selectedActionError?: string | null;
+  canSave: boolean;
+  canRegenerate: boolean;
+  canApprove: boolean;
+  canReject: boolean;
+  canNext: boolean;
+  isRunning: boolean;
+  isFinalVideoStage: boolean;
+  videoPlans: VideoIntroPlan[];
+  compareIds: string[];
+  stages: WorkflowStage[];
+  projectId: string;
+  projectTasks: ApiTask[];
+  projectTasksStatus: LoadStatus;
+  projectTasksError?: string | null;
+  pptExportStatus: LoadStatus;
+  pptExportError: string | null;
+  pptExportResult: ApiPptExport | null;
+  canEditSelectedStage: boolean;
+  videoCapabilities: VideoCapability[];
+  videoOption: VideoModelOption;
+  onTabChange: (tab: TabKey) => void;
+  onChangeInput: (value: string) => void;
+  onChangeResult: (value: string) => void;
+  onSave: () => void;
+  onSaveResult: () => void;
+  onRefresh: () => void;
+  onRegenerate: () => void;
+  onApprove: () => void;
+  onReject: () => void;
+  onNext: () => void;
+  onChangeVideoOption: (option: VideoModelOption) => void;
+  onToggleSelect: (id: string) => void;
+  onAcceptVideoPlan: (id: string) => void;
+  onCompare: () => void;
+  onPreview: (file: string) => void;
+  onRefreshTasks: () => void;
+  onRefreshTask: (projectId: string, taskId: string) => Promise<{ ok: boolean; msg?: string }>;
+  onRetryTask: (projectId: string, taskId: string) => Promise<{ ok: boolean; msg?: string }>;
+  onExportPpt: () => void;
+}) {
+  return (
+    <details className="rounded-md border border-border bg-muted/10">
+      <summary className="mt-4 flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
+        <span className="t-module">开发诊断</span>
+        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+      </summary>
+      <Card className="border-border bg-card p-0 shadow-soft">
+        {dataMode === "api" && stage && <StateEngineDiagnostics stage={stage} />}
+        <Tabs value={tab} onValueChange={(value) => onTabChange(value as TabKey)} className="gap-0">
+          <div className="overflow-x-auto scroll-fine px-3 py-2 sm:px-5">
+            <TabsList className="bg-muted/60">
+              <TabsTrigger value="input">输入</TabsTrigger>
+              <TabsTrigger value="run">运行</TabsTrigger>
+              <TabsTrigger value="result">结果</TabsTrigger>
+              <TabsTrigger value="evidence">依据</TabsTrigger>
+              <TabsTrigger value="logs">日志</TabsTrigger>
+            </TabsList>
+          </div>
+          <div className="px-4 pb-5 pt-4 sm:px-6">
+            <TabsContent value="input" className="mt-0">
+              {dataMode === "api" && <><ApiNodeNotice status={selectedNodeStatus} error={selectedNodeError} /><ApiActionNotice status={selectedActionStatus} error={selectedActionError} /></>}
+              <InputTab stage={stage} value={inputDraft} onChange={onChangeInput} onSave={onSave} />
+            </TabsContent>
+            <TabsContent value="run" className="mt-0">
+              {dataMode === "api" && <><ApiNodeNotice status={selectedNodeStatus} error={selectedNodeError} /><ApiActionNotice status={selectedActionStatus} error={selectedActionError} /></>}
+              {stage?.key === "video-generation" ? (
+                <VideoGenerationRunTab stage={stage} capabilities={videoCapabilities} option={videoOption} onChange={onChangeVideoOption} onRegenerate={onRegenerate} />
+              ) : (
+                <RunTab stage={stage} onRegenerate={onRegenerate} />
+              )}
+            </TabsContent>
+            <TabsContent value="result" className="mt-0">
+              {dataMode === "api" && <><ApiNodeNotice status={selectedNodeStatus} error={selectedNodeError} /><ApiActionNotice status={selectedActionStatus} error={selectedActionError} /></>}
+              {dataMode === "demo" && stage?.key === "video-script" ? (
+                <VideoPlanGrid plans={videoPlans} selectedIds={compareIds} onToggleSelect={onToggleSelect} onAccept={onAcceptVideoPlan} onEdit={() => toast.info("演示版暂不支持编辑")} onCompare={onCompare} onRegenerate={onRegenerate} />
+              ) : dataMode === "api" && stage?.key === "video-design-import" ? (
+                <IntroSelectionResult stage={stage} value={resultDraft || stage.result} lessonPlanResult={stages.find((item) => item.key === "open-lesson-plan")?.result || ""} onChange={onChangeResult} onSave={onSaveResult} saving={selectedActionStatus === "loading"} actionError={selectedActionError} />
+              ) : dataMode === "api" && stage?.key === "video-generation" ? (
+                <FinalVideoResult projectId={projectId} stage={stage} tasks={projectTasks} tasksStatus={projectTasksStatus} tasksError={projectTasksError} actionError={selectedActionError} pptExportStatus={pptExportStatus} pptExportError={pptExportError} pptExportResult={pptExportResult} onRefresh={onRefreshTasks} onRefreshTask={onRefreshTask} onRetryTask={onRetryTask} onExportPpt={onExportPpt} />
+              ) : dataMode === "api" && stage?.key === "video-assets" ? (
+                <VideoAssetResult projectId={projectId} stage={stage} value={resultDraft || stage.result} tasks={projectTasks} tasksStatus={projectTasksStatus} tasksError={projectTasksError} onChange={onChangeResult} onSave={onSaveResult} saving={selectedActionStatus === "loading"} onRefresh={onRefreshTasks} onRetryTask={onRetryTask} />
+              ) : dataMode === "api" && stage && canEditSelectedStage ? (
+                <EditableNodeResult stage={stage} value={resultDraft || stage.result} courseAnchor={resolveCourseAnchorForStage(stage.key, stages)} onChange={onChangeResult} onSave={onSaveResult} saving={selectedActionStatus === "loading"} />
+              ) : (
+                <ResultTab stage={stage} />
+              )}
+            </TabsContent>
+            <TabsContent value="evidence" className="mt-0">
+              <EvidenceTab stage={stage} onPreview={onPreview} />
+            </TabsContent>
+            <TabsContent value="logs" className="mt-0">
+              <LogsTab stage={stage} />
+            </TabsContent>
+          </div>
+        </Tabs>
+        <div className="border-t border-border bg-muted/20 px-4 py-3 sm:px-6">
+          <StageActions
+            canSave={canSave}
+            canRegenerate={canRegenerate}
+            canApprove={canApprove}
+            canReject={canReject}
+            canNext={canNext}
+            isRunning={isRunning}
+            taskCreated={isFinalVideoStage && stage?.status === "running"}
+            regenerateLabel={isFinalVideoStage ? "重新创建任务" : undefined}
+            primaryRegenerateLabel={isFinalVideoStage ? "创建视频任务" : undefined}
+            actionLoading={selectedActionStatus === "loading"}
+            showRefresh={dataMode === "api"}
+            onSave={onSave}
+            onRefresh={onRefresh}
+            onRegenerate={onRegenerate}
+            onApprove={onApprove}
+            onReject={onReject}
+            onNext={onNext}
+          />
+        </div>
+      </Card>
+    </details>
   );
 }
 
@@ -1238,13 +2559,157 @@ function ApiActionNotice({
         <div>
           <p className="t-body font-medium text-destructive">后端动作执行失败</p>
           <p className="mt-0.5 t-caption text-destructive/90">
-            {error || "请检查上游节点是否已确认，或确认后端服务状态。"}
+            {formatApiActionError(error)}
           </p>
         </div>
       </div>
     );
   }
   return null;
+}
+
+function StateEngineDiagnostics({ stage }: { stage: WorkflowStage }) {
+  const latestTransition = stage.latestTransition;
+  const reviewReason = stage.reviewReason || latestTransition?.reason || "";
+  const upstreamBlocked = isUpstreamBlocked(stage);
+  const ruleWarning = isRuleWarning(stage);
+  const ruleViolation = isRuleViolation(stage);
+
+  if (!latestTransition && !stage.reviewReason && !stage.reviewTrigger) return null;
+
+  return (
+    <div className="border-b border-border bg-muted/20 px-4 py-3 sm:px-6">
+      <div className="grid gap-3 lg:grid-cols-[1fr_1.2fr]">
+        <div className="rounded-md border border-border bg-background/70 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="t-caption text-muted-foreground">StateEngine 状态</p>
+              <p className="mt-0.5 t-body font-medium">{formatStageStatusForDiagnostics(stage.status)}</p>
+            </div>
+            <StatusBadge status={stage.status} />
+          </div>
+          {stage.reviewTrigger && (
+            <p className="mt-2 t-caption text-muted-foreground">触发器：{stage.reviewTrigger}</p>
+          )}
+        </div>
+        <div className="rounded-md border border-border bg-background/70 p-3">
+          <p className="t-caption text-muted-foreground">最近状态迁移</p>
+          {latestTransition ? (
+            <>
+              <p className="mt-0.5 t-body">
+                {latestTransition.from_status || "无"} → {latestTransition.to_status}
+              </p>
+              <p className="mt-1 t-caption text-muted-foreground">
+                {latestTransition.trigger}
+                {latestTransition.triggered_at ? ` · ${formatDateTimeForDiagnostics(latestTransition.triggered_at)}` : ""}
+              </p>
+            </>
+          ) : (
+            <p className="mt-0.5 t-body text-muted-foreground">后端暂未返回最近迁移记录</p>
+          )}
+        </div>
+      </div>
+
+      {(reviewReason || upstreamBlocked || ruleWarning || ruleViolation) && (
+        <div className="mt-3 rounded-md border border-warning/25 bg-warning/5 p-3">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+            <div className="min-w-0">
+              <p className="t-body font-medium text-warning">
+                {upstreamBlocked
+                  ? "上游未确认"
+                  : ruleViolation
+                    ? "硬阻断不可继续"
+                    : ruleWarning
+                      ? "规则警告可覆盖"
+                      : "状态诊断"}
+              </p>
+              <p className="mt-0.5 break-words t-caption text-muted-foreground">
+                {upstreamBlocked
+                  ? "请先确认依赖节点后再继续；后端已通过 StateEngine 记录本次依赖门禁。"
+                  : ruleViolation
+                    ? "需要修正内容或规则问题后再提交，当前不能直接继续。"
+                    : ruleWarning
+                      ? "可检查规则提示，必要时填写 override 原因后继续确认。"
+                      : "后端返回了节点重审或状态迁移原因。"}
+              </p>
+              {reviewReason && (
+                <p className="mt-2 break-words t-caption text-muted-foreground">详情：{reviewReason}</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatApiActionError(error?: string | null): string {
+  if (!error) return "请检查上游节点是否已确认，或确认后端服务状态。";
+  if (error.includes("UPSTREAM_NOT_APPROVED")) {
+    return `上游未确认：请先确认依赖节点后再继续。${extractApiDetailsText(error)}`;
+  }
+  if (error.includes("RULE_WARNING")) {
+    return `规则警告：可检查提示后选择覆盖继续。${extractApiDetailsText(error)}`;
+  }
+  if (error.includes("RULE_VIOLATION")) {
+    return `硬阻断不可继续：需修正内容后再提交。${extractApiDetailsText(error)}`;
+  }
+  return error;
+}
+
+function extractApiDetailsText(error: string): string {
+  const index = error.indexOf("details:");
+  if (index === -1) return "";
+  return ` 后端详情：${error.slice(index + "details:".length).trim()}`;
+}
+
+function isUpstreamBlocked(stage: WorkflowStage): boolean {
+  return hasStateEngineSignal(stage, ["UPSTREAM_NOT_APPROVED", "dependency_gate_blocked", "R010"]);
+}
+
+function isRuleWarning(stage: WorkflowStage): boolean {
+  return hasStateEngineSignal(stage, ["RULE_WARNING"]);
+}
+
+function isRuleViolation(stage: WorkflowStage): boolean {
+  return hasStateEngineSignal(stage, ["RULE_VIOLATION"]);
+}
+
+function hasStateEngineSignal(stage: WorkflowStage, signals: string[]): boolean {
+  const source = [
+    stage.reviewTrigger,
+    stage.reviewReason,
+    stage.latestTransition?.trigger,
+    stage.latestTransition?.reason,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return signals.some((signal) => source.includes(signal));
+}
+
+function formatStageStatusForDiagnostics(status: WorkflowStage["status"]): string {
+  const map: Record<WorkflowStage["status"], string> = {
+    not_started: "未开始",
+    input_required: "需要输入",
+    ready: "可运行",
+    running: "生成中",
+    pending_confirm: "待确认",
+    approved: "已确认",
+    blocked: "已阻断",
+    failed: "失败",
+    skipped: "已跳过",
+  };
+  return map[status] || status;
+}
+
+function formatDateTimeForDiagnostics(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())} ${p(date.getHours())}:${p(
+    date.getMinutes(),
+  )}`;
 }
 
 /* ---------- 顶部 Header ---------- */
@@ -1255,12 +2720,16 @@ function WorkspaceHeader({
   onBack,
   feedbackStatus = "idle",
   onSubmitFeedback,
+  currentStepLabel,
+  nextActionOverride,
 }: {
   project: ProjectMeta;
   stages?: WorkflowStage[];
   onBack: () => void;
   feedbackStatus?: LoadStatus;
   onSubmitFeedback?: () => void;
+  currentStepLabel?: string;
+  nextActionOverride?: string;
 }) {
   const stage =
     stages.find((item) => item.key === project.currentStage) ||
@@ -1319,7 +2788,7 @@ function WorkspaceHeader({
           <div>
             <div className="t-overline text-muted-foreground/70">当前阶段</div>
             <div className="mt-1.5 t-body font-medium text-foreground">
-              {stage?.title || project.currentStage}
+              {currentStepLabel || stage?.title || project.currentStage}
             </div>
           </div>
           <div>
@@ -1335,7 +2804,7 @@ function WorkspaceHeader({
           <div>
             <div className="t-overline text-muted-foreground/70">下一步动作</div>
             <div className="mt-1.5 t-body font-medium text-foreground">
-              {project.nextAction}
+              {nextActionOverride || project.nextAction}
             </div>
           </div>
         </div>
@@ -1586,7 +3055,7 @@ function VideoGenerationRunTab({
           <div>
             <div className="t-module">视频模型选择</div>
             <div className="t-caption text-muted-foreground">
-              fake provider 默认创建 6 个镜头任务；真实 provider 联调时可切换 smoke 范围。
+              本地演示默认创建 6 个镜头任务；真实成片专项可按需要切换生成范围。
             </div>
           </div>
         </div>
@@ -1753,12 +3222,12 @@ function EditableNodeResult({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="t-overline text-muted-foreground/70">
-            {isLessonPlan ? "公开课教案编辑" : `${stage.title}结构化编辑雏形`}
+            {isLessonPlan ? "公开课教案编辑" : `${stage.title}内容核对`}
           </div>
           <p className="mt-1 t-caption text-muted-foreground">
             {isLessonPlan
-              ? "本地演示版使用轻量文本/JSON 编辑；保存后会写入后端节点版本，再进行确认通过。"
-              : "上方先用分区摘要说明当前产出，下方保留 JSON 编辑入口；字段级校验提示入口已预留，可继续对接后端 details。"}
+              ? "在这里修改教案正文，保存后再确认进入下一步。"
+              : "先用分区摘要核对当前产出；需要改复杂结构时，请在开发诊断中处理。"}
           </p>
         </div>
         <Button
@@ -1791,9 +3260,9 @@ function EditableNodeResult({
               <ToneBadge tone="info">{structuredSummary.badge}</ToneBadge>
             </div>
             <div className="mt-4 space-y-3">
-              {structuredSummary.items.map((item) => (
+              {structuredSummary.items.map((item, index) => (
                 <div
-                  key={item.label}
+                  key={`${item.label}-${index}`}
                   className="rounded-md border border-border bg-card px-3 py-2.5"
                 >
                   <div className="t-caption text-muted-foreground">{item.label}</div>
@@ -1806,11 +3275,11 @@ function EditableNodeResult({
             <div className="t-module">编辑入口说明</div>
             <div className="mt-3 space-y-2 t-body text-foreground/85">
               <p>1. 先检查左侧摘要是否符合课堂导入视频意图。</p>
-              <p>2. 需要调整时，在下方 JSON 中改对应字段后保存。</p>
-              <p>3. 保存后再确认通过，系统会推进到下一节点。</p>
+              <p>2. 需要调整时，优先改教师可读内容；复杂结构交给开发诊断处理。</p>
+              <p>3. 保存后再确认通过，系统会推进到下一步。</p>
             </div>
             <div className="mt-4 rounded-md border border-warning/25 bg-warning/5 px-3 py-2 t-caption text-muted-foreground">
-              字段级错误提示入口已预留，后续可把后端 details 映射到具体字段。
+              如果出现字段级错误，页面会提示需要补充的具体内容。
             </div>
           </Card>
         </div>
@@ -1819,7 +3288,7 @@ function EditableNodeResult({
       <details className="rounded-md border border-border bg-card" open>
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
           <span className="t-module">
-            {isLessonPlan ? "教案文本 / JSON" : "JSON 编辑入口"}
+            {isLessonPlan ? "教案文本" : "高级内容编辑"}
           </span>
           <ChevronDown className="h-4 w-4 text-muted-foreground" />
         </summary>
@@ -1828,7 +3297,7 @@ function EditableNodeResult({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="min-h-[360px] bg-card font-mono text-[0.82rem] leading-relaxed"
-        placeholder={`生成${stage.title}后可在这里轻量编辑文本或 JSON...`}
+        placeholder={`生成${stage.title}后可在这里轻量编辑文本...`}
       />
         </div>
       </details>
@@ -1887,7 +3356,7 @@ function LessonPlanStructureSummary({ value }: { value: string }) {
           <div>
             <div className="t-module">导入视频候选方案</div>
             <p className="mt-1 t-caption text-muted-foreground">
-              重点检查课程锚点、课堂入口问题和“不预教”约束是否已填充。
+              重点检查课程锚点、课堂落点问题和不提前讲解内容是否已填充。
             </p>
           </div>
           <ToneBadge tone={filledIntroFields === totalIntroFields ? "success" : "warning"}>
@@ -1909,15 +3378,15 @@ function LessonPlanStructureSummary({ value }: { value: string }) {
                 <span>主题：{clipText(getStringValue(design.video_theme), 48)}</span>
                 <span>吸睛点：{clipText(getStringValue(design.eye_catch_tag), 48)}</span>
                 <span>课程锚点：{clipText(getStringValue(design.anchor_to_lesson), 64)}</span>
-                <span>入口问题：{clipText(getStringValue(design.classroom_entry_question), 64)}</span>
-                <span>不预教：{clipText(getStringValue(design.no_pre_teach), 64)}</span>
+                <span>课堂落点问题：{clipText(getStringValue(design.classroom_entry_question), 64)}</span>
+                <span>不提前讲解内容：{clipText(getStringValue(design.no_pre_teach), 64)}</span>
                 <span>进入位置：{clipText(getStringValue(design.entry_position), 48)}</span>
               </div>
             </div>
           ))}
           {introDesigns.length === 0 && (
             <div className="rounded-md border border-dashed border-border bg-muted/20 px-3 py-4 text-center t-caption text-muted-foreground">
-              未解析到 intro_designs，后续视频导入方案会缺少候选来源。
+              还没有读到导入视频候选方案，请先生成或刷新教案内容。
             </div>
           )}
         </div>
@@ -1934,6 +3403,7 @@ function IntroSelectionResult({
   onSave,
   saving,
   actionError,
+  showAdvancedJson = true,
 }: {
   stage?: WorkflowStage;
   value: string;
@@ -1942,6 +3412,7 @@ function IntroSelectionResult({
   onSave: () => void;
   saving: boolean;
   actionError?: string | null;
+  showAdvancedJson?: boolean;
 }) {
   if (!stage) return null;
   if (!stage.result) {
@@ -1959,7 +3430,7 @@ function IntroSelectionResult({
   const selectedIds = getStringArray(content.selected_design_ids);
   const selectedId = getStringValue(content.primary_design_id) || selectedIds[0] || designs[0]?.id || "";
   const selectedDesign = designs.find((design) => design.id === selectedId);
-  const selectedAnchor = getStringValue(content.selected_anchor);
+  const selectedAnchor = getStringValue(content[SELECTED_ANCHOR_KEY]);
   const anchorError = validateIntroSelectionAnchor(value || stage.result);
 
   function selectDesign(id: string) {
@@ -1968,10 +3439,10 @@ function IntroSelectionResult({
       ...content,
       primary_design_id: id,
       selected_design_ids: [id],
-      selected_anchor: design?.anchor || getStringValue(content.selected_anchor),
+      [SELECTED_ANCHOR_KEY]: design?.anchor || getStringValue(content[SELECTED_ANCHOR_KEY]),
       selection_reason:
         getStringValue(content.selection_reason) ||
-        "本地演示选择该方案作为导入视频主线，可继续生成视频剧本。",
+        "已选择该方案作为导入视频主线，可继续生成视频剧本。",
     };
     onChange(JSON.stringify(next, null, 2));
   }
@@ -1981,7 +3452,7 @@ function IntroSelectionResult({
       ...content,
       primary_design_id: selectedId,
       selected_design_ids: selectedId ? [selectedId] : selectedIds,
-      selected_anchor: anchor,
+      [SELECTED_ANCHOR_KEY]: anchor,
       selection_reason:
         getStringValue(content.selection_reason) ||
         "教师已确认课程锚点，并将其作为导入视频和课堂衔接的硬约束。",
@@ -1995,7 +3466,7 @@ function IntroSelectionResult({
         <div>
           <div className="t-overline text-muted-foreground/70">视频导入候选方案</div>
           <p className="mt-1 t-caption text-muted-foreground">
-            选择方案后确认课程锚点；该锚点会传给视频脚本，作为视频结尾接回课堂的硬约束。
+            选择方案后重点确认课程锚点、课堂落点问题和不提前讲解内容；课程锚点会作为视频结尾接回课堂的硬约束。
           </p>
         </div>
         <Button
@@ -2036,7 +3507,13 @@ function IntroSelectionResult({
                 <div className="mt-3 t-module">{design.title}</div>
                 <p className="mt-2 t-body text-foreground/85">{design.hook}</p>
                 <p className="mt-3 t-caption text-muted-foreground">
-                  {design.anchor}
+                  课程锚点：{design.anchor}
+                </p>
+                <p className="mt-1 t-caption text-muted-foreground">
+                  课堂落点问题：{design.entryQuestion}
+                </p>
+                <p className="mt-1 t-caption text-muted-foreground">
+                  不提前讲解内容：{design.noPreTeach}
                 </p>
                 {selected && (
                   <div className="mt-3 inline-flex items-center gap-1.5 t-caption font-medium text-primary">
@@ -2055,7 +3532,7 @@ function IntroSelectionResult({
           <div>
             <div className="t-module">课程锚点确认</div>
             <p className="mt-1 t-caption text-muted-foreground">
-              先从候选方案自动带入，也可以手工改成最终版；保存和确认前必须填写且不少于 10 个字。
+              先从候选方案自动带入，也可以手工改成最终版；保存和确认前必须填写且不少于 10 个字。它只负责把独立视频自然接回课堂，不提前讲解本课知识点。
             </p>
           </div>
           {selectedDesign && (
@@ -2063,7 +3540,7 @@ function IntroSelectionResult({
           )}
         </div>
         <div className="mt-3">
-          <Label className="t-caption text-muted-foreground">最终课程锚点 selected_anchor</Label>
+          <Label className="t-caption text-muted-foreground">课堂衔接点</Label>
           <Textarea
             value={selectedAnchor}
             onChange={(event) => updateSelectedAnchor(event.target.value)}
@@ -2075,7 +3552,7 @@ function IntroSelectionResult({
           />
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
             <p className={cn("t-caption", anchorError ? "text-destructive" : "text-muted-foreground")}>
-              {anchorError || "该字段会写入 intro_selection.selected_anchor，并作为下游视频脚本锚点。"}
+              {anchorError || "用于说明导入视频最后如何自然接回本节课，后续脚本会沿用这句话。"}
             </p>
             <span className="t-caption text-muted-foreground">
               {selectedAnchor.trim().length} 字
@@ -2089,20 +3566,22 @@ function IntroSelectionResult({
         )}
       </Card>
 
-      <details className="rounded-md border border-border bg-card">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
-          <span className="t-module">JSON 高级编辑入口</span>
-          <ChevronDown className="h-4 w-4 text-muted-foreground" />
-        </summary>
-        <div className="border-t border-border p-4">
-          <Textarea
-            value={value}
-            onChange={(event) => onChange(event.target.value)}
-            className="min-h-[260px] bg-card font-mono text-[0.82rem] leading-relaxed"
-            placeholder="可轻量编辑选择结果 JSON..."
-          />
-        </div>
-      </details>
+      {showAdvancedJson && (
+        <details className="rounded-md border border-border bg-card">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
+            <span className="t-module">JSON 高级编辑入口</span>
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          </summary>
+          <div className="border-t border-border p-4">
+            <Textarea
+              value={value}
+              onChange={(event) => onChange(event.target.value)}
+              className="min-h-[260px] bg-card font-mono text-[0.82rem] leading-relaxed"
+              placeholder="可轻量编辑选择结果 JSON..."
+            />
+          </div>
+        </details>
+      )}
     </div>
   );
 }
@@ -2119,6 +3598,8 @@ function VideoAssetResult({
   saving,
   onRefresh,
   onRetryTask,
+  showAdvancedJson = true,
+  showProviderDetails = true,
 }: {
   projectId: string;
   stage?: WorkflowStage;
@@ -2131,6 +3612,8 @@ function VideoAssetResult({
   saving: boolean;
   onRefresh: () => void;
   onRetryTask: (projectId: string, taskId: string) => Promise<{ ok: boolean; msg?: string }>;
+  showAdvancedJson?: boolean;
+  showProviderDetails?: boolean;
 }) {
   if (!stage) return null;
   if (!stage.result) {
@@ -2145,7 +3628,7 @@ function VideoAssetResult({
 
   const content = parseJsonObject(value || stage.result);
   const assets = getArray(content.assets).filter(isRecord);
-  const imageTasks = tasks.filter((task) => task.node_id === "intro_video_asset");
+  const imageTasks = tasks.filter((task) => task[TASK_NODE_KEY] === "intro_video_asset");
 
   async function retryTask(taskId: string) {
     const res = await onRetryTask(projectId, taskId);
@@ -2160,9 +3643,9 @@ function VideoAssetResult({
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="t-overline text-muted-foreground/70">图片资产生成状态</div>
+          <div className="t-overline text-muted-foreground/70">资产与首帧状态</div>
           <p className="mt-1 t-caption text-muted-foreground">
-            这里展示真实图片 provider 的生成状态、成功预览和失败原因；失败任务可单独重试。
+            这里展示参考图、首帧方向、成功预览和失败原因；未真实生成时会显示等待或失败，不冒充完成素材。
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -2251,14 +3734,14 @@ function VideoAssetResult({
                   <ToneBadge tone={taskStatusTone(status)}>{taskStatusLabel(status)}</ToneBadge>
                 </div>
                 <div className="grid gap-2 t-caption text-muted-foreground sm:grid-cols-2">
-                  <span>任务：{task?.task_id || "未创建"}</span>
-                  <span>Provider：{providerId ? maskProviderTaskId(providerId) : "未返回"}</span>
-                  <span>输出：{imagePath || "待生成"}</span>
+                  <span>素材记录：{task?.task_id || "未创建"}</span>
+                  <span>{showProviderDetails ? "服务记录" : "生成记录"}：{providerId && showProviderDetails ? maskProviderTaskId(providerId) : task?.task_id || "未返回"}</span>
+                  <span>预览文件：{imagePath ? "已准备" : "待生成"}</span>
                   <span>{task?.retryable || task?.result.retryable ? "失败可重试" : "按状态处理"}</span>
                 </div>
                 {failed && (
                   <ProviderFailureNotice
-                    message={taskFailureMessage(task) || "图片 provider 失败，可重试。"}
+                    message={taskFailureMessage(task) || "图片生成失败，可重试。"}
                   />
                 )}
                 {failed && task && (
@@ -2278,20 +3761,22 @@ function VideoAssetResult({
         })}
       </div>
 
-      <details className="rounded-md border border-border bg-card">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
-          <span className="t-module">JSON 高级编辑入口</span>
-          <ChevronDown className="h-4 w-4 text-muted-foreground" />
-        </summary>
-        <div className="border-t border-border p-4">
-          <Textarea
-            value={value}
-            onChange={(event) => onChange(event.target.value)}
-            className="min-h-[300px] bg-card font-mono text-[0.82rem] leading-relaxed"
-            placeholder="可轻量编辑图片资产 JSON..."
-          />
-        </div>
-      </details>
+      {showAdvancedJson && (
+        <details className="rounded-md border border-border bg-card">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
+            <span className="t-module">JSON 高级编辑入口</span>
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          </summary>
+          <div className="border-t border-border p-4">
+            <Textarea
+              value={value}
+              onChange={(event) => onChange(event.target.value)}
+              className="min-h-[300px] bg-card font-mono text-[0.82rem] leading-relaxed"
+              placeholder="可轻量编辑图片资产 JSON..."
+            />
+          </div>
+        </details>
+      )}
     </div>
   );
 }
@@ -2303,6 +3788,7 @@ function FinalVideoResult({
   tasksStatus,
   tasksError,
   actionError,
+  showProviderDetails = true,
   pptExportStatus,
   pptExportError,
   pptExportResult,
@@ -2317,6 +3803,7 @@ function FinalVideoResult({
   tasksStatus: LoadStatus;
   tasksError?: string | null;
   actionError?: string | null;
+  showProviderDetails?: boolean;
   pptExportStatus: LoadStatus;
   pptExportError: string | null;
   pptExportResult: ApiPptExport | null;
@@ -2348,8 +3835,8 @@ function FinalVideoResult({
           onExport={onExportPpt}
         />
         <EmptyState
-          title="暂无视频生成任务"
-          desc="配置模型、尺寸和生成范围后点击“生成草稿”，这里只承诺创建 fake 视频任务。"
+        title="暂无视频生成任务"
+          desc="配置画面比例和生成范围后点击“生成草稿”，这里只承诺创建本地演示任务，不代表真实成片质量。"
           icon={<Film className="h-5 w-5" />}
         />
       </div>
@@ -2358,7 +3845,7 @@ function FinalVideoResult({
   const content = parseJsonObject(stage.result);
   const clips = getArray(content.clips);
   const placeholderReady = Boolean(videoPath);
-  const videoTasks = tasks.filter((task) => task.node_id === "final_video");
+  const videoTasks = tasks.filter((task) => task[TASK_NODE_KEY] === "final_video");
 
   async function refreshTask(taskId: string) {
     const res = await onRefreshTask(projectId, taskId);
@@ -2387,8 +3874,9 @@ function FinalVideoResult({
           </div>
           <p className="mt-1 t-caption text-muted-foreground">
             {placeholderReady
-              ? "当前产物用于本地演示下载与 PPT 嵌入，不代表真实 AI 视频成片质量。"
-              : "当前只证明已创建视频生成任务和 clip 记录，不承诺真实成片质量。"}
+              ? "这只是本地演示用视频文件，不代表真实成片质量。"
+              : "当前只证明已创建视频片段任务和生成记录，不承诺真实成片质量。"}
+            真实成片需要看到视频片段、中文旁白、字幕和合成文件都完成后再验收。
           </p>
         </div>
         <Button
@@ -2432,11 +3920,11 @@ function FinalVideoResult({
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Card className="border-border bg-muted/25 p-4">
-          <div className="t-caption text-muted-foreground">节点状态</div>
+          <div className="t-caption text-muted-foreground">生成状态</div>
           <div className="mt-1 t-module">{stage.status === "running" ? "任务已创建" : stage.status}</div>
         </Card>
         <Card className="border-border bg-muted/25 p-4">
-          <div className="t-caption text-muted-foreground">clip 数量</div>
+          <div className="t-caption text-muted-foreground">镜头数量</div>
           <div className="mt-1 t-module">{formatUnknownCount(content.clip_count, clips.length)}</div>
         </Card>
         <Card className="border-border bg-muted/25 p-4">
@@ -2472,13 +3960,13 @@ function FinalVideoResult({
                 </div>
                 <div className="mt-2 grid gap-2 t-caption text-muted-foreground sm:grid-cols-4">
                   <span>镜头：{String(task.payload.shot_id || "-")}</span>
-                  <span>模型：{String(task.payload.model || "-")}</span>
+                  <span>生成方案：{String(task.payload.model || "-")}</span>
                   <span>尺寸：{String(task.payload.size || "-")}</span>
-                  <span>Provider：{providerId ? maskProviderTaskId(providerId) : "未返回"}</span>
+                  <span>{showProviderDetails ? "服务记录" : "生成记录"}：{providerId && showProviderDetails ? maskProviderTaskId(providerId) : task.task_id}</span>
                 </div>
                 {downloadPath && (
                   <div className="mt-2 flex flex-wrap items-center gap-2 t-caption text-muted-foreground">
-                    <span>输出：{downloadPath}</span>
+                    <span>片段文件：已准备</span>
                     {isMp4Path(downloadPath) && (
                       <a
                         className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
@@ -2494,7 +3982,7 @@ function FinalVideoResult({
                 )}
                 {failed && (
                   <ProviderFailureNotice
-                    message={taskFailureMessage(task) || "视频 provider 失败，可重试。"}
+                    message={taskFailureMessage(task) || "视频生成失败，可重试。"}
                   />
                 )}
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -2505,7 +3993,7 @@ function FinalVideoResult({
                     onClick={() => void refreshTask(task.task_id)}
                   >
                     <RefreshCw className="h-4 w-4" />
-                    刷新该 clip
+                    刷新该镜头
                   </Button>
                   {failed && (
                     <Button
@@ -2515,7 +4003,7 @@ function FinalVideoResult({
                       onClick={() => void retryTask(task.task_id)}
                     >
                       <RotateCcw className="h-4 w-4" />
-                      重试该 clip
+                      重试该镜头
                     </Button>
                   )}
                 </div>
@@ -2526,7 +4014,7 @@ function FinalVideoResult({
       ) : (
         <EmptyState
           title="任务列表为空"
-          desc="如果刚触发生成，请点击刷新任务；fake provider 下通常会立即返回 generated。"
+          desc="如果刚触发生成，请点击刷新任务；演示环境通常会很快返回生成结果。"
           icon={<ListChecks className="h-5 w-5" />}
         />
       )}
@@ -2580,7 +4068,7 @@ function FinalVideoAudioPanel({ content }: { content: Record<string, unknown> })
           <div className="mt-1 break-all">{subtitleSrtPath || "待生成"}</div>
         </div>
         <div className="rounded-md border border-border bg-muted/20 px-3 py-2">
-          <div className="font-medium text-foreground/85">合成 manifest</div>
+          <div className="font-medium text-foreground/85">合成记录</div>
           <div className="mt-1 break-all">{concatManifestPath || "待生成"}</div>
         </div>
       </div>
@@ -2596,8 +4084,8 @@ function FinalVideoProviderNotice({ error }: { error?: string | null }) {
         <div>
           <div className="font-medium">真实视频服务暂不可用</div>
           <p className="mt-1 t-caption text-muted-foreground">
-            可切换占位视频模式完成本地演示，也可以稍后重试；错误摘要：
-            {safeProviderErrorMessage(error || "OCTO_REQUEST_FAILED")}。
+            可以先用本地演示文件走通下载和检查，也可以稍后重试；错误摘要：
+            {safeProviderErrorMessage(error || "生成服务暂时不可用")}。
           </p>
         </div>
       </div>
@@ -2635,12 +4123,12 @@ function FinalVideoDownloadPanel({
           </div>
           <p className="mt-1 t-caption text-muted-foreground">
             {placeholderReady
-              ? "这是本地演示用 MP4 文件，可用于下载检查和 PPT 嵌入验证。"
+              ? "这只是本地演示用视频文件，不代表真实成片质量。"
               : "生成最终视频后，这里会显示 MP4 下载入口。"}
           </p>
           {videoPath && (
             <div className="mt-2 break-all t-caption text-muted-foreground">
-              路径：{videoPath}
+              文件：已准备
             </div>
           )}
         </div>
@@ -2678,7 +4166,7 @@ function PptExportPanel({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <FileType2 className="h-4 w-4 text-primary" />
-            <span className="t-module">PPTX artifact</span>
+            <span className="t-module">PPTX 文件</span>
             {status === "ready" && (
               <ToneBadge tone="success">已生成</ToneBadge>
             )}
@@ -2687,7 +4175,7 @@ function PptExportPanel({
             )}
           </div>
           <p className="mt-1 t-caption text-muted-foreground">
-            通过 pptx_artifact 节点生成 PPTX，并使用 manifest artifact 下载地址打开文件。
+            生成可下载的 PPTX 草稿文件。真实上课前仍需要逐页检查讲法、素材和排版。
           </p>
           {result?.filename && (
             <div className="mt-2 t-caption text-muted-foreground">
@@ -2730,6 +4218,262 @@ function PptExportPanel({
   );
 }
 
+type UserStepView = {
+  step: UserWorkspaceStep;
+  state: UserStepState;
+  stage?: WorkflowStage;
+  completedCount: number;
+  totalCount: number;
+};
+
+function buildUserStepViews(
+  definitions: UserWorkspaceStep[],
+  stages: WorkflowStage[],
+): UserStepView[] {
+  let previousComplete = true;
+  let currentAssigned = false;
+  return definitions.map((step) => {
+    const stepStages = stages.filter((stage) => step.stageKeys.includes(stage.key));
+    const totalCount = Math.max(1, stepStages.length);
+    const completedCount = stepStages.filter(isStageComplete).length;
+    const complete = stepStages.length > 0 && completedCount === stepStages.length;
+    const activeStage =
+      stepStages.find((stage) => !isStageComplete(stage)) ||
+      stepStages[stepStages.length - 1];
+    let state: UserStepState;
+    if (complete) {
+      state = "completed";
+    } else if (previousComplete && !currentAssigned) {
+      state = "current";
+      currentAssigned = true;
+    } else {
+      state = "locked";
+    }
+    if (!complete) previousComplete = false;
+    return {
+      step,
+      state,
+      stage: activeStage,
+      completedCount,
+      totalCount,
+    };
+  });
+}
+
+function buildUserStepViewsFromWorkspace(
+  definitions: UserWorkspaceStep[],
+  workspace: { steps?: ApiWorkspaceStep[]; current_step_id?: string | null } | null,
+  stages: WorkflowStage[],
+): UserStepView[] | null {
+  if (!workspace?.steps?.length) return null;
+  const fallbackViews = buildUserStepViews(definitions, stages);
+  return definitions.map((definition) =>
+    workspaceStepToUserStepView(
+      definition,
+      findWorkspaceStepForUserStep(workspace, definition),
+      workspace.current_step_id,
+      stages,
+      fallbackViews.find((view) => view.step.id === definition.id),
+    ),
+  );
+}
+
+function workspaceStepToUserStepView(
+  definition: UserWorkspaceStep,
+  workspaceStep: ApiWorkspaceStep | undefined,
+  currentStepId: string | null | undefined,
+  stages: WorkflowStage[],
+  fallbackView?: UserStepView,
+): UserStepView {
+  const fallback = fallbackView || buildUserStepViews([definition], stages)[0];
+  if (!workspaceStep) return fallback;
+  const stepStages = stages.filter((stage) => definition.stageKeys.includes(stage.key));
+  const totalCount = Math.max(1, workspaceStep.sub_gates?.length || stepStages.length);
+  const completedCount = workspaceStep.sub_gates?.length
+    ? workspaceStep.sub_gates.filter((gate) =>
+        ["completed", "complete", "approved", "done", "passed"].includes(workspaceSubGateState(gate)),
+      ).length
+    : stepStages.filter(isStageComplete).length;
+  return {
+    step: definition,
+    state: workspaceStepStateToUserStepState(workspaceStep, currentStepId),
+    stage:
+      stepStages.find((stage) => !isStageComplete(stage)) ||
+      stepStages[stepStages.length - 1] ||
+      fallback.stage,
+    completedCount,
+    totalCount,
+  };
+}
+
+function workspaceStepStateToUserStepState(
+  step: ApiWorkspaceStep,
+  currentStepId: string | null | undefined,
+): UserStepState {
+  const state = String(step.state || "");
+  if (["completed", "complete", "approved", "done", "passed"].includes(state)) return "completed";
+  if (step.step_id === currentStepId) return "current";
+  if (["current", "ready", "pending_confirm", "needs_review", "running"].includes(state)) return "current";
+  return "locked";
+}
+
+function findUserStepViewForStage(
+  views: UserStepView[],
+  stageKey?: string,
+): UserStepView | undefined {
+  if (!stageKey) return undefined;
+  return views.find((view) => view.step.stageKeys.includes(stageKey));
+}
+
+function findValidUserStepOverride(
+  views: UserStepView[],
+  stepId?: UserStepId | null,
+): UserStepView | undefined {
+  if (!stepId) return undefined;
+  const view = views.find((item) => item.step.id === stepId);
+  if (!view || view.state === "locked") return undefined;
+  return view;
+}
+
+function findUserStepViewForWorkspaceStep(
+  views: UserStepView[],
+  workspaceStepId?: string | null,
+): UserStepView | undefined {
+  if (!workspaceStepId) return undefined;
+  return views.find((view) => workspaceStepMatchesUserStep(workspaceStepId, view.step));
+}
+
+function findWorkspaceStepForUserStep(
+  workspace: { steps?: ApiWorkspaceStep[] } | null,
+  userStep: UserWorkspaceStep,
+): ApiWorkspaceStep | undefined {
+  return workspace?.steps?.find((step) => workspaceStepMatchesUserStep(step.step_id, userStep));
+}
+
+function workspaceStepMatchesUserStep(workspaceStepId: string, userStep: UserWorkspaceStep): boolean {
+  const normalized = normalizeWorkspaceStepId(workspaceStepId);
+  if (normalized === userStep.id) return true;
+  return userStep.stageKeys.some((key) => normalizeWorkspaceStepId(key) === normalized);
+}
+
+function normalizeWorkspaceStepId(stepId: string): string {
+  const normalized = stepId.replace(/_/g, "-");
+  const aliases: Record<string, UserStepId> = {
+    "project-meta": "project-info",
+    "project-config": "project-info",
+    "visual-contract": "project-info",
+    "character-dict": "project-info",
+    "textbook-parse": "textbook-content",
+    "lesson-plan": "lesson-plan",
+    "open-lesson-plan": "lesson-plan",
+    "intro-selection": "intro-video-plan",
+    "video-design-import": "intro-video-plan",
+    "ppt-plan": "ppt-draft",
+    "ppt-script": "ppt-draft",
+    "ppt-assets": "ppt-draft",
+    "pptx-generation": "ppt-draft",
+    "pptx-artifact": "ppt-draft",
+    "video-script": "video-generation",
+    "intro-video-script": "video-generation",
+    "video-screenplay": "video-generation",
+    "intro-video-screenplay": "video-generation",
+    "video-assets": "video-generation",
+    "intro-video-asset": "video-generation",
+    "storyboard": "video-generation",
+    "final-video": "video-generation",
+    "final-delivery": "final-delivery",
+  };
+  return aliases[normalized] || normalized;
+}
+
+function getDefaultStageKeyForUserStep(
+  step: UserWorkspaceStep,
+  stages: WorkflowStage[],
+  currentStageKey?: string,
+): string | null {
+  if (currentStageKey && step.stageKeys.includes(currentStageKey)) {
+    return currentStageKey;
+  }
+  const stepStages = stages.filter((stage) => step.stageKeys.includes(stage.key));
+  return (
+    stepStages.find((stage) => !isStageComplete(stage))?.key ||
+    stepStages[stepStages.length - 1]?.key ||
+    null
+  );
+}
+
+function isStageComplete(stage: WorkflowStage): boolean {
+  return stage.status === "approved" || stage.status === "skipped";
+}
+
+function getLockedStepMessage(target: UserStepView, views: UserStepView[]): string {
+  const index = views.findIndex((view) => view.step.id === target.step.id);
+  const previous = index > 0 ? views[index - 1] : undefined;
+  if (previous) {
+    return `请先完成【${previous.step.label}】后，再进入【${target.step.label}】。`;
+  }
+  return "请先完成上一阶段。";
+}
+
+function getPrimaryActionLabel(
+  stepState: UserStepState,
+  stage: WorkflowStage,
+  actionStatus: LoadStatus,
+  isFinalVideoStage: boolean,
+): string {
+  if (actionStatus === "loading" || (stage.status === "running" && !isFinalVideoStage)) {
+    return "生成中";
+  }
+  if (stepState === "locked") return "暂未解锁";
+  if (stepState === "completed") return "查看下一步";
+  if (!stage.result || stage.status === "not_started") return "生成草稿";
+  if (stage.status === "input_required") return "保存修改";
+  if (stage.status === "running" && isFinalVideoStage) return "查看任务状态";
+  if (stage.status === "failed" || stage.status === "blocked") return "重新生成";
+  return "确认并进入下一步";
+}
+
+function formatUserFacingError(message: string): string {
+  const blocked = /UPSTREAM_NOT_APPROVED|dependency_gate_blocked|R010/i.test(message);
+  if (blocked) return "请先确认上一阶段内容，再继续当前步骤。";
+  const ruleViolation = /RULE_VIOLATION|hard_block/i.test(message);
+  if (ruleViolation) return "当前内容没有通过质量检查，请按提示修改后再确认。";
+  const provider = /provider|API|token|OCTO|MINIMAX/i.test(message);
+  if (provider) return "生成服务暂时不可用，请稍后重试或联系开发人员查看诊断。";
+  return clipText(message, 120);
+}
+
+function getUserEvidenceLabel(file: string): string {
+  if (/\.pdf$/i.test(file)) return "教材页段";
+  if (/\.md$/i.test(file)) return "教材内容";
+  if (/\.(png|jpe?g|webp)$/i.test(file)) return "图片";
+  return "材料";
+}
+
+function resolveMarkdownForStage(stage: WorkflowStage, value: string): string {
+  const raw = value || stage.result;
+  if (!raw.trim()) return "";
+  const content = parseJsonObject(raw);
+  const directMarkdown =
+    getStringValue(content.markdown) ||
+    getStringValue(content.lesson_plan_markdown) ||
+    getStringValue(content.content_markdown);
+  if (directMarkdown) return directMarkdown;
+  const sections = [
+    ["# 公开课教案", getStringValue(content.title) || stage.title],
+    ["## 教材锚点", getStringValue(content.textbook_anchor)],
+    ["## 教学目标", getStringValue(content.teaching_objectives)],
+    ["## 教学重难点", getStringValue(content.key_difficulty)],
+    ["## 教学流程", getStringValue(content.teaching_flow)],
+    ["## 板书设计", getStringValue(content.blackboard_design)],
+  ];
+  const markdown = sections
+    .filter(([, body]) => body.trim())
+    .map(([heading, body]) => `${heading}\n\n${body.trim()}`)
+    .join("\n\n");
+  return markdown || raw;
+}
+
 function parseEditableNodeContent(value: string): unknown {
   const trimmed = value.trim();
   if (!trimmed) return { text: "" };
@@ -2753,13 +4497,29 @@ function buildEditableNodeSummary(
   courseAnchor?: string,
 ): EditableSummary {
   const content = parseJsonObject(value);
+  if (stage.key === "textbook-parse") {
+    const summary = buildTextbookContentSummary("", stage, value);
+    return {
+      title: "教材解析与核验摘要",
+      desc: "核对课时、教材页码、知识点和解析状态。",
+      badge: "教材内容",
+      items: [
+        { label: "课时标题", value: summary.title },
+        { label: "教材页码", value: summary.pages },
+        { label: "知识点摘要", value: summary.knowledge.join("、") || "待确认" },
+        { label: "解析状态", value: summary.status },
+        { label: "教材依据", value: summary.basis },
+        { label: "页段预览", value: summary.sliceUrl ? "教材页段可预览" : "等待页段生成" },
+      ],
+    };
+  }
   if (stage.key === "video-script") {
     const anchor =
-      getStringValue(content.selected_anchor) ||
+      getStringValue(content[SELECTED_ANCHOR_KEY]) ||
       getStringValue(content.anchor_to_lesson);
     return {
       title: "视频文稿摘要",
-      desc: "先看导入类型、课程锚点和完整旁白，再决定是否改 JSON。",
+      desc: "先看导入类型、课程锚点和完整旁白，再决定是否需要修改文稿。",
       badge: "文稿",
       items: [
         { label: "视频类型", value: introTypeLabel(getStringValue(content.video_type)) },
@@ -2780,7 +4540,7 @@ function buildEditableNodeSummary(
     const scenes = getArray(content.scenes).filter(isRecord);
     return {
       title: "分场剧本摘要",
-      desc: "按场次查看画面、时长和旁白片段，当前仍用 JSON 保存完整结构。",
+      desc: "按场次查看画面、时长和旁白片段。",
       badge: `${scenes.length || 0} 场`,
       items: scenes.slice(0, 4).map((scene, index) => ({
         label: getStringValue(scene.scene_id) || `场次 ${index + 1}`,
@@ -2799,13 +4559,13 @@ function buildEditableNodeSummary(
     const assets = getArray(content.assets).filter(isRecord);
     return {
       title: "视频资产摘要",
-      desc: "检查素材 ID、来源提示和状态，确保后续分镜可引用。",
+      desc: "检查参考图、首帧方向和素材状态，未真实生成时只作为占位。",
       badge: `${assets.length || 0} 项`,
       items: assets.slice(0, 6).map((asset, index) => ({
         label: getStringValue(asset.asset_id) || `素材 ${index + 1}`,
         value: [
           getStringValue(asset.source_prompt_id),
-          getStringValue(asset.storage_path),
+          getStringValue(asset.storage_path) ? "素材文件已准备" : "",
           getStringValue(asset.status),
         ]
           .filter(Boolean)
@@ -2840,17 +4600,211 @@ function buildEditableNodeSummary(
     };
   }
 
+  if (stage.key === "final-delivery") {
+    return buildFinalDeliverySummary(content);
+  }
+
   return {
     title: `${stage.title}摘要`,
-    desc: "当前节点暂按通用结构展示，完整内容仍在下方 JSON 中编辑。",
-    badge: "JSON",
+    desc: "当前内容已生成，详细结构请在开发诊断中查看。",
+    badge: "内容摘要",
     items: Object.entries(content)
       .slice(0, 6)
       .map(([key, raw]) => ({
-        label: key,
+        label: `摘要 ${key.length + 1}`,
         value: clipText(formatPreviewValue(raw), 96),
       })),
   };
+}
+
+function buildFinalDeliverySummary(content: Record<string, unknown>): EditableSummary {
+  const checks = getArray(content.checks).filter(isRecord);
+  const readyCount = checks.filter((check) => {
+    const passed = check.passed;
+    return passed === true || passed === "true" || passed === "passed";
+  }).length;
+  const totalCount = checks.length;
+  const fileItems = [
+    {
+      label: "教案材料",
+      value: getStringValue(content.lesson_plan_path) ? "已整理，可下载核对" : "待整理",
+    },
+    {
+      label: "PPT 文件",
+      value: getStringValue(content.pptx_final_path) ? "已准备，可下载试讲" : "待生成",
+    },
+    {
+      label: "导入视频",
+      value: getStringValue(content.video_final_path) ? "已准备，可播放核对" : "待生成",
+    },
+  ];
+  const reviewItems = [
+    {
+      label: "材料检查",
+      value: totalCount > 0 ? `${readyCount}/${totalCount} 项已通过` : "等待检查结果",
+    },
+    {
+      label: "交付状态",
+      value: content.gate_passed === true ? "材料齐全，等待教师确认" : "还有材料需要补齐",
+    },
+    {
+      label: "试讲提醒",
+      value: "下载后请重点核对数学内容、PPT 页面和导入视频衔接。",
+    },
+  ];
+  return {
+    title: "最终交付摘要",
+    desc: "核对教案、PPT、导入视频和检查结果是否齐全。",
+    badge: content.gate_passed === true ? "待确认" : "待补齐",
+    items: [...fileItems, ...reviewItems],
+  };
+}
+
+function buildTextbookContentSummary(
+  projectId: string,
+  stage: WorkflowStage,
+  value: string,
+): TextbookContentSummary {
+  const content = parseJsonObject(value);
+  const meta = isRecord(content.textbook_meta) ? content.textbook_meta : {};
+  const selected = isRecord(content.selected_knowledge_point)
+    ? content.selected_knowledge_point
+    : {};
+  const selectedPages = isRecord(selected.source_pages) ? selected.source_pages : {};
+  const selectedAsset = isRecord(selected.asset_package) ? selected.asset_package : {};
+  const artifacts = isRecord(content.parse_artifacts) ? content.parse_artifacts : {};
+  const title =
+    getStringValue(selected.title) ||
+    getStringValue(content.lesson_title) ||
+    getStringValue(meta.title) ||
+    stage.title;
+  const pages = [
+    userPageLabel(
+      "教材页",
+      getStringValue(selectedAsset.textbook_pages) ||
+        getStringValue(selectedPages.textbook_pages),
+    ),
+    userPageLabel(
+      "PDF 页",
+      getStringValue(selectedAsset.pdf_pages) ||
+        getStringValue(selectedPages.pdf_pages),
+    ),
+  ].filter(Boolean).join("；") || "待确认";
+  const coreKnowledge =
+    getStringArray(content.core_knowledge_points)
+      .concat(getStringArray(selected.keywords))
+      .map((item) => item.trim())
+      .filter(Boolean);
+  const status = [
+    userStatusLabel(
+      getStringValue(selectedAsset.parse_status) ||
+        getStringValue(meta.review_status) ||
+        getStringValue(content.parse_status),
+    ),
+    userStatusLabel(getStringValue(selectedAsset.review_status)),
+  ].filter(Boolean).join(" / ") || "待确认";
+  const basisParts = [
+    pages !== "待确认" ? pages : "",
+    getStringValue(selectedAsset.checksum) ? "已生成核验信息" : "",
+    selectedHasMarkdown(selected, selectedAsset, artifacts) ? "教材内容已生成" : "",
+  ].filter(Boolean);
+  const markdown =
+    getStringValue(selected.markdown) ||
+    getStringValue(content.markdown) ||
+    getStringValue(content.content_markdown);
+  const assetDownloadUrls = isRecord(selectedAsset.download_urls)
+    ? selectedAsset.download_urls
+    : {};
+  const slicePath =
+    getStringValue(assetDownloadUrls.slice_pdf) ||
+    getStringValue(selected.slice_pdf_path) ||
+    getStringValue(artifacts.slice_pdf_path) ||
+    getStringValue(selectedAsset.slice_pdf_path);
+
+  return {
+    title,
+    pages,
+    knowledge: Array.from(new Set(coreKnowledge)).slice(0, 8),
+    status,
+    basis: basisParts.join("；") || "来自教材库知识点资产包、页段 PDF 和教材内容。",
+    markdown,
+    sliceUrl: resolveTextbookSlicePreviewUrl(projectId, slicePath),
+  };
+}
+
+function buildPptxArtifactSummary(stage: WorkflowStage, value: string): {
+  filename: string;
+  downloadHref: string;
+  ready: boolean;
+} {
+  const content = parseJsonObject(value || stage.result);
+  const pptxPath = getStringValue(content.pptx_path);
+  const downloadUrl = getStringValue(content.download_url);
+  const filename =
+    getStringValue(content.filename) ||
+    pptxPath.split(/[\\/]/).pop() ||
+    downloadUrl.split(/[\\/]/).pop() ||
+    "PPTX 草稿文件";
+  return {
+    filename,
+    downloadHref: downloadUrl ? resolveApiDownloadUrl(downloadUrl) : "",
+    ready: Boolean(downloadUrl || pptxPath || filename !== "PPTX 草稿文件"),
+  };
+}
+
+function selectedHasMarkdown(
+  selected: Record<string, unknown>,
+  asset: Record<string, unknown>,
+  artifacts: Record<string, unknown>,
+): boolean {
+  return Boolean(
+    getStringValue(selected.markdown) ||
+      getStringValue(selected.markdown_path) ||
+      getStringValue(selected.mineru_md_path) ||
+      getStringValue(asset.mineru_md_path) ||
+      getStringValue(asset.markdown_path) ||
+      getStringValue(artifacts.mineru_md_path) ||
+      getStringValue(artifacts.markdown_path),
+  );
+}
+
+function userPageLabel(label: string, value: string): string {
+  return value ? `${label} ${value}` : "";
+}
+
+function userStatusLabel(value: string): string {
+  const map: Record<string, string> = {
+    split_ready: "已切分",
+    needs_review: "待确认",
+    approved: "已确认",
+    unreviewed: "待确认",
+    failed: "解析失败",
+    parsed: "已解析",
+  };
+  return value ? map[value] || value : "";
+}
+
+function resolveTextbookSlicePreviewUrl(projectId: string, path: string): string {
+  if (!projectId || !path) return "";
+  if (/^https?:\/\//i.test(path)) return path;
+  if (path.startsWith("/projects/")) return resolveApiDownloadUrl(path);
+  const normalized = normalizeTextbookAssetPath(path);
+  if (!normalized) return "";
+  return resolveApiDownloadUrl(
+    `/projects/${encodeURIComponent(projectId)}/files/${normalized
+      .split("/")
+      .map(encodeURIComponent)
+      .join("/")}`,
+  );
+}
+
+function normalizeTextbookAssetPath(path: string): string {
+  const normalized = path.replaceAll("\\", "/").replace(/^\/+/, "");
+  const knowledgePointIndex = normalized.indexOf("knowledge-points/");
+  if (knowledgePointIndex >= 0) return normalized.slice(knowledgePointIndex);
+  const filesIndex = normalized.indexOf("/files/");
+  if (filesIndex >= 0) return normalized.slice(filesIndex + "/files/".length);
+  return normalized;
 }
 
 function parseJsonObject(value: string): Record<string, unknown> {
@@ -2878,8 +4832,8 @@ function pptArtifactExportFromStage(stage: WorkflowStage): ApiPptExport | null {
 
 function validateIntroSelectionAnchor(value: string): string | null {
   const content = parseJsonObject(value);
-  const anchor = getStringValue(content.selected_anchor).trim();
-  if (!anchor) return "请先填写课程锚点 selected_anchor";
+  const anchor = getStringValue(content[SELECTED_ANCHOR_KEY]).trim();
+  if (!anchor) return "请先填写课程锚点";
   if (anchor.length < 10) return "课程锚点不能少于 10 个字";
   return null;
 }
@@ -2893,8 +4847,8 @@ function resolveCourseAnchorForStage(stageKey: string, stages: WorkflowStage[]):
     stages.find((item) => item.key === "video-script")?.result || "",
   );
   return (
-    getStringValue(introSelection.selected_anchor) ||
-    getStringValue(script.selected_anchor) ||
+    getStringValue(introSelection[SELECTED_ANCHOR_KEY]) ||
+    getStringValue(script[SELECTED_ANCHOR_KEY]) ||
     getStringValue(script.anchor_to_lesson)
   );
 }
@@ -3107,6 +5061,8 @@ function normalizeIntroDesigns(content: Record<string, unknown>): Array<{
   title: string;
   hook: string;
   anchor: string;
+  entryQuestion: string;
+  noPreTeach: string;
   score: number;
 }> {
   const rawDesigns = getArray(content.intro_designs);
@@ -3119,6 +5075,8 @@ function normalizeIntroDesigns(content: Record<string, unknown>): Array<{
         title: getStringValue(item.title) || `候选方案 ${index + 1}`,
         hook: getStringValue(item.hook) || "待补充导入钩子。",
         anchor: getStringValue(item.anchor_to_lesson) || "待补充课程落点。",
+        entryQuestion: getStringValue(item.classroom_entry_question) || "待补充课堂落点问题。",
+        noPreTeach: getStringValue(item.no_pre_teach) || "待补充不提前讲解内容。",
         score:
           typeof item.recommend_score === "number"
             ? item.recommend_score

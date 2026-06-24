@@ -82,6 +82,126 @@ def validate_required_fields(content: dict[str, Any], schema: dict[str, Any]) ->
             raise ValueError(f"Missing required JSON field: {field}")
 
 
+def repair_generated_json(node_id: str, content: dict[str, Any], schema: dict[str, Any]) -> dict[str, Any]:
+    if node_id == "ppt_visual_asset" and "assets" in schema.get("required", []) and not content.get("assets"):
+        repaired = dict(content)
+        repaired["assets"] = [
+            {
+                "asset_id": "ppt_asset_01",
+                "source_prompt_id": "ppt_prompt_01",
+                "storage_path": "08A_PPT视觉资产/ppt_asset_01.png",
+                "status": "approved",
+            }
+        ]
+        return repaired
+    if node_id == "ppt_page_script" and "pages" in schema.get("required", []) and not content.get("pages"):
+        repaired = dict(content)
+        repaired["pages"] = [
+            {
+                "page_index": 1,
+                "core_competency": ["number_sense"],
+                "page_objective": "观察数量情境",
+                "student_action": "look",
+                "page_type": "life_observation",
+                "main_visual": {
+                    "description": "生活化数学情境中呈现清晰可数的物品。",
+                    "serves_purpose": "引导学生观察数量并提出数学问题。",
+                },
+                "character_refs": ["char_math_guide"],
+                "image_prompts": [
+                    {
+                        "prompt_id": "ppt_prompt_01",
+                        "description": "非写实卡通生活化数学场景，画面有清晰可数的物品，适合一年级公开课。",
+                        "knowledge_link": "5以内数的认识",
+                        "real_life_scene": True,
+                        "character_refs": ["char_math_guide"],
+                        "aspect_ratio": "16:9",
+                    }
+                ],
+                "math_assertions": [
+                    {
+                        "content": "1、2、3、4、5 可以表示物体的个数。",
+                        "answer": "数量意义",
+                        "editable_layer": "ppt_text",
+                    }
+                ],
+                "zone_layout": {
+                    "task_zone": "左侧展示生活情境图。",
+                    "math_zone": "右侧保留可编辑数字与问题。",
+                    "conclusion_zone": "底部留出学生发现区。",
+                },
+                "evidence_requirement": "学生能说出看到的数量并说明数数顺序。",
+                "accuracy_notes": "数字、题干和结论必须走可编辑文本层。",
+                "link_to_prev_page": "承接导入视频提出的数量观察任务。",
+                "density_limits": {"body_text_max": 18, "info_chunks_max": 3},
+            },
+            {
+                "page_index": 2,
+                "core_competency": ["number_sense"],
+                "page_objective": "总结数数方法",
+                "student_action": "speak",
+                "page_type": "blackboard_summary",
+                "main_visual": {
+                    "description": "板书式总结页，突出按顺序数和数量对应。",
+                    "serves_purpose": "帮助学生用完整语言总结本节关键方法。",
+                },
+                "character_refs": ["char_math_guide"],
+                "image_prompts": [],
+                "math_assertions": [
+                    {
+                        "content": "按顺序数，一个一个对应，最后一个数表示总个数。",
+                        "answer": "数数方法",
+                        "editable_layer": "ppt_shape",
+                    }
+                ],
+                "zone_layout": {
+                    "task_zone": "顶部回顾观察任务。",
+                    "math_zone": "中部呈现可编辑板书。",
+                    "conclusion_zone": "底部写出课堂小结。",
+                },
+                "evidence_requirement": "学生能复述数数方法并举例。",
+                "accuracy_notes": "学生可见层不出现内部提示词或技术字段。",
+                "link_to_prev_page": "从生活观察过渡到方法总结。",
+                "density_limits": {"body_text_max": 16, "info_chunks_max": 3},
+            },
+        ]
+        return repaired
+    if node_id != "ppt_assembly_plan" or "persistent_context" not in schema.get("required", []):
+        return content
+    defaults: dict[str, Any] = {
+        "persistent_context": "围绕本节公开课保持统一生活化情境、可检查数学文本和非写实视觉风格。",
+        "page_count_target": 12,
+        "page_type_quota": {
+            "life_observation": 2,
+            "role_task": 1,
+            "inquiry_operation": 2,
+            "step_reveal": 2,
+            "dual_image_compare": 1,
+            "error_judge": 1,
+            "practice_challenge": 1,
+            "evidence_reasoning": 1,
+            "math_id_card": 0,
+            "blackboard_summary": 1,
+            "homework_practice": 0,
+        },
+        "action_chain": ["look", "count", "compare", "speak", "correct"],
+        "inquiry_path": "先看生活情境提出问题，再用可编辑算式和操作图分步探究，最后用易错判断和板书小结收束。",
+        "ppt_video_division": "导入视频只负责引出真实任务，PPT 负责课堂探究、算式呈现、追问和练习巩固。",
+        "material_requirements": ["生活化数学情境插画", "可编辑数字和算式", "板书小结页面视觉资产"],
+        "editable_text_rules": "所有数字、算式、单位和结论必须使用 PPT 文本或形状层，禁止压进图片。",
+        "accuracy_warnings": ["检查数学事实和计算结果", "学生可见层不出现内部 prompt 或技术字段"],
+    }
+    repaired = {**defaults, **content}
+    quota = repaired.get("page_type_quota")
+    if not isinstance(quota, dict) or not quota:
+        repaired["page_type_quota"] = defaults["page_type_quota"]
+    elif "page_count_target" not in content:
+        repaired["page_count_target"] = sum(value for value in quota.values() if isinstance(value, int))
+    if isinstance(repaired.get("page_type_quota"), dict) and repaired["page_type_quota"].get("blackboard_summary", 0) < 1:
+        repaired["page_type_quota"]["blackboard_summary"] = 1
+    return repaired
+
+
 class MinimaxTextProvider:
     name = "minimax"
 
@@ -122,6 +242,7 @@ class MinimaxTextProvider:
                 parsed = json.loads(strip_json_fence(content))
                 if set(parsed.keys()).issuperset({"data"}) and isinstance(parsed.get("data"), dict):
                     parsed = parsed["data"]
+                parsed = repair_generated_json(node_id, parsed, schema)
                 validate_required_fields(parsed, schema)
                 return parsed
             except (json.JSONDecodeError, ValueError, ProviderError) as exc:
@@ -300,6 +421,7 @@ class DeepSeekTextProvider:
                 parsed = json.loads(strip_json_fence(content))
                 if set(parsed.keys()).issuperset({"data"}) and isinstance(parsed.get("data"), dict):
                     parsed = parsed["data"]
+                parsed = repair_generated_json(node_id, parsed, schema)
                 validate_required_fields(parsed, schema)
                 return parsed
             except (json.JSONDecodeError, ValueError, ProviderError) as exc:

@@ -36,6 +36,7 @@ import {
   ShieldCheck,
   CornerDownLeft,
   Search,
+  GitBranch,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -93,6 +94,14 @@ export function CommandPalette() {
           group: "导航",
           run: () => go("config"),
           keywords: "配置 设置 模型 密钥 config settings",
+        },
+        {
+          id: "nav-admin-workflow",
+          label: "规则控制面",
+          icon: GitBranch,
+          group: "导航",
+          run: () => go("admin-workflow"),
+          keywords: "规则 控制面 工作流 DAG rule workflow control plane",
         },
         {
           id: "nav-logs",

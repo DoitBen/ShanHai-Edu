@@ -31,6 +31,8 @@ const SCREEN_TITLE: Record<ScreenKey, string> = {
   config: "配置中心",
   logs: "日志",
   scripts: "脚本",
+  "admin-workflow": "规则控制面",
+  "admin-textbook-library": "管理教材库",
 };
 
 export function TopBar({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {

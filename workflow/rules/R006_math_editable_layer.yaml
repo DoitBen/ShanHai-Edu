@@ -4,10 +4,17 @@ trigger_node: ppt_page_script
 trigger_event: on_approve_attempt
 severity: hard_block
 check:
-  type: foreach_page
-  expression: |
-    FOR EACH page.math_assertions[*]:
-      assertion.editable_layer IN ["ppt_text", "ppt_shape", "ppt_chart"]
+  type: nested_list_each
+  list_field: pages
+  nested_list_field: math_assertions
+  item_name: assertion
+  checks:
+    - type: enum_in
+      field: editable_layer
+      values:
+        - ppt_text
+        - ppt_shape
+        - ppt_chart
 action_message: 数学公式/数字/单位/答案不得交给图片或视频模型生成，必须进 PPT 可编辑文本层
 executor: builtin
 legacy_source: PPT探究型页面约束_工作流节点.md「准确性门禁」

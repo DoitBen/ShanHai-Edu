@@ -1,0 +1,45 @@
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    image: shanhaiedu-api:latest
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      STORAGE_ROOT: /app/storage
+      WORKFLOW_ROOT: /app/workflow
+      CAPABILITIES_PATH: /app/docs/api-research/octo-video/capabilities.json
+      CORS_ORIGINS: http://124.221.149.145:3020,http://127.0.0.1:3020
+    volumes:
+      - shanhaiedu_storage:/app/storage
+    ports:
+      - "127.0.0.1:8020:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+    image: shanhaiedu-web:latest
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_DEMO_MODE: "false"
+      BACKEND_API_BASE_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3020:3000"
+
+volumes:
+  shanhaiedu_storage:

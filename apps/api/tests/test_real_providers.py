@@ -172,7 +172,7 @@ def test_octo_video_provider_uses_authorization_for_submit_and_query():
             return {"id": "task_remote_1", "status": "queued", "progress": 0}
         return {"id": "task_remote_1", "status": "completed", "progress": 100, "url": "https://cdn.example/test.mp4"}
 
-    provider = OctoVideoProvider(api_key="test-token", base_url="https://otuapi.com", transport=transport)
+    provider = OctoVideoProvider(api_key="fake", base_url="https://otuapi.com", transport=transport)
 
     submitted = provider.submit_video(
         {
@@ -200,7 +200,7 @@ def test_octo_video_provider_submits_local_reference_as_multipart(tmp_path: Path
         calls.append({"method": method, "url": url, **kwargs})
         return {"id": "task_remote_1", "status": "queued", "progress": 0}
 
-    provider = OctoVideoProvider(api_key="test-token", base_url="https://otuapi.com", transport=transport)
+    provider = OctoVideoProvider(api_key="fake", base_url="https://otuapi.com", transport=transport)
 
     submitted = provider.submit_video(
         {
@@ -237,7 +237,7 @@ def test_octo_video_provider_submits_local_reference_as_multipart(tmp_path: Path
     ],
 )
 def test_octo_video_provider_normalizes_video_url_fields(raw: dict[str, Any], expected_url: str):
-    provider = OctoVideoProvider(api_key="test-token", base_url="https://otuapi.com", transport=lambda *args, **kwargs: raw)
+    provider = OctoVideoProvider(api_key="fake", base_url="https://otuapi.com", transport=lambda *args, **kwargs: raw)
 
     assert provider.query_task("task_remote_1")["video_url"] == expected_url
 
@@ -258,7 +258,7 @@ def test_octo_video_provider_classifies_quota_exhausted_query_failure():
             ],
         },
     }
-    provider = OctoVideoProvider(api_key="test-token", base_url="https://otuapi.com", transport=lambda *args, **kwargs: raw)
+    provider = OctoVideoProvider(api_key="fake", base_url="https://otuapi.com", transport=lambda *args, **kwargs: raw)
 
     queried = provider.query_task("task_remote_quota")
 
@@ -280,7 +280,7 @@ def test_minimax_text_provider_retries_invalid_json_once():
             return {"choices": [{"message": {"content": "not json"}}]}
         return {"choices": [{"message": {"content": '{"lesson_title":"分数","core_knowledge_points":[]}'}}]}
 
-    provider = MinimaxTextProvider(api_key="test-token", base_url="https://api.example", model="M3", transport=transport)
+    provider = MinimaxTextProvider(api_key="fake", base_url="https://api.example", model="M3", transport=transport)
 
     result = provider.complete_json(
         node_id="textbook_parse",
@@ -314,7 +314,7 @@ def test_newapi_image_provider_wraps_empty_or_non_json_http_response(monkeypatch
 
     monkeypatch.setattr("app.providers.urllib.request.urlopen", lambda request, timeout: StubResponse())
     provider = NewApiImageProvider(
-        api_key="test-token",
+        api_key="fake",
         base_url="https://image.example/v1",
         model="gpt-image-2",
         transport=lambda method, url, **kwargs: provider._http_transport(method, url, **kwargs),
@@ -334,7 +334,7 @@ def test_newapi_image_provider_wraps_remote_disconnect(monkeypatch):
 
     monkeypatch.setattr("app.providers.urllib.request.urlopen", disconnect)
     provider = NewApiImageProvider(
-        api_key="test-token",
+        api_key="fake",
         base_url="https://image.example/v1",
         model="gpt-image-2",
         transport=lambda method, url, **kwargs: provider._http_transport(method, url, **kwargs),
@@ -369,7 +369,7 @@ def test_newapi_image_provider_normalizes_sync_url_shapes(raw: dict[str, Any], e
         return raw
 
     provider = NewApiImageProvider(
-        api_key="test-token",
+        api_key="fake",
         base_url="https://image.example/v1",
         model="gpt-image-2",
         transport=transport,
@@ -400,7 +400,7 @@ def test_newapi_image_provider_normalizes_base_url_without_v1():
         return {"data": [{"url": "https://cdn.example/image.png"}]}
 
     provider = NewApiImageProvider(
-        api_key="test-token",
+        api_key="fake",
         base_url="https://image.example",
         model="gpt-image-2",
         transport=transport,
@@ -427,7 +427,7 @@ def test_newapi_image_provider_retries_verified_profiles_after_pool_unavailable(
         return {"data": [{"url": "https://cdn.example/fallback.png"}]}
 
     provider = NewApiImageProvider(
-        api_key="test-token",
+        api_key="fake",
         base_url="https://image.example/v1",
         model="gpt-image-2",
         transport=transport,
@@ -454,7 +454,7 @@ def test_newapi_image_provider_retries_same_profile_once_after_transient_disconn
         return {"data": [{"url": "https://cdn.example/retry.png"}]}
 
     provider = NewApiImageProvider(
-        api_key="test-token",
+        api_key="fake",
         base_url="https://image.example/v1",
         model="gpt-image-2",
         transport=transport,
@@ -483,7 +483,7 @@ def test_newapi_image_provider_retries_low_quality_when_high_profile_unavailable
         return {"data": [{"url": "https://cdn.example/low.png"}]}
 
     provider = NewApiImageProvider(
-        api_key="test-token",
+        api_key="fake",
         base_url="https://image.example/v1",
         model="gpt-image-2",
         transport=transport,
@@ -498,7 +498,7 @@ def test_newapi_image_provider_retries_low_quality_when_high_profile_unavailable
 
 def test_newapi_image_provider_rejects_sync_response_without_image_payload():
     provider = NewApiImageProvider(
-        api_key="test-token",
+        api_key="fake",
         base_url="https://image.example/v1",
         model="gpt-image-2",
         transport=lambda *args, **kwargs: {"data": [{}]},
@@ -514,7 +514,7 @@ def test_newapi_image_provider_rejects_sync_response_without_image_payload():
 
 def test_newapi_image_provider_marks_async_task_response_unsupported():
     provider = NewApiImageProvider(
-        api_key="test-token",
+        api_key="fake",
         base_url="https://image.example/v1",
         model="gpt-image-2",
         transport=lambda *args, **kwargs: {"task_id": "img_task_001", "status": "queued"},
@@ -531,7 +531,7 @@ def test_newapi_image_provider_marks_async_task_response_unsupported():
 def test_newapi_image_provider_b64_json_downloads_to_file(tmp_path: Path):
     b64_png = "iVBORw0KGgppbWFnZQ=="
     provider = NewApiImageProvider(
-        api_key="test-token",
+        api_key="fake",
         base_url="https://image.example/v1",
         model="gpt-image-2",
         transport=lambda *args, **kwargs: {"data": [{"b64_json": b64_png}]},
@@ -562,7 +562,7 @@ def test_intro_video_asset_newapi_empty_response_persists_failed_task_and_node(m
 
     monkeypatch.setattr("app.providers.urllib.request.urlopen", lambda request, timeout: StubResponse())
     client.app.state.service.image_provider = NewApiImageProvider(
-        api_key="test-token",
+        api_key="fake",
         base_url="https://image.example/v1",
         model="gpt-image-2",
         transport=lambda method, url, **kwargs: client.app.state.service.image_provider._http_transport(method, url, **kwargs),
@@ -587,7 +587,7 @@ def test_intro_video_asset_newapi_empty_response_persists_failed_task_and_node(m
 
 def test_minimax_text_provider_unwraps_data_payload_before_validation():
     provider = MinimaxTextProvider(
-        api_key="test-token",
+        api_key="fake",
         base_url="https://api.example/v1",
         model="M3",
         transport=lambda payload: {"choices": [{"message": {"content": '{"data":{"lesson_title":"分数"}}'}}]},
@@ -622,7 +622,7 @@ def test_deepseek_text_provider_sends_openai_compatible_payload_and_auth():
         }
 
     provider = DeepSeekTextProvider(
-        api_key="deepseek-token",
+        api_key="fake",
         base_url="https://api.deepseek.com",
         model="deepseek-chat",
         transport=transport,
@@ -643,6 +643,122 @@ def test_deepseek_text_provider_sends_openai_compatible_payload_and_auth():
     assert captured["payload"]["response_format"] == {"type": "json_object"}
     assert captured["payload"]["messages"][0]["role"] == "system"
     assert captured["payload"]["messages"][1]["content"] == "只输出 JSON"
+
+
+def test_deepseek_text_provider_repairs_ppt_assembly_missing_required_fields():
+    def transport(payload: dict[str, Any], headers: dict[str, str], url: str) -> dict[str, Any]:
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "page_type_quota": {
+                                    "life_observation": 2,
+                                    "role_task": 1,
+                                    "inquiry_operation": 2,
+                                    "step_reveal": 2,
+                                    "dual_image_compare": 1,
+                                    "error_judge": 1,
+                                    "practice_challenge": 1,
+                                    "evidence_reasoning": 1,
+                                    "math_id_card": 0,
+                                    "blackboard_summary": 1,
+                                    "homework_practice": 0,
+                                },
+                                "action_chain": ["look", "count", "compare", "speak", "correct"],
+                                "inquiry_path": "先用生活情境提出问题，再通过观察、数一数和比较推进课堂探究。",
+                                "ppt_video_division": "导入视频负责引出情境，PPT 负责课堂探究、练习和小结。",
+                                "material_requirements": ["生活化数学插画", "可编辑数字和算式"],
+                                "editable_text_rules": "所有数字、算式和结论必须使用可编辑文本或形状层。",
+                                "accuracy_warnings": ["检查数学事实和学生可见文字。"],
+                            },
+                            ensure_ascii=False,
+                        )
+                    }
+                }
+            ]
+        }
+
+    provider = DeepSeekTextProvider(
+        api_key="fake",
+        base_url="https://api.deepseek.com",
+        model="deepseek-chat",
+        transport=transport,
+    )
+
+    result = provider.complete_json(
+        node_id="ppt_assembly_plan",
+        prompt="只输出 JSON",
+        schema=json.loads((Path(__file__).resolve().parents[3] / "workflow" / "schemas" / "ppt_assembly_plan.schema.json").read_text(encoding="utf-8")),
+        temperature=0.2,
+        max_tokens=1000,
+    )
+
+    assert result["persistent_context"] == "围绕本节公开课保持统一生活化情境、可检查数学文本和非写实视觉风格。"
+    assert result["page_count_target"] == 12
+    assert sum(result["page_type_quota"].values()) == result["page_count_target"]
+    assert result["page_type_quota"]["blackboard_summary"] >= 1
+    schema = json.loads((Path(__file__).resolve().parents[3] / "workflow" / "schemas" / "ppt_assembly_plan.schema.json").read_text(encoding="utf-8"))
+    for field in schema["required"]:
+        assert field in result
+
+
+def test_deepseek_text_provider_repairs_ppt_page_script_missing_pages():
+    def transport(payload: dict[str, Any], headers: dict[str, str], url: str) -> dict[str, Any]:
+        return {"choices": [{"message": {"content": '{"page_outline":["观察情境","板书小结"]}'}}]}
+
+    provider = DeepSeekTextProvider(
+        api_key="fake",
+        base_url="https://api.deepseek.com",
+        model="deepseek-chat",
+        transport=transport,
+    )
+
+    result = provider.complete_json(
+        node_id="ppt_page_script",
+        prompt="只输出 JSON",
+        schema=json.loads((Path(__file__).resolve().parents[3] / "workflow" / "schemas" / "ppt_page_script.schema.json").read_text(encoding="utf-8")),
+        temperature=0.2,
+        max_tokens=1000,
+    )
+
+    assert len(result["pages"]) >= 2
+    assert result["pages"][0]["page_index"] == 1
+    assert result["pages"][-1]["page_type"] == "blackboard_summary"
+    for page in result["pages"]:
+        assert page["main_visual"]["serves_purpose"]
+        assert page["zone_layout"]["math_zone"]
+        assert page["density_limits"]["body_text_max"] <= 25
+
+
+def test_deepseek_text_provider_repairs_ppt_visual_asset_missing_assets():
+    def transport(payload: dict[str, Any], headers: dict[str, str], url: str) -> dict[str, Any]:
+        return {"choices": [{"message": {"content": '{"asset_notes":"需要课堂主图"}'}}]}
+
+    provider = DeepSeekTextProvider(
+        api_key="fake",
+        base_url="https://api.deepseek.com",
+        model="deepseek-chat",
+        transport=transport,
+    )
+
+    result = provider.complete_json(
+        node_id="ppt_visual_asset",
+        prompt="只输出 JSON",
+        schema=json.loads((Path(__file__).resolve().parents[3] / "workflow" / "schemas" / "ppt_visual_asset.schema.json").read_text(encoding="utf-8")),
+        temperature=0.2,
+        max_tokens=1000,
+    )
+
+    assert result["assets"] == [
+        {
+            "asset_id": "ppt_asset_01",
+            "source_prompt_id": "ppt_prompt_01",
+            "storage_path": "08A_PPT视觉资产/ppt_asset_01.png",
+            "status": "approved",
+        }
+    ]
 
 
 def test_deepseek_text_provider_requires_api_key():
@@ -756,7 +872,7 @@ def test_real_provider_mode_uses_deepseek_for_lesson_plan(tmp_path: Path, monkey
     lesson_call = next(call for call in calls if call["node_id"] == "lesson_plan")
     assert "5以内数的认识" in lesson_call["prompt"]
     assert generated["content"]["lesson_plan_markdown"].startswith("# 教案")
-    assert generated["content"]["textbook_anchor"] == "基于已选知识点 Markdown 生成"
+    assert "5以内数的认识" in generated["content"]["textbook_anchor"]
     assert len(generated["content"]["intro_designs"]) == 9
     assert {item["type"] for item in generated["content"]["intro_designs"]} == {"science", "application", "story"}
     assert all("video_theme" in item for item in generated["content"]["intro_designs"])
@@ -1112,10 +1228,18 @@ def test_lesson_plan_normalization_produces_nine_complete_intro_designs():
             "volume": "shang",
             "textbook_parse": {
                 "lesson_title": "5以内数的认识",
-                "selected_knowledge_point": {"title": "5以内数的认识"},
+                "selected_knowledge_point": {
+                    "knowledge_point_id": "kp_001",
+                    "title": "5以内数的认识",
+                    "markdown_path": "knowledge-points/kp_001.md",
+                },
             },
         },
     )
+
+    assert normalized["source_knowledge_point_id"] == "kp_001"
+    assert normalized["source_markdown_path"] == "knowledge-points/kp_001.md"
+    assert "5以内数的认识" in normalized["textbook_anchor"]
 
     intro_designs = normalized["intro_designs"]
     assert len(intro_designs) == 9
@@ -1949,7 +2073,7 @@ def test_intro_video_asset_b64_image_response_persists_completed_task_and_file(t
             }
 
     provider = NewApiImageProvider(
-        api_key="test-token",
+        api_key="fake",
         base_url="https://image.example/v1",
         model="gpt-image-2",
         transport=lambda *args, **kwargs: {"data": [{"b64_json": "iVBORw0KGgppbWFnZQ=="}]},
@@ -2672,7 +2796,7 @@ def test_octo_video_download_uses_browser_compatible_headers(monkeypatch, tmp_pa
         return StubResponse()
 
     monkeypatch.setattr("app.providers.urllib.request.urlopen", fake_urlopen)
-    provider = OctoVideoProvider(api_key="test-token", base_url="https://otuapi.com")
+    provider = OctoVideoProvider(api_key="fake", base_url="https://otuapi.com")
     target = tmp_path / "clip.mp4"
 
     provider.download_video("https://cdn.example/clip.mp4", target)

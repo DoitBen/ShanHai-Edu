@@ -94,6 +94,38 @@ def transition_rows(project_dir: str, project_id: str, node_id: str | None = Non
         return conn.execute(sql, params).fetchall()
 
 
+def write_current_version(
+    client: TestClient,
+    project: dict[str, Any],
+    node_id: str,
+    content: dict[str, Any],
+    status: str = "needs_review",
+) -> dict[str, Any]:
+    with client.app.state.store.connect(Path(project["project_dir"])) as conn:
+        return client.app.state.store.write_version(conn, project["project_id"], node_id, content, "fixture", "fixture", status)
+
+
+def set_node_status(
+    client: TestClient,
+    project: dict[str, Any],
+    node_id: str,
+    status: str,
+    content: dict[str, Any] | None = None,
+) -> None:
+    with client.app.state.store.connect(Path(project["project_dir"])) as conn:
+        result = client.app.state.store.write_version(
+            conn,
+            project["project_id"],
+            node_id,
+            content or {"seeded": node_id, "status": status},
+            "fixture",
+            "fixture",
+            status,
+        )
+        if status == "approved":
+            client.app.state.store.update_current_version_status(conn, result["version_id"], "approved", approved=True)
+
+
 def test_state_engine_blocks_downstream_until_upstreams_passable_and_logs_transitions(tmp_path: Path):
     client = make_client(tmp_path)
     project = create_project(client)
@@ -119,9 +151,98 @@ def test_state_engine_blocks_downstream_until_upstreams_passable_and_logs_transi
     assert lesson_plan_node["review_reason"] is None
 
     rows = transition_rows(project["project_dir"], project_id, "lesson_plan")
-    triggers = [row["trigger"] for row in rows]
-    assert "ai_generate_done" in triggers
-    assert "user_approve" in triggers
+    transitions = [(row["from_status"], row["to_status"], row["trigger"]) for row in rows]
+    assert ("not_started", "drafted", "ai_generate") in transitions
+    assert ("drafted", "needs_review", "ai_generate_done") in transitions
+    assert ("needs_review", "approved", "user_approve") in transitions
+
+
+def test_generate_dependency_gate_logs_state_engine_diagnostic_without_rule_result(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project(client)
+    project_id = project["project_id"]
+    upload_textbook(client, project_id)
+
+    blocked = client.post(f"/projects/{project_id}/nodes/lesson_plan/generate", json={})
+
+    assert blocked.status_code == 409
+    assert blocked.json()["error"]["code"] == "UPSTREAM_NOT_APPROVED"
+    rows = transition_rows(project["project_dir"], project_id, "lesson_plan")
+    blocked_rows = [row for row in rows if row["trigger"] == "dependency_gate_blocked"]
+    assert blocked_rows
+    assert blocked_rows[-1]["from_status"] == "not_started"
+    assert blocked_rows[-1]["to_status"] == "not_started"
+    assert '"rule_id": "R010"' in blocked_rows[-1]["reason"]
+    assert '"handled_by": "StateEngine"' in blocked_rows[-1]["reason"]
+    assert '"node_id": "textbook_parse"' in blocked_rows[-1]["reason"]
+
+    rule_rows = client.app.state.store.rule_results(project_id, "lesson_plan")
+    assert [row for row in rule_rows if row["rule_id"] == "R010"] == []
+
+
+def test_state_engine_allows_generate_when_upstream_is_skipped(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project_with_config(client, {"needs_intro_video": False})
+    project_id = project["project_id"]
+
+    set_node_status(client, project, "pptx_artifact", "approved")
+    write_current_version(
+        client,
+        project,
+        "final_delivery",
+        {
+            "seeded": "final_delivery",
+            "gate_result_json": {"mode": "final", "gate_passed": True},
+        },
+    )
+    before = transition_rows(project["project_dir"], project_id, "final_delivery")
+
+    response = client.post(f"/projects/{project_id}/nodes/final_delivery/approve", json={})
+
+    assert response.status_code < 400, response.text
+    after = transition_rows(project["project_dir"], project_id, "final_delivery")
+    assert [row for row in after if row["trigger"] == "dependency_gate_blocked"] == [
+        row for row in before if row["trigger"] == "dependency_gate_blocked"
+    ]
+
+
+def test_state_engine_blocks_mixed_upstream_statuses_and_reports_each_unpassable_dependency(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project(client)
+    project_id = project["project_id"]
+
+    set_node_status(client, project, "ppt_assembly_plan", "approved")
+    set_node_status(client, project, "character_dict", "skipped")
+
+    blocked = client.post(f"/projects/{project_id}/nodes/ppt_page_script/generate", json={})
+
+    assert blocked.status_code == 409
+    assert blocked.json()["error"]["code"] == "UPSTREAM_NOT_APPROVED"
+    rows = transition_rows(project["project_dir"], project_id, "ppt_page_script")
+    blocked_rows = [row for row in rows if row["trigger"] == "dependency_gate_blocked"]
+    assert blocked_rows
+    reason = blocked_rows[-1]["reason"]
+    assert '"node_id": "visual_contract"' in reason
+    assert '"status": "not_started"' in reason
+    assert '"node_id": "ppt_assembly_plan"' not in reason
+    assert '"node_id": "character_dict"' not in reason
+
+
+def test_generate_records_drafted_then_needs_review_transitions(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project(client)
+    project_id = project["project_id"]
+    upload_textbook(client, project_id)
+
+    generated = unwrap_ok(client.post(f"/projects/{project_id}/nodes/textbook_parse/generate", json={}))
+
+    assert generated["status"] == "needs_review"
+    rows = transition_rows(project["project_dir"], project_id, "textbook_parse")
+    transitions = [(row["from_status"], row["to_status"], row["trigger"]) for row in rows]
+    assert transitions[-2:] == [
+        ("not_started", "drafted", "ai_generate"),
+        ("drafted", "needs_review", "ai_generate_done"),
+    ]
 
 
 def test_state_engine_cascades_approved_downstream_to_needs_review_without_losing_content(tmp_path: Path):
@@ -146,6 +267,12 @@ def test_state_engine_cascades_approved_downstream_to_needs_review_without_losin
     )
 
     assert edited["status"] == "needs_review"
+    lesson_rows = transition_rows(project["project_dir"], project_id, "lesson_plan")
+    lesson_transitions = [(row["from_status"], row["to_status"], row["trigger"]) for row in lesson_rows]
+    assert lesson_transitions[-2:] == [
+        ("approved", "drafted", "user_edit"),
+        ("drafted", "needs_review", "user_save_edit"),
+    ]
     downstream_after = unwrap_ok(client.get(f"/projects/{project_id}/nodes/ppt_assembly_plan"))
     assert downstream_after["status"] == "needs_review"
     assert downstream_after["current_version_id"] == original_version_id
@@ -164,6 +291,24 @@ def test_state_engine_cascades_approved_downstream_to_needs_review_without_losin
     assert len(cascade_rows) == 1
     assert cascade_rows[0]["from_status"] == "approved"
     assert cascade_rows[0]["to_status"] == "needs_review"
+
+
+def test_retry_records_user_redo_transition_before_regenerated_review(tmp_path: Path):
+    client = make_client(tmp_path)
+    project = create_project(client)
+    project_id = project["project_id"]
+    upload_textbook(client, project_id)
+    unwrap_ok(client.post(f"/projects/{project_id}/nodes/textbook_parse/generate", json={}))
+
+    retried = unwrap_ok(client.post(f"/projects/{project_id}/nodes/textbook_parse/retry", json={}))
+
+    assert retried["status"] == "needs_review"
+    rows = transition_rows(project["project_dir"], project_id, "textbook_parse")
+    transitions = [(row["from_status"], row["to_status"], row["trigger"]) for row in rows]
+    assert transitions[-2:] == [
+        ("needs_review", "drafted", "user_redo"),
+        ("drafted", "needs_review", "ai_generate_done"),
+    ]
 
 
 def test_cascaded_downstream_cannot_be_approved_until_upstream_is_reapproved(tmp_path: Path):
@@ -191,9 +336,12 @@ def test_cascaded_downstream_cannot_be_approved_until_upstream_is_reapproved(tmp
     assert blocked.json()["error"]["code"] == "UPSTREAM_NOT_APPROVED"
 
     rule_rows = client.app.state.store.rule_results(project_id, "ppt_assembly_plan")
-    r010_failures = [row for row in rule_rows if row["rule_id"] == "R010" and row["passed"] == 0]
-    assert r010_failures
-    assert r010_failures[-1]["details"]["dependencies"] == ["lesson_plan"]
+    assert [row for row in rule_rows if row["rule_id"] == "R010"] == []
+    rows = transition_rows(project["project_dir"], project_id, "ppt_assembly_plan")
+    blocked_rows = [row for row in rows if row["trigger"] == "dependency_gate_blocked"]
+    assert blocked_rows
+    assert '"node_id": "lesson_plan"' in blocked_rows[-1]["reason"]
+    assert '"status": "needs_review"' in blocked_rows[-1]["reason"]
 
     unwrap_ok(client.post(f"/projects/{project_id}/nodes/lesson_plan/approve", json={}))
     approved = unwrap_ok(client.post(f"/projects/{project_id}/nodes/ppt_assembly_plan/approve", json={}))

@@ -24,7 +24,7 @@ def test_t075_mask_text_redacts_provider_secrets():
     smoke = load_script_module()
 
     masked = smoke.mask_text(
-        "Authorization: Bearer samplecredential1234567890 "
+        "Authorization: Bearer fake-token "
         "CONFIG_KEY=samplecredentialabcdef token: samplecredentialxyz"
     )
 
@@ -145,7 +145,7 @@ def test_t075_sanitize_for_evidence_recursively_masks_strings():
         {
             "nested": [
                 {
-                    "response_excerpt": "Authorization: Bearer samplecredential1234567890",
+                    "response_excerpt": "Authorization: Bearer fake-token",
                     "safe": "outputs/final_video.mp4",
                 }
             ]
@@ -210,6 +210,52 @@ def test_t075_build_node_generate_body_passes_partial_asset_controls():
     assert smoke.build_node_generate_body("storyboard", Args()) == {}
 
 
+def test_t075_real_chain_generates_shared_visual_context_before_video_branch():
+    smoke = load_script_module()
+
+    assert smoke.SHARED_CONTEXT_NODE_CHAIN == ["visual_contract", "character_dict"]
+    assert smoke.VIDEO_NODE_CHAIN == [
+        "intro_video_script",
+        "intro_video_screenplay",
+        "intro_video_asset",
+        "storyboard",
+    ]
+    assert smoke.PPT_NODE_CHAIN == ["ppt_assembly_plan", "ppt_page_script", "ppt_visual_asset", "pptx_artifact"]
+
+
+def test_t075_create_project_payload_seeds_visual_and_character_context():
+    smoke = load_script_module()
+
+    payload = smoke.build_project_create_payload("T075 real demo", "20260623-210000")
+
+    assert payload["character_profile"]
+    assert "真人" in payload["character_safety_rule"]
+    assert "#0F766E" in payload["visual_palette"]
+    assert payload["visual_style_keywords"]
+    assert payload["font_preference"]
+
+
+def test_t075_skips_generate_when_node_already_approved(tmp_path: Path):
+    smoke = load_script_module()
+
+    class Client:
+        def __init__(self):
+            self.calls: list[tuple[str, str, str]] = []
+
+        def request_json(self, step: str, method: str, path: str, json_body=None):
+            self.calls.append((step, method, path))
+            if step == "visual_contract_get_before_generate":
+                return {"node_id": "visual_contract", "status": "approved", "content": {"palette": ["#0F766E"]}}
+            raise AssertionError(f"unexpected call: {step}")
+
+    evidence = {"node_results": {}}
+    writer = smoke.EvidenceWriter(tmp_path, evidence)
+    current = smoke.generate_and_approve_if_needed(Client(), writer, "p1", "visual_contract")
+
+    assert current["status"] == "approved"
+    assert evidence["node_results"]["visual_contract"]["node_id"] == "visual_contract"
+
+
 def test_t075_build_final_video_generate_body_passes_quota_safe_limit():
     smoke = load_script_module()
 
@@ -266,7 +312,7 @@ def test_t075_collect_final_video_node_content_records_sanitized_content():
                 "content": {
                     "video_path": "outputs/final_video.mp4",
                     "narration_audio_path": "audio/narration.mp3",
-                    "response_excerpt": "Authorization: Bearer samplecredential1234567890",
+                    "response_excerpt": "Authorization: Bearer fake-token",
                 },
             }
 

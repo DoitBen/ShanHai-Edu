@@ -283,6 +283,15 @@ def test_final_delivery_blocks_when_required_video_missing(tmp_path: Path):
             "fixture",
             "approved",
         )
+        client.app.state.store.write_version(
+            conn,
+            project_id,
+            "final_video",
+            {"video_path": "outputs/missing.mp4"},
+            "fixture",
+            "fixture",
+            "approved",
+        )
 
     response = client.post(f"/projects/{project_id}/nodes/final_delivery/generate", json={})
 

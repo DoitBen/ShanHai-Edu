@@ -1,4 +1,2059 @@
+# 【本轮】主 Codex / 首席系统架构师 — ShanHaiEdu 真实环境上线收口
+
+## 本轮目标
+
+按用户“再上线”的要求，把 ShanHaiEdu 部署到腾讯云 Lighthouse 真实环境，并修复公网登录页/首页可见 demo 口径残留，不能再用本地 demo/mock 页面冒充上线。
+
+## 结论
+
+【真实环境上线通过】。
+
+公网地址：`http://124.221.149.145:3020/`。
+
+通过范围是腾讯云 Lighthouse 上的 Web + API 真实运行环境：nginx `3020` 反代 Web 容器 `127.0.0.1:3021`，API 容器映射 `127.0.0.1:8020->8000`，前端以 `NEXT_PUBLIC_DEMO_MODE=false` 构建并读取 `/api/backend` 真实后端。该结论不代表生产级 JWT/RBAC/session、多浏览器、真实 provider 生成质量、视频 provider 额度或并发/备份灾备全量验收。
+
+## 已完成事项
+
+- 在服务器 `/opt/shanhaiedu/current` 部署 ShanHaiEdu Web/API；API 容器 `shanhaiedu-api-1` 为 healthy，Web 容器 `shanhaiedu-web-1` 正常运行。
+- 使用真实后端接口复验：
+  - `GET http://124.221.149.145:3020/api/backend/health` 返回 `ok=true`、`status=ok`、`workflow_version=1.0.0`。
+  - `GET http://124.221.149.145:3020/api/backend/textbook-library` 返回真实教材库“人教版小学数学一年级上册”，`display_name=人教版 / 小学数学 / 一年级 / 上册`，`knowledge_point_count=9`，`status=indexed`。
+- 修复并重新上线 Web standalone：
+  - 登录页品牌统计从旧 demo 文案改为“真实接口 / 项目数据 / 教材库”。
+  - 首页空状态去掉 `demo mock` 口径，改为“当前连接真实后端项目数据。”。
+  - 页脚从“第一阶段演示版”改为“真实 API 工作台”。
+  - 新增 `apps\web\src\lib\login-real-api-contract.test.ts` 防止登录页和真实 API 上线可见区再次出现旧 demo 口径。
+- 生产包替换前保留回滚备份：
+  - `/opt/shanhaiedu/backups/web-standalone/standalone.20260624-212611`
+  - `/opt/shanhaiedu/backups/web-standalone/standalone.20260624-213151`
+- 真实浏览器复验：
+  - 登录页正向命中：`真实接口`、`项目数据`、`教材库`、`当前为真实 API 模式`。
+  - 旧词负向扫描未命中：`演示项目`、`工作流节点`、`视频方案`、`演示账号`、`demo mock`、`第一阶段演示版`。
+  - 登录后首页显示“当前连接真实后端项目数据。”和“真实 API 工作台”。
+  - console error/warn 为空。
+- 独立测试子智能体复跑通过：API health、教材库、登录页正负向文案和 console 均通过。
+
+## 本地验证
+
+- `cd apps\web; bun src\lib\login-real-api-contract.test.ts`：exit 0；临时红灯验证曾在旧登录页统计下失败，恢复真实文案后绿灯。
+- `cd apps\web; bunx tsc --noEmit --pretty false`：exit 0。
+- `cd apps\web; bun run lint`：exit 0。
+- `cd apps\web; NEXT_PUBLIC_DEMO_MODE=false bun run build`：exit 0。
+
+## 已更新文件
+
+- `apps\web\src\components\screens\LoginScreen.tsx`
+- `apps\web\src\components\screens\DashboardScreen.tsx`
+- `apps\web\src\components\layout\AppShell.tsx`
+- `apps\web\src\lib\login-real-api-contract.test.ts`
+- `workflow\multi-agent\shared-facts.md`
+- `workflow\multi-agent\roles\architect.md`
+- `workflow\multi-agent\roles\ops-devops-engineer.md`
+- `workflow\multi-agent\stage-review.md`
+- `workflow\multi-agent\decisions.md`
+- `workflow\multi-agent\handoffs\latest.md`
+
+## 后续硬规则
+
+- 用户要求“上线 / 部署 / 发布”时，默认必须使用真实服务器/真实运行环境并做公网验收；不得把本地 demo/mock 或本地真实 API 模式包装成上线。
+- 回复上线结果时必须明确公网地址、容器/反代状态、真实 API 证据和剩余风险。
+
+## 剩余风险
+
+- 当前线上为单机 docker-compose 最小部署，生产级认证授权、备份恢复、日志轮转、多浏览器和真实 provider 质量仍需后续专项。
+- 真实视频 provider 额度/模型可用性不是本轮上线验收范围。
+
+## 建议下一个接手角色
+
+运维/部署工程师继续补生产级 Runbook、备份恢复和监控；测试工程师后续可做多浏览器与生产权限专项验收。
+
+---
+
+# 【本轮】首席系统架构师 — T152-T157 教材库管理员拆分与直接教案封板复核
+
+## 本轮目标
+
+回收 T152-T156 开发交付与 T157 测试验收，对照用户目标裁决：教师新建项目页是否去掉教材加工动作，管理员“管理教材库”是否承载教材库/教案库加工能力，直接上传/引用教案是否能在真实 API 模式下进入教案步骤。
+
+## 结论
+
+【通过，阶段封板】。
+
+通过范围是本地 Web/API 真实 API 模式：Web `http://localhost:3000`，API `http://127.0.0.1:8000`，`NEXT_PUBLIC_DEMO_MODE=false`。这不是生产上线验收，不代表生产 RBAC/JWT/session、多浏览器、容器冷启动、真实 provider 质量或管理员批量写入全流程通过。
+
+## 已完成事项
+
+- T152-T154 后端收口：教案库上传、`reference_lesson_plan_id` 创建项目、direct lesson workspace gate 均已落地；direct lesson 项目当前步骤为 `lesson_plan`，教材内容用户态显示由教案替代/跳过，底层诊断 `textbook_parse=skipped`。
+- T155 前端收口：教师新建项目页改为“使用教材库 / 直接使用教案”两条路径，不再呈现导入教材、切分教材、解析教材内容、重新解析等后台加工动作。
+- T156 前端收口：新增 admin-only “管理教材库”导航与 `AdminTextbookLibraryScreen`，承载上传教材、切分教材、解析教材内容、确认资产、教案库/上传教案。
+- T157 QA 报告已落盘：`docs\qa-audits\2026-06-24-t157-textbook-admin-and-direct-lesson-real-api.md`。
+- 主 Codex 新鲜复核通过：
+  - 后端：`12 passed`、教材解析 `19 passed`。
+  - 前端：`new-project` 契约、`admin-textbook-library` 契约、`tsc`、`lint` 均 exit 0。
+  - 浏览器补证据：`docs\qa-audits\t157-textbook-admin-and-direct-lesson-real-api-evidence\20260624-201700`，教师页 `forbiddenHits=[]`，管理员页 `missing=[]`，console `error/warn=[]`。
+
+## 已更新文件
+
+- `docs\qa-audits\2026-06-24-t157-textbook-admin-and-direct-lesson-real-api.md`
+- `workflow\multi-agent\dispatch.md`
+- `workflow\multi-agent\stage-review.md`
+- `workflow\multi-agent\roles\architect.md`
+- `workflow\multi-agent\roles\backend-engineer.md`
+- `workflow\multi-agent\roles\frontend-ui-engineer.md`
+- `workflow\multi-agent\roles\qa-engineer.md`
+- `workflow\multi-agent\handoffs\latest.md`
+
+## 剩余风险
+
+- 首页项目列表刷新会出现短暂空列表 loading 态，后续前端可单独优化。
+- 本轮没有执行管理员上传教材/切分/解析/确认资产的完整写入批处理，只验收页面能力、指定后端测试和现有真实 API 链路。
+- 如果用户要求“上线/部署/发布”，必须另走真实环境部署和生产验收，不能把本地真实 API 模式当上线。
+
+## 建议下一个接手角色
+
+主 Codex / 系统架构师继续总控；如要处理关注项，派前端工程师单独优化首页真实 API loading/ready 状态。
+
+---
+
+# 【本轮】测试工程师 — T157 教材库管理员拆分与直接教案真实 API 集成验收
+
+## 本轮目标
+
+执行 T152-T156 后的集成验收：确认教师新建项目页不再承载教材加工功能，只保留“使用教材库”和“直接使用教案”两条路径；确认管理员“管理教材库”页面承载上传教材、切分、解析、确认资产和教案库管理；必须使用真实 API 模式，不把 demo/mock 页面当通过。
+
+## 结论
+
+【PASS，带关注项】。
+
+T157 指定后端、前端和浏览器真实 API smoke 均通过。通过范围仅限本地 Web/API 真实 API 模式与当前测试链路；不代表生产 RBAC/JWT/session、多浏览器、容器冷启动或真实 provider 质量通过。本轮未读取或打印真实密钥。
+
+## 已完成事项
+
+- 配置核验：`apps/web/.env.local` 中 `NEXT_PUBLIC_DEMO_MODE=false`、`BACKEND_API_BASE_URL=http://127.0.0.1:8000`，API `/health` 200。
+- 后端目标测试：T157 第一组 `12 passed`，教材 PDF 解析 `19 passed`。
+- 前端目标测试：`new-project` 契约、`admin-textbook-library` 契约、`tsc --noEmit`、`lint` 均 exit 0。
+- 浏览器教师新建项目页真实 API smoke：可见“使用教材库”和“直接使用教案”；首屏、路径 A 第 2 步、路径 B 均未命中教材加工词和工程词。
+- 路径 A：选择“使用这本教材”后第 2 步显示“人教版 / 小学数学 / 一年级 / 上册 · 9 个知识点”，知识点下拉含“5以内数的认识”。
+- 路径 B：可见“从教案库选择”、上传教案文件入口，file input 接受 `.pdf/.doc/.docx/.md/.markdown/.txt`。
+- direct lesson API + 浏览器：上传测试 Markdown 教案、创建项目 `proj_0b60dd65a2a9`，`/workspace.current_step_id=lesson_plan`；浏览器工作区当前阶段为“教案生成”，普通区工程词扫描为空。
+- 管理员侧：左侧导航可见“管理教材库”，页面可见上传教材、切分教材、解析教材内容、确认资产、教案库/上传教案。
+- 教师侧：左侧不显示“管理教材库”；刷新后主体不显示管理员管理功能。
+- 已新增报告和证据目录，并更新 QA 角色记忆与 dispatch 中 T157 状态。
+
+## 关键证据
+
+- 报告：`docs\qa-audits\2026-06-24-t157-textbook-admin-and-direct-lesson-real-api.md`
+- 主证据目录：`docs\qa-audits\t157-textbook-admin-and-direct-lesson-real-api-evidence\20260624-195033`
+- 补充证据目录：`docs\qa-audits\t157-textbook-admin-and-direct-lesson-real-api-evidence\20260624-200154`
+- 关键文件：`backend-target-user-flow-pytest.txt`、`backend-textbook-pdf-parsing-pytest.txt`、`frontend-lint.txt`、`browser-teacher-new-project-initial-dom-scan.json`、`browser-teacher-path-a-step2-dom-scan.json`、`browser-teacher-path-b-dom-scan.json`、`api-direct-lesson-project-smoke.json`、`browser-direct-lesson-workspace-dom-scan.json`、`browser-admin-textbook-library-dom-scan.json`、`browser-console-final-error-warn.json`
+
+## 剩余风险
+
+- 浏览器截图采集超时，截图文件未生成；本轮以 DOM/API 证据为准。
+- 首页项目列表刷新存在短暂 `共 0 个` 加载态，后续恢复为 28 个并可搜索到 direct lesson 项目；建议前端后续优化 loading/ready 状态。
+- 本轮没有执行管理员上传教材/切分/解析/确认资产的完整写入批处理，只验收页面能力可见和指定后端目标测试。
+
+## 建议下一个接手角色
+
+主 Codex / 系统架构师回收 T157，判断 T152-T156 是否进入阶段复核；前端角色可单独处理首页短暂空列表加载态。
+
+---
+
+# 【本轮】首席系统架构师 — T149/T150 修复回收与功能接口门禁裁决
+
+## 本轮目标
+
+回收前端 worker Pasteur 的 T149 返工、测试 worker Avicenna 的 T150 复测和两轮只读复审结果，关闭 T148 浏览器阻塞面，并把调度板、阶段总控、角色记忆、共享事实和决策台账更新到同一口径。
+
+## 结论
+
+T148 浏览器阻塞面已关闭；T146-T150 本地功能接口门禁裁决为【有条件通过】。
+
+通过范围只限 fake/placeholder + 本地 FastAPI/Next/Web + 浏览器用户态 + 下载代理；不代表真实 provider、生产 RBAC/JWT/session、多浏览器、容器冷启动、真实 PPT/视频质量或 provider 额度稳定性通过。
+
+## 已完成事项
+
+- 回收 T149：最终交付普通区不再暴露 `exports/final_delivery`、`delivery_manifest.json`、`gate_result.json`、JSON 片段和 `manifest`；最终交付摘要 duplicate key 已修；已完成步骤回看改为用户显式 override。
+- 回收 T150：报告 `docs\qa-audits\2026-06-24-t150-t149-rerun.md`，证据目录 `docs\qa-audits\t150-t149-rerun-evidence\20260624-170324`。
+- 确认 T150 浏览器证据：最终交付普通区红线扫描空命中，PPT 草稿/视频生成回看均切到对应内容，console error/warn 为空，T148 同口径 PPTX/MP4/PDF/Markdown Next 代理下载均 200。
+- 更新 `workflow\multi-agent\dispatch.md`：T148 改为已完成且标注原阻塞由 T149/T150 关闭；T150 改为已完成；新增 T151 最终交付嵌套导出路径 404 收口。
+- 更新 `workflow\multi-agent\stage-review.md`：当前阶段改为 `T146-T150 功能接口测试回收与 T148 阻塞关闭`，结论为有条件通过。
+- 更新 `workflow\multi-agent\roles\architect.md`、`workflow\multi-agent\decisions.md`、`workflow\multi-agent\shared-facts.md`，统一本轮通过边界。
+
+## 剩余风险
+
+- `final_delivery` 嵌套导出路径 `/exports/final_delivery/...pptx` 文件存在但当前下载路由返回 404；已拆为 T151，中优先级，不阻塞本轮门禁。
+- T151 执行前必须先决定：保留嵌套路径并加安全下载支持，还是前端最终交付只暴露可下载的扁平 artifact 路径。
+- 真实 provider、生产权限、多浏览器、容器冷启动和真实 PPT/视频质量仍需独立专项测试，不能被本轮有条件通过覆盖。
+
+## 建议下一个接手角色
+
+后端工程师或前端工程师接 T151，先做方案边界和路径安全判断；若用户要求继续深修，再安排实现和测试复测。
+
+---
+
+# 【本轮】测试工程师 — T150 T149 后窄范围复测
+
+## 本轮目标
+
+只复测 T149 修复的 T148 失败面：最终交付普通区红线、PPT/视频已完成步骤回看、console duplicate key，以及 T148 同口径 PPTX/MP4/PDF/Markdown 下载代理。
+
+## 结论
+
+【通过，带关注项】。
+
+T149 三个失败面均通过真实浏览器复测，T148 浏览器阻塞面可关闭。关注项是 `final_delivery` 生成的嵌套 PPTX 路径文件存在但下载路由返回 404；T148 原口径的 `pptx_artifact` 下载路径返回 200，因此不阻塞 T150 结论。
+
+## 已完成事项
+
+- 启动隔离 API `8150`、Web `3150`，storage 使用 `storage-t150-t149-rerun`。
+- 新建项目 `proj_3e68b8633bb9`，API 准备到 `final_video=approved`、`final_delivery=not_started`。
+- 浏览器登录 `qa-t150`，进入新项目工作区，在最终交付点击 `生成草稿` 生成 `final_delivery=needs_review`。
+- 扫描最终交付普通区，未命中 `exports/final_delivery`、`delivery_manifest.json`、`gate_result.json`、`JSON`、`manifest`、`StateEngine`。
+- 确认普通区无 evidence 预览按钮和 JSON 结构化预览入口。
+- 点击 `PPT 草稿 可回看` 后主任务区显示 PPT 草稿 / PPT 装配内容，不再显示最终交付。
+- 点击 `视频生成 可回看` 后主任务区显示视频生成内容，不再显示最终交付。
+- 采集浏览器 console：error/warn 为空，未出现 `摘要 17`。
+- 按 T148 原口径检查 Next 代理下载：PPTX、MP4、PDF、Markdown 均 200。
+- 清理本轮启动的 API/Web 进程；端口 8150/3150 已释放，`.next\dev\lock` 不存在。
+
+## 关键证据
+
+- 报告：`docs\qa-audits\2026-06-24-t150-t149-rerun.md`
+- 证据目录：`docs\qa-audits\t150-t149-rerun-evidence\20260624-170324`
+- 项目：`proj_3e68b8633bb9`
+- 红线扫描：`browser-workspace-target-final-dom-redline-scan.json`
+- 回看证据：`browser-workspace-ppt-draft-state.json`、`browser-workspace-video-generation-state.json`
+- 控制台：`browser-console-target-final.json=[]`
+- 下载：`download-checks-summary.json`
+- 清理：`server-cleanup.json`
+
+## 剩余风险
+
+- 本轮不代表真实 provider、生产权限、多浏览器、容器冷启动或真实 PPT/视频质量通过。
+- `final_delivery` 嵌套导出路径 `/exports/final_delivery/...pptx` 返回 404，若后续最终交付页要直接提供该路径下载，需要后端或前端单独收口。
+
+## 建议下一个接手角色
+
+主 Codex / 系统架构师回收 T150，关闭 T148 浏览器阻塞面，并决定是否新开最终交付嵌套下载路径修复任务。
+
+---
+
+# 【本轮】前端工程师 — T149 T148 前端失败点返工
+
+## 本轮目标
+
+只处理 T148 暴露的三个前端失败点：最终交付普通区红线、最终交付摘要 duplicate key、已完成步骤回看被当前步骤覆盖。不得扩展新功能，不碰后端、StateEngine、provider、storage 或 `.env`。
+
+## 结论
+
+代码级完成，待 T150 测试复测。
+
+## 根因定位
+
+- `final_delivery` 通过 mapper fallback 进入前端时 stage key 为 `final-delivery`，普通任务卡落入 `buildEditableNodeSummary()` 通用摘要分支，直接把内容对象的路径字段和结构片段渲染成“摘要 N”。
+- `UserReadableSummaryCard` 与同类普通摘要列表使用 `item.label` 作为 React key；通用摘要 label 由 key 长度生成，多个字段同时得到 `摘要 17`，触发 duplicate key console error。
+- 首轮修复曾把 `selectedStage` 放到 `workspace.current_step_id` 之前，reviewer 发现这会把初始值或旧值误当成用户主动回看。正确根因是缺少“用户显式回看 override”状态，默认加载和刷新时必须以 `/workspace.current_step_id` 为权威。
+- 普通任务卡仍从 `stage.evidence` 渲染“可回看的依据材料”，最终交付 evidence 可能包含 `exports/final_delivery/...`、`delivery_manifest.json`、`gate_result.json`；普通区预览弹窗会显示原始路径和 JSON 类型，绕过了默认折叠的开发诊断边界。
+
+## 已完成事项
+
+- 先在 `apps\web\src\lib\workspace-user-flow-contract.test.ts` 增加 T149 红灯断言，并确认 `final_delivery must be handled before generic ordinary summary fallback` 失败；二轮 reviewer 后继续补显式 override 与最终交付 evidence 普通区隐藏的契约断言。
+- 修改 `apps\web\src\components\screens\ProjectWorkspaceScreen.tsx`：
+  - 已完成步骤回看改为 `selectedUserStepOverride` 显式状态：只有点击已完成步骤时设置 override；默认加载、刷新、主按钮推进和后端 `workspace.current_step_id` 变化时清理 override；选择优先级为有效 override > workspace current step > current state > fallback。
+  - `final-delivery` 增加专用 `buildFinalDeliverySummary()`，普通区只展示“教案材料 / PPT 文件 / 导入视频 / 材料检查 / 交付状态 / 试讲提醒”等教师摘要；不渲染 `exports/final_delivery`、`delivery_manifest.json`、`gate_result.json`、JSON 片段或 `manifest`。
+  - 动态普通摘要 key 改为 `label + index`，避免 `摘要 17` 重复。
+  - 最终交付普通任务卡不再渲染 `stage.evidence` 预览按钮；内部 evidence、JSON/gate/manifest 文件只留在开发诊断边界内处理。
+- 更新前端角色记忆。
+
+## 验证
+
+- 红灯：`cd apps\web; bun src\lib\workspace-user-flow-contract.test.ts`，失败于 `final_delivery must be handled before generic ordinary summary fallback`。
+- 二轮红灯：`cd apps\web; bun src\lib\workspace-user-flow-contract.test.ts`，失败于 `completed step review must use an explicit user override instead of stale selectedKey`。
+- 绿灯：`cd apps\web; bun src\lib\workspace-user-flow-contract.test.ts`，exit 0。
+- 绿灯：`cd apps\web; bun src\lib\api-mappers-contract.test.ts`，exit 0。
+- 绿灯：`cd apps\web; bunx tsc --noEmit --pretty false`，exit 0。
+- 额外：`cd apps\web; bun run lint`，exit 0。
+
+## 已更新文件
+
+- `apps\web\src\components\screens\ProjectWorkspaceScreen.tsx`
+- `apps\web\src\lib\workspace-user-flow-contract.test.ts`
+- `workflow\multi-agent\roles\frontend-ui-engineer.md`
+- `workflow\multi-agent\handoffs\latest.md`
+
+## 剩余风险
+
+- 本轮未启动浏览器复测，不能替代 T150；仍需真实浏览器验证最终交付普通区红线、点击已完成步骤回看、console error/warn。
+- 本轮未改 mapper，因此 `api-mappers-contract` 只是回归确认；内部 artifact/path 仍会保留在诊断或后端数据中，普通区不得展示。
+
+## 建议下一个接手角色
+
+测试工程师接 T150，按 T148 失败点窄范围复测浏览器 DOM 红线、回看点击和 console。
+
+---
+
+# 【本轮】首席系统架构师 — T146-T148 功能接口测试回收与返工调度
+
+## 本轮目标
+
+回收用户要求的 2-3 个功能接口测试批次，判断是否可以宣布所有功能接口通过，并在失败时新增窄范围返工和复测任务。
+
+## 架构结论
+
+【不通过，待返工复测】。
+
+T146 后端 FastAPI 合同通过，T147 Next 代理与前端契约通过，T148 的 API 串联和下载代理也能跑通；但 T148 浏览器用户态门禁失败，不能宣布“所有功能接口通过”。
+
+## 已完成事项
+
+- 新增 T148 报告：`docs\qa-audits\2026-06-24-t148-browser-functional-interface-regression.md`。
+- 回收 T146：报告 `docs\qa-audits\2026-06-24-t146-functional-api-contract.md`，目标批次 `72 passed, 2 xfailed`，后端全量 `229 passed, 2 xfailed`。
+- 回收 T147：报告 `docs\qa-audits\2026-06-24-t147-next-proxy-interface-regression.md`，5 个前端契约、`tsc`、`scan:client-secrets` 均 exit 0；T148 补充了 PPTX/MP4/PDF/Markdown 下载代理实测。
+- 回收 T148：证据目录 `docs\qa-audits\t148-browser-functional-interface-evidence\20260624-153915`，项目 `proj_d53d88dd7ff6`。
+- 更新 `workflow\multi-agent\dispatch.md`：T146/T147 已完成，T148 阻塞，新增 T149/T150。
+- 更新 QA、架构师记忆和阶段总控记录。
+
+## 阻塞点
+
+- 最终交付普通区暴露 `exports/final_delivery/...`、`delivery_manifest.json`、`gate_result.json`、JSON 片段和 `manifest`。
+- 点击 `PPT 草稿可回看` / `视频生成可回看` 后，主任务区仍显示最终交付，已完成步骤回看未生效。
+- 浏览器控制台有 4 条 React duplicate key error：`摘要 17`。
+
+## 新增任务
+
+- T149 前端返工：只修最终交付普通区红线、duplicate key、已完成步骤回看选择逻辑。
+- T150 测试复测：只复跑 T149 失败点、T148 红线/console/下载代理；若 T149 触及更大状态契约，再扩大回归。
+
+## 通过边界
+
+- 当前通过项只限 T146 后端本地合同、T147 静态代理/前端契约、T148 下载代理和 API 串联局部。
+- 本轮不代表真实 provider、生产 RBAC/JWT/session、多浏览器、容器冷启动或真实 PPT/视频质量通过。
+
+## 建议下一个接手角色
+
+前端工程师接 T149；测试工程师等待 T149 代码级完成后接 T150。
+
+---
+
+# 【本轮】测试工程师子智能体 A — T146 后端 FastAPI 功能接口全量合同回归
+
+## 本轮目标
+
+只测试后端 FastAPI 功能接口，覆盖公开接口、受保护接口、教材库、教案库、项目、workspace、节点 `generate/edit/approve/retry`、任务、下载、schema/rules、admin rules/prompts。
+
+## 结论
+
+【通过，限定于 fake/placeholder + 本地 FastAPI 合同回归】。
+
+目标批次和后端全量测试均 exit 0；未发现本轮新增 P0/P1/P2 缺陷。本轮没有读取真实密钥，没有跑真实 provider，没有修改 `apps\api` 业务源码。
+
+## 已完成事项
+
+- 读取 T146 必读上下文和调度文档。
+- 建立证据目录 `docs\qa-audits\t146-functional-api-evidence\20260624-153104`。
+- 在 `PROVIDER_MODE=fake`、`VIDEO_PROVIDER_MODE/IMAGE_PROVIDER_MODE/TTS_PROVIDER_MODE=placeholder`、`STORAGE_ROOT=storage-t146-functional-api` 下执行目标 pytest 批次。
+- 执行 `python -m pytest apps\api\tests -q` 后端全量批次。
+- 新增 T146 报告，并更新 QA 角色记忆。
+
+## 关键证据
+
+- 报告：`docs\qa-audits\2026-06-24-t146-functional-api-contract.md`
+- 证据目录：`docs\qa-audits\t146-functional-api-evidence\20260624-153104`
+- 目标批次：`72 passed, 2 xfailed in 67.23s`，exit 0
+- 后端全量：`229 passed, 2 xfailed in 131.45s`，exit 0
+
+## 已更新文件
+
+- `docs\qa-audits\2026-06-24-t146-functional-api-contract.md`
+- `docs\qa-audits\t146-functional-api-evidence\20260624-153104\*`
+- `workflow\multi-agent\roles\qa-engineer.md`
+- `workflow\multi-agent\handoffs\latest.md`
+
+## 剩余风险
+
+- `2 xfailed` 仍是生产化前风险：provider schema 缺必填字段严格拒绝、未配置 `BACKEND_API_TOKEN` 时本地默认开放。
+- 本轮不代表真实 provider、生产 RBAC/JWT/session、Next 代理、浏览器用户态、容器冷启动、多浏览器或真实 PPT/视频质量通过。
+- T146 不替代 T147/T148，最终功能接口回收仍需三份报告一起判断。
+
+## 建议下一个接手角色
+
+主 Codex / 系统架构师继续回收 T146/T147/T148；测试工程师子智能体 C 可按计划执行 T148，但需把 T147 live proxy 未完成作为回收时的剩余风险之一。
+
+---
+
+# 【本轮】测试工程师子智能体 B — T147 Next 代理与前端接口适配回归
+
+## 本轮目标
+
+只测试前端 API 代理与接口适配，覆盖 `/api/backend/[...path]` 代理、admin cookie 门禁、服务端 token 注入、multipart `Expect` header、文件流下载、前端 mapper/client/workspace/admin 契约和 client-visible secret 扫描。
+
+## 结论
+
+【通过，但 live proxy 未完成】。
+
+T147 指定的 5 个前端契约测试、TypeScript 类型检查和 client-visible secret 扫描均 exit 0。静态契约确认前端默认走 Next 代理，服务端读取并注入 `BACKEND_API_TOKEN`，admin 后端路径对非 admin 本地态隐藏为 404，multipart `Expect` header 会删除，workspace/new-project/admin/mapper 契约满足当前接口适配要求。
+
+本轮没有读取真实密钥，没有跑真实 provider，没有修改业务代码，也没有替代 T148 浏览器验收。
+
+## 已完成事项
+
+- 读取 T147 必读上下文和调度文档。
+- 执行 `api-proxy-contract`、`api-mappers-contract`、`admin-rules-contract`、`workspace-user-flow-contract`、`new-project-user-flow-contract`。
+- 执行 `bunx tsc --noEmit --pretty false`。
+- 执行 `bun run scan:client-secrets`，输出 `Client-visible secret scan passed.`。
+- 新增 T147 报告和证据目录。
+- 尝试 live proxy，但 Next dev 因 `.next\dev\lock` 已被其他实例占用，未完成运行态代理 smoke；本轮启动尝试已清理，无遗留 T147 进程。
+
+## 关键证据
+
+- 报告：`docs\qa-audits\2026-06-24-t147-next-proxy-interface-regression.md`
+- 证据目录：`docs\qa-audits\t147-next-proxy-evidence\20260624-153142`
+- 命令汇总：`command-results.json`
+- live proxy 失败和清理：`live-proxy-web.err.log`、`live-proxy-cleanup.json`
+
+## 已更新文件
+
+- `docs\qa-audits\2026-06-24-t147-next-proxy-interface-regression.md`
+- `docs\qa-audits\t147-next-proxy-evidence\20260624-153142\*`
+- `workflow\multi-agent\roles\qa-engineer.md`
+- `workflow\multi-agent\handoffs\latest.md`
+
+## 剩余风险
+
+- live proxy 未完成，仍缺少真实 HTTP 层 GET/POST/PATCH/DELETE、admin 404、文件流 `content-type` 和 multipart header 实测。
+- 本轮不代表 T148 浏览器真实 API 串联通过。
+- 本轮不代表真实 provider、生产 RBAC/JWT/session、多浏览器、容器冷启动或生产构建后完整 secret 审计通过。
+
+## 建议下一个接手角色
+
+测试工程师子智能体 C 执行 T148；主 Codex / 系统架构师回收 T146/T147/T148 时，应把 T147 live proxy 补测作为低风险剩余项记录。
+
+---
+
+# 【本轮】首席系统架构师 — T146-T148 功能接口全量测试安排
+
+## 本轮目标
+
+按用户要求安排两到三个测试批次，覆盖当前所有可见功能接口，并明确测试边界、端口、storage、证据产物和通过口径。
+
+## 调度结论
+
+已安排 3 个测试批次，均由测试工程师子智能体执行，主 Codex / 系统架构师统一回收：
+
+- T146：后端 FastAPI 功能接口全量合同回归。
+- T147：Next.js API 代理与前端接口适配回归。
+- T148：浏览器真实 API 功能接口串联回归。
+
+本轮只是任务安排，不是测试通过报告。T146-T148 通过后也只能声明 fake/placeholder + 本地接口 + 浏览器用户态接口联动通过；真实 provider、生产权限、多浏览器、容器冷启动、真实 PPT/视频质量仍需另起专项。
+
+## 已完成事项
+
+- 盘点 `apps\api\app\main.py` 后端接口面：公共接口、教材库、教案库、admin、项目、workspace、节点、任务、下载、schema/rules 等。
+- 盘点 `apps\web\src\app\api` 前端接口面：`GET /api` 与 `/api/backend/[...path]` 通用代理。
+- 新增测试调度文档：`docs\qa-audits\2026-06-24-t146-t148-functional-interface-test-dispatch.md`。
+- 在 `workflow\multi-agent\dispatch.md` 下发 T146、T147、T148。
+- 更新 `workflow\multi-agent\stage-review.md`、`workflow\multi-agent\roles\architect.md`、`workflow\multi-agent\roles\qa-engineer.md`。
+
+## 测试执行要求
+
+- 默认 provider：`PROVIDER_MODE=fake`、`VIDEO_PROVIDER_MODE=placeholder`、`IMAGE_PROVIDER_MODE=placeholder`、`TTS_PROVIDER_MODE=placeholder`。
+- 建议隔离端口：T146 API `8146`；T147 API/Web `8147/3147`；T148 API/Web `8148/3148`。
+- 建议隔离 storage：`storage-t146-functional-api`、`storage-t147-proxy-contract`、`storage-t148-browser-functional-interfaces`。
+- 禁止读取、打印或写入真实密钥。
+- 禁止修改业务代码；只允许写测试报告和证据目录。
+- 任一 P0/P1 失败时停止宣布接口全量通过，交由架构师新增窄范围返工任务。
+
+## 产物要求
+
+- T146 报告：`docs\qa-audits\2026-06-24-t146-functional-api-contract.md`
+- T147 报告：`docs\qa-audits\2026-06-24-t147-next-proxy-interface-regression.md`
+- T148 报告：`docs\qa-audits\2026-06-24-t148-browser-functional-interface-regression.md`
+- 证据目录分别位于 `docs\qa-audits\t146-functional-api-evidence\`、`docs\qa-audits\t147-next-proxy-evidence\`、`docs\qa-audits\t148-browser-functional-interface-evidence\`
+
+## 下一棒
+
+测试工程师执行 T146-T148。T146 和 T147 可先并行，T148 建议等 T146/T147 无 P0/P1 后再跑浏览器串联。测试完成后由主 Codex / 系统架构师统一回收三份报告、缺陷分级和返工建议。
+
+---
+
+# 【本轮】首席系统架构师 — T143-T145 v1 最小封板门禁复核
+
+## 本轮目标
+
+把 V0.7 单入口总控机制真正跑到一个完整任务闭环：前端 T143、后端 T144、测试 T145 均由主 Codex 统一派发、接管、复核和沉淀；对照 T142 判断 v1 最小封板门禁是否通过。
+
+## 复核结论
+
+【有条件通过，进入下一阶段】。
+
+T145 已完成测试验收并新增报告 `docs\qa-audits\2026-06-24-t145-v1-minimum-gate-regression.md`。主 Codex / 系统架构师对照 T142、T143/T144 代码状态、T145 报告和关键证据复核后，裁决 v1 最小封板门禁通过。通过范围仅限 fake/placeholder + 浏览器用户态 + 普通区红线 + 下载代理 + 本地/内测权限默认策略。
+
+## 已完成事项
+
+- T143 前端：工作区优先使用 `/workspace` 用户态契约，PPT 草稿展示结构方案、逐页脚本、视觉资产、PPTX 文件四个子门禁；视频生成展示文稿、分场剧本、资产与首帧、分镜、clip/TTS/合成子门禁；Header 与任务卡当前阶段一致；PPTX 普通摘要不显示内部路径。
+- T144 后端：`/workspace` 返回 7 步用户态步骤、当前动作、回看摘要和 PPT/视频子门禁；普通 `sub_gates` 只保留用户态字段，兼容别名只放入 `developer_diagnostics.steps.*.compatibility_aliases`。
+- T145 测试：隔离 API `8145`、Web `3145`、storage `storage-t145-v1-minimum-gate-regression` 下完成 fake/placeholder 主链路、浏览器用户态、红线扫描、PPTX 下载代理和静态防误提交核验。
+- 主控补充验证：后端 workspace/PPT/video 组合回归 `26 passed`；前端 workspace 契约 exit 0；前端 `tsc --noEmit` exit 0。
+
+## 关键证据
+
+- QA 报告：`docs\qa-audits\2026-06-24-t145-v1-minimum-gate-regression.md`
+- 证据目录：`docs\qa-audits\t145-v1-minimum-gate-regression-evidence\20260624-115521`
+- 目标项目：`proj_d62361b7e98c`
+- 浏览器红线证据：`browser-workspace-target-final-dom-redline-scan.json`
+  - `currentHeader=PPT 草稿`
+  - `nextAction=继续处理「PPT 装配」`
+  - `mainHitsBeforeDeveloperDiagnostics=[]`
+  - `pathLeakHitsBeforeDeveloperDiagnostics=[]`
+  - `visibleHitsInBody=[]`
+  - `developerDiagnosticsDefaultCollapsed=true`
+  - `hasSevenSteps=true`
+  - `hasPptSubGates=true`
+  - `hasPptxDownloadButton=true`
+- 浏览器控制台：`browser-console-target-final.json=[]`
+- PPTX 下载代理：`/api/backend/projects/proj_d62361b7e98c/exports/T145最小封板回归-pptx-artifact.pptx`
+
+## 已更新文件
+
+- `docs\qa-audits\2026-06-24-t145-v1-minimum-gate-regression.md`
+- `workflow\multi-agent\dispatch.md`
+- `workflow\multi-agent\stage-review.md`
+- `workflow\multi-agent\roles\architect.md`
+- `workflow\multi-agent\roles\qa-engineer.md`
+- `workflow\multi-agent\roles\frontend-ui-engineer.md`
+- `workflow\multi-agent\roles\backend-engineer.md`
+- `workflow\multi-agent\handoffs\latest.md`
+
+## 封板范围
+
+- 7 步用户态导航可用。
+- PPT 草稿子门禁可见且普通区文案为教师可读。
+- 普通区不暴露 `JSON/provider/manifest/node_id/StateEngine/schema/R010/输出路径/安全模式/storage`。
+- PPTX 下载入口走后端代理，不暴露本地 storage 或项目内部文件路径。
+- fake/placeholder API 主链路可推进到 PPTX / final_video 待确认态。
+- 本地/内测权限默认策略和防误提交静态检查未发现本轮阻塞。
+
+## 不包含范围
+
+- 不代表真实文本、图片、视频或 TTS provider 通过。
+- 不代表真实 PPT 逐页质量、真实视频成片质量、配音质量或数学内容最终质量通过。
+- 不代表生产 RBAC/JWT/session、多租户、用户态 bundle 隔离通过。
+- 不代表 Docker/compose 冷启动、持久卷、备份恢复、日志轮转或多实例通过。
+- 不代表 Edge/Firefox/移动端断点或性能通过。
+
+## 下一棒
+
+主 Codex 继续作为产品负责人兼全栈总控。若用户要做演示或录屏，可基于当前最小门禁口径推进；若用户要上线、真实 provider 或生产化，必须另起专项并重新定义测试门禁。
+
+---
+# 【本轮】首席系统架构师 — T142 v1 统一验收映射与门禁裁决
+
+## 本轮目标
+
+承接 T010，统一 PRD 9 步、前端 7 步用户态、workflow/manifest 执行层之间的验收映射，并明确下一阶段最小封板门禁。
+
+## 复核结论
+
+【通过，进入 T143-T145 执行阶段】。
+
+T142 已新增 `docs\v1-acceptance-mapping-and-gates.md`，并通过规格复审和质量复审。后续采用三层映射：7 步用户态作为教师主导航，PRD 9 步作为验收语义层，workflow/manifest 节点作为诊断与执行层。
+
+## 核心裁决
+
+- PPT 分支压入“PPT 草稿”，但必须保留结构方案、逐页脚本、视觉资产、PPTX 四个子门禁。
+- 视频分支压入“导入视频方案 / 视频生成”，但必须保留课程锚点、文稿、剧本、资产/首帧、分镜、clip/TTS/合成门禁。
+- 下一阶段最小封板先跑 fake/placeholder + 浏览器用户态 + 红线扫描 + 下载代理。
+- 真实文本、图片、视频、TTS provider 进入分离 smoke 泳道；真实视频 provider 未恢复时只记录阻塞，不阻塞本地主流程。
+
+## 已下发下一批任务
+
+- T143 前端工程师：按 T142 映射表补工作区用户态子状态与普通文案，不重构底层 workflow。
+- T144 后端工程师：按 T142 映射表补 workspace 用户态契约和 manifest 兼容口径，不改真实 provider。
+- T145 测试工程师：等 T143/T144 交付后执行最小封板回归，不宣布阶段封板。
+
+## 已更新文件
+
+- `workflow\multi-agent\dispatch.md`
+- `workflow\multi-agent\stage-review.md`
+- `workflow\multi-agent\handoffs\latest.md`
+
+## 仍不包含范围
+
+- 不代表 v1 E2E 已通过。
+- 不代表真实 provider、生产权限、多浏览器、PPT 主链路或真实视频通过。
+- 不代表真实视频 provider 配额、账号池或模型权限已恢复。
+
+## 下一棒
+
+主 Codex 派发 T143 前端与 T144 后端。两者写入范围不重叠，可并行；T145 等二者交付后再执行。
+
+---
+# 【本轮】首席系统架构师 — T010 v1 文档链与验收计划复核
+
+## 本轮目标
+
+对照 T005-T009 的交付文档和复审结果，裁决 v1 下一阶段文档链是否可以作为后续执行输入，或是否需要返工。
+
+## 复核结论
+
+【通过，但仅限文档链与计划质量】。
+
+T005 产品范围、T006 后端运行契约、T007 前端形态差距、T008 内网容器化草案和 T009 E2E 验收计划均已落盘。T009 初稿中“新人冷启动”立即项和执行顺序存在歧义，已修正为：先 fake/placeholder 与文档级冷启动核对，再真实文本/图片/视频/TTS 分离 smoke，然后浏览器真实 API 与用户端到端回归，最后进入真实冷启动/容器/storage、PPT/视频交付与跨浏览器。
+
+## 复核证据
+
+- 产品范围：`docs\product-v1-next-scope.md`
+- 后端运行契约：`docs\backend-runtime-contract.md`
+- 前端形态差距：`docs\frontend-product-shape-gap.md`
+- 运维容器化草案：`docs\ops-containerization-plan.md`
+- E2E 验收计划：`docs\qa-audits\v1-e2e-regression-plan.md`
+- T009 QA 记忆：`workflow\multi-agent\roles\qa-engineer.md`
+- T009 规格复审：`SPEC_PASS`
+- T009 质量复审：`QUALITY_PASS`
+
+## 已更新文件
+
+- `workflow\multi-agent\dispatch.md`
+- `workflow\multi-agent\stage-review.md`
+- `workflow\multi-agent\roles\architect.md`
+- `workflow\multi-agent\handoffs\latest.md`
+
+## 通过范围
+
+- v1 下一阶段的产品、后端、前端、运维和测试计划输入已形成闭环。
+- T009 可以作为下一阶段测试执行清单。
+- T008 仍是文档级容器化草案，不是正式部署资产。
+- T140/T141 仍只封板 T138/T139 用户态红线专项。
+
+## 不包含范围
+
+- 不代表 v1 E2E 已执行或通过。
+- 不代表真实 provider、真实视频、真实 TTS、PPT 主链路通过。
+- 不代表正式 Dockerfile/compose、容器构建、生产权限、RBAC、多浏览器或性能验收通过。
+- 不代表真实视频 provider 配额、账号池或模型权限已恢复。
+
+## 架构裁决
+
+下一阶段执行前先补一个总控裁决任务：统一 PRD 9 步、前端 7 步、底层 14 节点的验收映射表，并明确最小封板门禁。真实 provider smoke 进入分离专项泳道，不阻塞 fake/placeholder 与浏览器用户态主流程验收；只有 provider 恢复或用户明确要求真实全链路演示时，才启动真实视频主线复跑。
+
+## 建议下一个接手角色
+
+主 Codex / 系统架构师继续派发“v1 统一验收映射与最小封板门禁”任务；随后再按 T009 计划安排测试执行。
+
+---
+# 【本轮】首席系统架构师 — T141 用户态红线阶段封板复核
+
+## 本轮目标
+
+对照 T138 失败报告、T139 前端代码级交接、T140 测试报告和证据目录，裁决 T138/T139 用户态红线专项是否可以封板，或是否需要继续返工。
+
+## 复核结论
+
+【阶段封板通过】。
+
+T138 的 P0 阻塞“工作区普通主界面在开发诊断之前出现 `JSON` 红线”已由 T139 修复，并经 T140 真实浏览器证据关闭。T138 的 P2 “教材页段按钮禁用、无法验证路径泄露”也已由 T139/T140 覆盖：页段入口已启用，弹窗和 iframe 地址不暴露本地 `storage` 路径。
+
+## 复核证据
+
+- T138 失败报告：`docs\qa-audits\2026-06-24-t138-user-flow-redline-regression.md`
+- T139 前端交接：本文件下方“T139 工作区 JSON fallback 红线返工”段
+- T140 测试报告：`docs\qa-audits\2026-06-24-t140-user-flow-redline-rerun.md`
+- T140 证据目录：`docs\qa-audits\t140-user-flow-redline-rerun-evidence\20260624-100115`
+- 红线扫描：`browser-redline-scan-main.json`
+  - `main_hits_before_developer_diagnostics=[]`
+  - `visible_hits_in_main=[]`
+  - `developer_diagnostics_default_collapsed=true`
+- 页段入口扫描：`browser-pdf-entry-scan.json`
+  - `bodyHasStorage=false`
+  - `iframeSrc=/api/backend/projects/proj_305436b48356/files/knowledge-points/kp_001/source.pdf`
+  - `iframeSrcUsesBackendProxy=true`
+  - `leak_hits=[]`
+- PDF 代理 GET：`pdf-proxy-get.json`
+  - `status=200`
+  - `content_type=application/pdf`
+- 浏览器控制台：`browser-console.json=[]`
+
+## 已更新文件
+
+- `workflow\multi-agent\dispatch.md`
+- `workflow\multi-agent\stage-review.md`
+- `workflow\multi-agent\roles\architect.md`
+- `workflow\multi-agent\handoffs\latest.md`
+
+## 封板范围
+
+本次通过范围仅限 T138/T139 用户态红线专项：
+
+- 工作区普通教师主界面不再在“开发诊断”之前暴露 `JSON/provider/manifest/node_id/StateEngine/schema/R010/输出路径/安全模式/storage`。
+- “开发诊断”默认折叠。
+- 教材页段入口启用且走后端文件代理，不暴露本地 storage 路径。
+- T140 隔离浏览器环境 console error/warn 为空。
+
+## 不包含范围
+
+- 不代表真实 MinerU CLI/provider 完成。
+- 不代表任意教材泛化完成。
+- 不代表生产级教材库后台、权限/RBAC 或正式上线验收完成。
+- 不代表真实视频 provider、PPT 主链路、多浏览器或性能验收完成。
+
+## 建议下一步
+
+如下一步目标是产品演示录屏，可以基于当前用户态红线封板口径推进；如下一步目标是真实 provider、生产权限或多教材泛化，必须另起专题任务并重新定义测试验收。
+
+---
+# 【本轮】测试工程师 — T140 用户态红线专项复测
+
+## 本轮目标
+
+复跑 T139 修复后的 T138/T139 红线专项，只验证工作区普通教师主界面在“开发诊断”之前是否仍出现工程红线词，并验证教材页段 PDF 入口是否暴露本地 `storage` 路径。
+
+## 测试环境
+
+- API：`http://127.0.0.1:8140`
+- Web：`http://127.0.0.1:3140`
+- Storage：`storage-t140-user-flow-redline-rerun`
+- Provider：`fake`
+- Video/Image/TTS provider：`placeholder`
+- Web：真实 API 模式
+- 测试用户：`qa-t140`
+- 项目 ID：`proj_305436b48356`
+
+## 结论
+
+【通过】。
+
+T139 修复后的工作区教材内容当前任务卡已展示教师可读摘要、课时页码、解析状态、知识点和教材内容预览；“开发诊断”默认折叠，开发诊断之前未命中 `JSON/provider/manifest/node_id/StateEngine/schema/R010/输出路径/安全模式/storage`。教材页段入口已启用，弹窗文本和 iframe 地址不暴露本地 `storage` 路径，iframe 使用 `/api/backend/projects/proj_305436b48356/files/knowledge-points/kp_001/source.pdf`，代理 GET 返回 `application/pdf`。
+
+本结论只代表 T140 测试验收通过，不代表阶段封板。
+
+## 已完成事项
+
+- 启动隔离 API/Web。
+- 用 API 创建 T140 测试项目、挂载教材库 fixture、生成 `textbook_parse`。
+- 用最小测试数据确认 `visual_contract`、`character_dict`，使前端 manifest 自然进入 `textbook_parse` 当前步骤。
+- 使用真实浏览器进入工作区并采集 DOM 红线扫描。
+- 打开“查看教材页段”弹窗并扫描路径泄露。
+- 保存浏览器截图、console 日志、API workspace、manifest 和 PDF 代理 GET 证据。
+- 更新 T140 测试报告、QA 角色记忆和 dispatch 任务状态。
+
+## 关键证据
+
+- 测试报告：`docs\qa-audits\2026-06-24-t140-user-flow-redline-rerun.md`
+- 证据目录：`docs\qa-audits\t140-user-flow-redline-rerun-evidence\20260624-100115`
+- 红线扫描：`browser-redline-scan-main.json`
+- 页段入口扫描：`browser-pdf-entry-scan.json`
+- 页段代理 GET：`pdf-proxy-get.json`
+- 浏览器截图：`browser-workspace-textbook-main.png`、`browser-textbook-slice-dialog.png`
+- 浏览器控制台：`browser-console.json`
+
+## 剩余风险
+
+- 本轮只测 T138/T139 红线，不重跑后端三段式全量主链路。
+- 本轮只使用人教版一年级上册 fixture，不代表任意教材泛化。
+- 本轮不测试真实 MinerU/provider、真实视频、PPT、生产权限或多浏览器。
+
+## 建议下一个接手角色
+
+首席系统架构师执行 T141。
+
+## 下个角色需要知道的上下文
+
+T141 需要对照 T138 失败报告、T139 前端代码级交接、T140 测试报告和证据目录，裁决是否进入用户态封板或继续返工。T140 没有发现 P0/P1 阻塞，但测试工程师不能替代架构师宣布阶段封板。
+
+---
+# 【本轮】首席系统架构师 — V0.7 单入口总控与子智能体执行升级
+
+## 本轮目标
+
+在不改变现有任务状态的前提下，把团队协作机制从 V0.6“验收门禁与并行冻结”继续升级为 V0.7“主 Codex 单入口总控 + 内置子智能体执行”。用户后续只需要和主 Codex 对话，由主 Codex 把需求拆成任务、派发给子智能体扮演开发角色、回收结果、组织测试和架构复核。
+
+## 关键背景
+
+用户确认当前团队编制为 3 个前端、3 个后端、1 个测试、1 个系统架构师；主 Codex 作为产品负责人兼全栈总控，懂产品、前端、后端、测试和架构，只负责安排人开发和验收，并只和用户对话。此前手动新开多角色对话的成本过高，后续默认改为主 Codex 统一派发内置子智能体。
+
+## 已完成协议层更新
+
+- `docs\multi-agent\README.md` 升级为 V0.7：新增“单入口总控与内置子智能体执行”。
+- 明确单入口原则：用户只对接主 Codex；主 Codex 负责需求落地、任务拆分、子智能体派发、结果回收、测试组织和阶段复核。
+- 明确当前执行团队编制：
+  - 前端工程师 3 席。
+  - 后端工程师 3 席。
+  - 测试工程师 1 席。
+  - 系统架构师 1 席。
+  - 主 Codex 不计入执行席位，作为产品负责人兼全栈总控。
+- 明确执行方式分级：主 Codex 直接处理、内置子智能体执行、手动角色对话、外部线程/长期专题。
+- 明确子智能体派发必备字段：任务编号、角色席位、统一背景、冻结区、参考文档、目标、必须完成、不做事项、验收标准、文件范围和交付要求。
+- 明确 V0.7 不降低 V0.6 验收门禁：代码级完成、测试验收通过、阶段封板通过仍需分层。
+
+## 已完成记忆层更新
+
+- `AGENTS.md`：默认身份从“产品经理”更新为“产品负责人兼全栈总控”，并写入 3 前端 / 3 后端 / 1 测试 / 1 架构师编制。
+- `workflow\multi-agent\shared-facts.md`：同步当前机制版本为 V0.7，记录单入口总控、执行团队编制和手动角色对话降级为特殊入口。
+- `workflow\multi-agent\decisions.md`：新增 V0.7 决策记录。
+- `workflow\multi-agent\roles\architect.md`：沉淀系统架构师在 V0.7 下负责子智能体调度、冻结区判断和执行方式选择。
+- `workflow\multi-agent\dispatch.md`：更新使用规则，说明 V0.7 协议升级不得自动改变既有任务状态，后续可在接手角色或备注中标注“前端 1 / 后端 2 / 测试工程师子智能体”等执行席位。
+
+## 当前任务状态原则
+
+- 本轮协议升级不改变任何既有任务状态。
+- T139 仍是“已完成”，但只是代码级完成。
+- T140 仍是“待接手”，必须由测试工程师复跑浏览器红线专项。
+- T141 仍是“待接手”，必须等 T140 有测试报告和证据后，才能由系统架构师做阶段复核。
+- T140 通过前，不得宣布用户态封板，不得进入产品演示录屏或生产扩展。
+
+## 建议下一个接手角色
+
+测试工程师子智能体执行 T140。若 T140 通过，再由主 Codex / 系统架构师执行 T141 阶段复核；若 T140 不通过，按 V0.6 规则新增窄范围返工任务，不无限延长 T139 或 T140。
+
+## 下个角色需要知道的上下文
+
+T140 只复跑 T138/T139 红线专项：重点扫描工作区普通主界面在“开发诊断”之前不得出现 `JSON/provider/manifest/node_id/StateEngine/schema/R010/输出路径/安全模式/storage`，并验证页段 PDF 入口不暴露本地 storage 路径。不得重跑或改动后端三段式主链路，不得修改冻结区。
+
+---
+# 【本轮】首席系统架构师 — V0.6 团队协议与记忆层沉淀
+
+## 本轮目标
+
+基于 T132/T138/T139 暴露的协作问题，把“已做 / 未做”的边界沉淀到团队协议层和角色记忆层，支撑后续团队协作机制改造。
+
+## 关键背景
+
+T132/T138 证明：前端契约测试、tsc、lint、build 全部通过，仍可能在真实浏览器普通教师主界面出现 `JSON`、内部路径或工程字段。因此后续不能把执行角色的代码级完成直接等同于测试通过或阶段封板。
+
+## 已完成协议层更新
+
+- `docs\multi-agent\README.md` 升级为 V0.6：新增“验收门禁与并行冻结”。
+- 新增三层完成定义：
+  - 代码级完成：执行角色声明，只能进入测试。
+  - 测试验收通过：测试工程师声明，仍需架构复核。
+  - 阶段封板通过：首席系统架构师裁决，才能进入下一阶段。
+- 新增普通教师主界面红线门禁：`JSON/provider/manifest/node_id/StateEngine/schema/R010/输出路径/安全模式/storage` 只允许出现在默认折叠的“开发诊断”内部。
+- 新增返工闭环规则：P0/P1 不通过时，架构师必须新增窄范围返工任务并引用失败报告和证据目录。
+- 新增并行开发冻结区：红线复测或封板阶段不得并行修改当前验收接口、页面主流程、provider/storage、状态机或资产状态契约。
+
+## 已完成记忆层更新
+
+- `workflow\multi-agent\shared-facts.md`：同步当前机制版本为 V0.6，并记录三层完成定义、浏览器红线证据要求和并行冻结原则。
+- `workflow\multi-agent\decisions.md`：新增 V0.6 决策记录，解释升级原因和后续影响。
+- `workflow\multi-agent\roles\architect.md`：沉淀架构师必须区分代码完成、测试通过、阶段封板；测试不通过时新增窄范围返工任务。
+- `workflow\multi-agent\roles\frontend-ui-engineer.md`：沉淀前端用户态红线基线，禁止普通区 raw JSON fallback 和内部路径展示。
+- `workflow\multi-agent\roles\qa-engineer.md`：沉淀浏览器/DOM 红线扫描必须分区，静态测试不能替代用户态验收。
+- `workflow\multi-agent\roles\backend-engineer.md`：沉淀红线复测期间后端并行冻结边界。
+
+## 当前阶段判断
+
+- T139 前端为代码级完成，仍需 T140 浏览器红线复测。
+- T140 未通过前，不得宣布用户态封板。
+- 后端三名工程师可并行做文档、Runbook、只读调研或隔离 spike，但不得修改 T140 验收面。
+
+## 建议下一个接手角色
+
+测试工程师执行 T140；首席系统架构师等待 T140 后执行 T141 阶段复核。
+
+## 下个角色需要知道的上下文
+
+后续任何角色汇报“完成”时，必须明确属于“代码级完成 / 测试验收通过 / 阶段封板通过”哪一层。涉及普通教师主界面的任务必须提供真实浏览器或 DOM 级红线证据。
+
+---
+# 【本轮】前端工程师 — T139 工作区 JSON fallback 红线返工
+
+## 本轮目标
+
+修复 T138 唯一 P0 阻塞：工作区普通教师主界面在“开发诊断”之前显示 JSON fallback。让 `textbook_parse/textbook_content` 当前任务卡只展示教师可读的教材内容摘要、Markdown/教材依据和下一步动作；raw 字段、结构化字段和调试信息只保留在默认折叠的“开发诊断”内。
+
+## 修改范围
+
+- `apps\web\src\components\screens\ProjectWorkspaceScreen.tsx`
+  - 新增 `TextbookContentResult` 普通教材任务卡。
+  - 新增 `buildTextbookContentSummary()`，从 `textbook_parse` content 中提取课时标题、教材页码、PDF 页码、知识点摘要、解析/确认状态、教材依据和 Markdown 摘录。
+  - `CurrentResultPanel` 对 `textbook-parse` 走教材专用渲染，不再落到通用结构摘要。
+  - 通用摘要 fallback 去掉 `JSON` badge 和“完整内容仍在下方 JSON 中编辑”文案。
+  - 教材页段预览 URL 走 `/api/backend/projects/{project_id}/files/knowledge-points/...` 代理入口。
+- `apps\web\src\components\screens\NewProjectScreen.tsx`
+  - 修正“查看教材页段”按钮 URL，同样走 `/api/backend/projects/{project_id}/files/...` 代理，支持 `knowledge-points/kp_001/source.pdf` 和带 storage 前缀路径规范化。
+- `apps\web\src\components\screens\DashboardScreen.tsx`
+  - 首页加载态从“数据来源：GET /projects”改为“正在同步项目列表 / 稍后会显示你最近的备课项目”。
+- `apps\web\src\lib\workspace-user-flow-contract.test.ts`
+  - 增加 T139 红线契约：`textbook_parse` 必须有教师可读摘要、教材预览动作、页段代理 helper，通用普通摘要不得包含红线词。
+- `apps\web\src\lib\new-project-user-flow-contract.test.ts`
+  - 增加页段 PDF 必须走 `/files/` 用户态代理入口的契约。
+
+## 红线词处理方式
+
+- 普通教师主界面不再渲染 `JSON` badge、raw object 字段名、`subject`、`grade`、`textbook_version`、`volume`、`lesson_title`、`core_knowledge_points` 等结构化字段名。
+- `JSON/provider/manifest/node_id/StateEngine/schema/R010/输出路径/安全模式/storage` 等调试词只保留在默认折叠的“开发诊断”及其内部技术组件中。
+- 普通区改用用户态标签：课时标题、教材页码、知识点摘要、解析状态、教材依据、教材内容预览。
+
+## 页段 PDF 入口处理方式
+
+- 工作区教材任务卡新增“查看教材页段”按钮，存在 `slice_pdf_path` 或资产包相对路径时启用。
+- URL 规范化规则：
+  - `knowledge-points/kp_001/source.pdf` → `/api/backend/projects/{project_id}/files/knowledge-points/kp_001/source.pdf`
+  - 带 `storage.../knowledge-points/...` 的路径会截取 `knowledge-points/...` 后再进入 `/files` 代理。
+- 弹窗标题和说明只显示“教材页段预览”和教材页码，不展示本地 storage 路径。
+
+## 验证命令结果
+
+```powershell
+cd apps\web
+bun src/lib/workspace-user-flow-contract.test.ts
+bun src/lib/new-project-user-flow-contract.test.ts
+bunx tsc --noEmit --pretty false
+bun run lint
+bun run build
+```
+
+结果：全部退出码 0。另做源码红线抽检，`TextbookContentResult` 已接管 `textbook-parse`，开发诊断之前未命中旧 JSON fallback 文案和首页 `GET /projects` 文案。
+
+## 剩余风险
+
+- 本轮未重启 T138 隔离 API/Web 做完整浏览器复测；前端静态契约和构建已通过。
+- 页段 PDF 能否在 T138 项目中打开，取决于后端项目目录是否已有对应 `knowledge-points/...` 文件；前端已按后端 `/files/{asset_path}` 代理规则生成入口，且不暴露本地路径。
+
+## 建议下一个接手角色
+
+测试工程师执行 T140。
+
+## 下个角色需要知道的上下文
+
+T140 只需复跑 T138 红线专项重点项：工作区普通主界面“开发诊断”之前不得出现 `JSON` 等红线词；教材内容任务卡应能让教师理解课时、页码、知识点和教材依据；页段 PDF 按钮在资产存在时应打开代理预览且不暴露 storage 路径。不需要重做后端三段式 API 或真实 MinerU/provider 链路。
+
+---
+
+# 【本轮】测试工程师 — T138 用户态红线专项复测
+
+## 本轮目标
+
+复测 T132 阻塞项在 T133-T137 修复后是否全部消除，重点验证普通教师主界面不暴露工程字段、教材弹窗不暴露 storage 路径、目标受众按一年级教材正确回填，以及三段式教材处理可用。
+
+## 测试环境
+
+- API：`http://127.0.0.1:8138`
+- Web：`http://127.0.0.1:3138`
+- Storage：`storage-t138-user-flow-redline-regression`
+- Provider：`fake`
+- Web：真实 API 模式
+- API 项目 ID：`proj_20cc0610a314`
+- 浏览器项目 ID：`proj_e2cc3f58298b`
+- 教材 ID：`renjiao-grade1-volume1-2024`
+- 知识点 ID：`kp_001`
+
+## 结论
+
+【不通过】。
+
+三段式教材处理、目标受众默认值、弹窗 storage 路径三项旧问题已有明显改善；但工作区普通主界面仍直接出现 `JSON` 红线词，按 T138 验收标准不能封板。
+
+## 已验证通过项
+
+- API `/health` 正常，Web 首页 200。
+- 教材库下拉显示 `人教版 / 小学数学 / 一年级 / 上册`。
+- API 全量切分 9 个知识点返回 `split_ready`，全量解析返回 `needs_review`。
+- API 部分处理 `kp_001/kp_006` 可切分、可解析。
+- 浏览器新建项目页显示并可执行 `导入教材 / 切分教材 / 解析教材内容` 三段式动作。
+- 浏览器支持“选择部分”和“全部知识点”。
+- 字段回填为数学、一年级、人教版、上册。
+- 目标受众默认值为“一年级学生”。
+- 核心知识点和教材内容弹窗未命中 `storage` 或本地盘符路径。
+- 教材内容 Markdown 包含 `5以内数的认识`。
+- 开发诊断默认折叠。
+- 浏览器 console error/warn 为空。
+- 后端目标测试 `18 passed`。
+- 前端契约、tsc、lint、build 全部退出码 0。
+
+## 阻塞缺陷
+
+P0 / 前端：工作区普通主界面仍显示“完整内容仍在下方 JSON 中编辑”，并在开发诊断折叠区之前显示 `JSON`、`subject`、`grade`、`textbook_version`、`volume`、`lesson_title`、`core_knowledge_points` 等结构化字段。证据：`docs\qa-audits\t138-user-flow-redline-regression-evidence\20260624-085413\browser-redline-scan-main.json`，`main_hits_before_developer_diagnostics=["JSON"]`。
+
+## 其他风险
+
+- “查看教材页段”按钮在切分/解析后仍为禁用，本轮未能直接验证页段弹窗；API 侧页段资产存在，前端需补可预览入口。
+- 首页仍显示“数据来源：GET /projects”，T138 红线词未覆盖 `GET`，本轮不作为阻塞，但仍不符合普通教师用户态表达。
+- 前端静态契约测试全部通过但浏览器红线失败，说明需要补真实 DOM/浏览器红线门禁。
+
+## 交付物
+
+- 测试报告：`docs\qa-audits\2026-06-24-t138-user-flow-redline-regression.md`
+- 证据目录：`docs\qa-audits\t138-user-flow-redline-regression-evidence\20260624-085413`
+- API 证据：`summary-api.json`、`textbook-split-all.json`、`textbook-extract-all.json`、`textbook-split-selected.json`、`textbook-extract-selected.json`
+- 浏览器证据：`browser-new-project-three-stage-loaded.png`、`browser-step2-target-audience.png`、`browser-mineru-markdown-dialog.png`、`browser-workspace-after-create.png`、`browser-redline-scan-main.json`
+- 控制台证据：`browser-console.json`
+- 测试命令证据：`backend-targeted-tests.log`、`frontend-command-results.json`
+
+## 建议下一个接手角色
+
+前端工程师。
+
+## 下个角色需要知道的上下文
+
+不要重做后端三段式主链路；当前唯一封板阻塞是工作区普通主界面 JSON fallback。修复目标是让 `textbook_parse/textbook_content` 结果在普通任务卡中变成教师可读摘要或 Markdown/教材依据展示，原始结构只允许进入默认折叠的“开发诊断”。修复后由测试工程师补跑 T138 红线专项。
+
+---
+
+# 【本轮】首席系统架构师 / 全栈补强 — T133-T138 教材资产三段式与全工作区用户态修复
+
+## 本轮目标
+
+落实“下一轮教材资产与全工作区用户态补强计划”，补齐 T127-T132 未覆盖边界：教材处理拆成导入、切分、解析三段；项目级引入 `jiaocaiTojiaoan` 经验包但不替代现有工作流；多教材/多版本只做契约预留；工作区普通主界面隐藏技术信息。
+
+## 已完成
+
+- 后端新增教材批量处理契约：
+  - `POST /textbook-library/{textbook_id}/split`
+  - `POST /textbook-library/{textbook_id}/assets/extract`
+  - 支持全量或指定 `knowledge_point_ids`。
+  - 上传入库不自动生成页段 PDF 或 MinerU Markdown。
+- 后端资产状态拆分：
+  - 切分后为 `split_ready / unreviewed`。
+  - 解析后为 `needs_review / needs_review`。
+  - 确认后才进入 `approved`。
+- 多教材/多版本接口字段预留：
+  - `publisher`
+  - `version`
+  - `toc_template_id`
+  - `page_mapping_strategy`
+  - `parser_profile`
+  - `verification_status`
+  - `review_status`
+- 前端新建项目接入三段式教材处理：
+  - 教材库下拉真实传递所选教材 ID。
+  - 支持“导入教材 / 切分教材 / 解析教材内容”三个独立动作。
+  - 支持全部知识点或选择部分知识点。
+  - 知识点资产状态列表显示未切分、已切分、待确认、已确认等教师可读状态。
+- 前端修复 T132 关键用户态问题：
+  - 普通工作区结果面板关闭高级 JSON 和 provider 细节。
+  - `selected_anchor` 用户态文案改为“课堂衔接点”。
+  - 教材弹窗不再展示本地 storage 路径。
+  - 教材年级回填后，默认目标受众同步为对应年级学生。
+- 项目级能力沉淀：
+  - 新增 `skills/jiaocaiTojiaoan/SKILL.md`。
+  - 新增 `docs/jiaocaiTojiaoan/MinerU图文教材解析经验.md`。
+  - 新增 `docs/textbook-jiaocaiTojiaoan-adapter.md`，明确该 skill 只提供 MinerU 教材 Markdown 经验，不替代 ShanHaiEdu 教材库、状态机和工作流。
+
+## 验证
+
+```powershell
+python -m pytest apps/api/tests/test_textbook_pdf_parsing.py -q -k "upload_only or split_selected or extract_selected or lists_seed"
+```
+
+结果：`3 passed, 12 deselected`。
+
+```powershell
+bun src/lib/new-project-user-flow-contract.test.ts
+bun src/lib/workspace-user-flow-contract.test.ts
+bunx tsc --noEmit --pretty false
+```
+
+结果：均退出码 0。
+
+## 剩余风险
+
+- 本轮没有跑浏览器真实 E2E，T132 复测仍需测试工程师执行。
+- 真实 MinerU CLI/provider 仍未接入；当前 fixture provider 仍是本地演示能力。
+- 多教材/多版本仅完成接口字段预留，不承诺任意教材自动泛化。
+- 工作区更深层开发诊断中仍保留技术字段，按设计默认折叠，仅供开发排障。
+
+## 下一棒
+
+测试工程师补跑 T132 红线复测，重点检查普通用户主界面是否仍出现 `JSON / provider / manifest / node_id / StateEngine / schema / R010 / 输出路径 / 安全模式`，以及新建项目三段式教材处理是否能走通。
+
+---
+
+## 【本轮】测试工程师 — T132 T127-T132 用户态回归
+
+### 本轮目标
+
+按 `docs\qa-audits\t127-t132-user-flow-regression-plan.md` 执行真实 API 模式用户态回归，验证教材库、目录章节、知识点页码、证据包、新建项目页和工作区是否真正变成教师可用流程；不修代码，不验收真实视频 provider 成片，不测试任意教材泛化。
+
+### 测试环境
+
+- API：`http://127.0.0.1:8132`
+- Web：`http://127.0.0.1:3132`
+- Storage：`storage-t132-user-flow-regression`
+- Provider：`fake` / placeholder
+- Web：真实 API 模式
+- API 项目 ID：`proj_168e084cb7a6`
+- 浏览器创建项目 ID：`proj_b9b6a883a06b`
+- 教材 ID：`renjiao-grade1-volume1-2024`
+- 知识点 ID：`kp_001`
+
+### 结论
+
+【不通过】。
+
+API、构建和大部分浏览器流程可运行，但工作区普通主界面出现 T132 红线词 `JSON`，且教材弹窗暴露本地 storage 路径，未达到“教师用户态可演示”标准。
+
+### 已验证通过项
+
+- API `/health` 正常，Web 首页 200。
+- 教材库返回 `人教版 / 小学数学 / 一年级 / 上册`。
+- 目录章节 7 个，知识点 9 个；`kp_001 / 5以内数的认识` 归属 `ch_002`，教材页 `14-23`，PDF 页 `19-28`。
+- 资产包抽取成功：源 PDF 118 页，页段 PDF 10 页，页段不是整册；MinerU Markdown 包含 `5以内数的认识` 和结构化章节。
+- 教案来源追溯包含 `source_textbook_id`、`source_textbook_version_id`、`source_knowledge_point_id=kp_001`、`source_slice_pdf_path`、`source_mineru_md_path`。
+- 新建项目页显示教材库下拉、上传入口、知识点顶部选择、字段回填、核心知识点抽屉、关键词标签、时长和 PPT 模板。
+- 工作区显示 7 步用户态流程，未解锁步骤点击提示先完成上一阶段。
+- 确认教材后进入教案步骤，教案 Markdown 编辑/预览可用。
+- 浏览器 console error/warn 为空。
+- 后端全量 `221 passed, 2 xfailed`。
+- 前端契约、tsc、lint、build 全部退出码 0。
+
+### 阻塞缺陷
+
+1. P0 / 前端：工作区普通主界面显示 `JSON` 和结构化字段，并提示“完整内容仍在下方 JSON 中编辑”。这直接违反 T132 红线，必须前端返工。
+2. P1 / 前端：核心知识点、教材页段、教材内容弹窗显示 `storage-t132-user-flow-regression/...` 本地路径。教师不应看到内部 storage 路径。
+3. P1 / 前端：一年级教材字段回填后，目标受众默认显示“三年级学生”，虽可手改，但默认值错误会污染后续教案/视频/PPT。
+4. P2 / 产品/前端：第 3 步仍出现“第 0 步核心配置、角色字典、合规红线”等专业配置台口径，建议改成教师可理解的高级设置。
+
+### 交付物
+
+- 测试报告：`docs\qa-audits\2026-06-23-t132-user-flow-regression.md`
+- 证据目录：`docs\qa-audits\t132-user-flow-regression-evidence\20260624-002553`
+- 红线扫描：`browser-redline-scan-workspace.json`
+- 控制台记录：`browser-console.json`
+- 后端测试：`backend-pytest-all.log`
+- 前端测试：`frontend-command-results.json`
+
+### 建议下一个接手角色
+
+前端工程师返工 P0/P1；产品经理参与 P2 文案与配置层级收口；修复后测试工程师补跑 T132 红线复测，重点是普通主界面禁词扫描、弹窗路径扫描、创建项目到教案预览链路。
+
+---
+
+## 【本轮】后端工程师 — T127 教材目录解析
+
+### 本轮目标
+
+按 `docs\textbook-directory-and-evidence-contract.md` 把人教版小学数学一年级上册从固定知识点数组升级为目录页驱动索引，供前端教材下拉、章节/知识点选择、页码定位和 T132 真实 API 验证使用；不做任意教材泛化，不改前端 UI，不读取或打印密钥。
+
+### 已完成事项
+
+- 教材库列表 `GET /textbook-library` 返回中文展示字段：
+  - `publisher=人教版`
+  - `subject_label=小学数学`
+  - `grade_label=一年级`
+  - `volume_label=上册`
+  - `display_name=人教版 / 小学数学 / 一年级 / 上册`
+  - `status=indexed`
+- 教材知识点接口 `GET /textbook-library/{textbook_id}/knowledge-points` 返回 `chapters` 和 `knowledge_points` 双层结构。
+- `chapters` 固定返回 7 个目录章节及页码/PDF 页码范围：数学游戏、5以内数的认识和加减法、6~10的认识和加减法、认识立体图形、11~20的认识、20以内的进位加法、复习与关联。
+- 每个课时知识点返回 `chapter_id`、教材页码、PDF 页码、`keywords`、`parse_status`、`review_status`。
+- `kp_001 / 5以内数的认识` 归属 `ch_002 / 5以内数的认识和加、减法`，教材页码 `14-23`，PDF 页码 `19-28`。
+- 目录章节保持在 `chapters` 中，不作为课时知识点混入 `knowledge_points`。
+- 未知知识点资产查询稳定返回 `404 / TEXTBOOK_ASSET_NOT_FOUND`。
+- 顺带清掉 T129 交接中提到的非本轮失败：DeepSeek 旧断言已对齐知识点锚定；教材资产抽取红线测试当前通过。
+
+### 接口契约
+
+- `GET /textbook-library`
+- `GET /textbook-library/{textbook_id}/knowledge-points`
+- `GET /textbook-library/{textbook_id}/knowledge-points/{knowledge_point_id}/assets`
+
+T132 可直接用 `renjiao-grade1-volume1-2024` 验证目录和知识点数据来自后端，不需要前端 mock。
+
+### 验证
+
+```powershell
+python -m pytest apps\api\tests\test_textbook_pdf_parsing.py -q
+```
+
+结果：`13 passed`。
+
+```powershell
+python -m pytest apps\api\tests -q
+```
+
+结果：`221 passed, 2 xfailed`。
+
+### 已更新文件
+
+- `apps\api\app\textbook_parser.py`
+- `apps\api\app\textbook_library.py`
+- `apps\api\tests\test_textbook_pdf_parsing.py`
+- `apps\api\tests\test_real_providers.py`
+- `workflow\multi-agent\dispatch.md`
+- `workflow\multi-agent\roles\backend-engineer.md`
+- `workflow\multi-agent\handoffs\latest.md`
+
+### 剩余风险
+
+- 目录页驱动索引当前是人教版一年级上册 fixture 固定常量，不承诺任意教材自动泛化。
+- 真实目录 OCR/MinerU 自动识别、人工目录审核后台、跨版本教材目录入库不在 T127 范围。
+- `TextbookLibraryStore` 仍以 payload 层补章节，不新增 chapters 表；若后续要多教材平台化，应在全局教材库 DB 中增加章节表和人工审核状态。
+
+### 建议下一个接手角色
+
+测试工程师在 T132 中用真实 API 验证教材下拉、目录章节、知识点归属和页码数据；前端工程师 T130/T131 可按后端返回 `chapters + knowledge_points` 做下拉和工作区用户态展示。
+
+---
+
+## 【本轮】前端工程师 — T130 新建项目页用户态重构
+
+### 本轮目标
+
+把新建项目页从“配置堆叠”改成“教材来源优先”：教师先选教材，再选目录/知识点，随后字段回填并可手改；普通界面不暴露输出路径、安全模式、provider 等技术字段。
+
+### 已完成事项
+
+- 新建项目步骤重命名为用户态流程：选择教材来源、选择课时知识点、项目信息、导入视频偏好、PPT 草稿模板。
+- 教材库入口改为下拉框，默认显示 `人教版 / 小学数学 / 一年级 / 上册`。
+- 上传教材入口文案收口为同一套“目录 / 课时知识点”后端流程，不使用前端固定 mock 知识点。
+- 知识点/目录选择置顶，选择后展示单元、教材页码、PDF 页码、解析状态和人工确认状态。
+- 学科、年级、教材版本、册次、教材标题、项目名称、课型、目标受众集中排版，教师可手工修改。
+- 核心知识点改为按钮打开弹窗结构化展示，不在主页面常驻铺开。
+- 教材页段、教材内容、教案参考均通过按钮打开弹窗/抽屉。
+- 视频关键词改为标签多选，并支持自定义关键词保留到当前项目草稿。
+- 预计时长支持下拉选择和自定义输入。
+- PPT 结构改为固定模板下拉：导入-探究-归纳-练习-小结、情境-问题-操作-表达-应用、复习-新知-例题-练习-总结。
+- 普通新建页隐藏输出路径、安全模式、provider 等技术字段；配置摘要按教材/教案/视频/PPT 分组展示。
+- 为 T130 增加轻量契约测试：`apps\web\src\lib\new-project-user-flow-contract.test.ts`。
+- 本轮为通过现有 tsc，也修复了工作区 T131 半成品里的 JSX 语法残留，并对齐 `FinalVideoResult` 的 `showProviderDetails` prop；未扩展工作区功能范围。
+
+### 修改文件
+
+- `apps\web\src\components\screens\NewProjectScreen.tsx`
+- `apps\web\src\components\screens\ProjectWorkspaceScreen.tsx`
+- `apps\web\src\lib\new-project-user-flow-contract.test.ts`
+- `workflow\multi-agent\dispatch.md`
+- `workflow\multi-agent\roles\frontend-ui-engineer.md`
+- `workflow\multi-agent\handoffs\latest.md`
+
+### 验证证据
+
+```powershell
+cd apps\web
+bun src/lib/new-project-user-flow-contract.test.ts
+bun src/lib/workspace-user-flow-contract.test.ts
+bun src/lib/api-mappers-contract.test.ts
+bunx tsc --noEmit --pretty false
+bun run lint
+bun run build
+```
+
+结果：全部通过。
+
+浏览器证据：
+
+- Web：`http://127.0.0.1:3130`
+- 截图：`docs\qa-audits\t130-new-project-textbook-source.png`
+- 已验证：新建页第一屏显示教材库下拉、`人教版 / 小学数学 / 一年级 / 上册`、上传新教材入口、同一套目录/课时知识点流程文案，普通新建页第一屏未暴露输出路径/安全模式。
+
+### 剩余风险 / 交给 T132
+
+- 本轮浏览器使用已有构建服务做页面可见性验证，没有启动完整真实 API 教材解析链路。
+- T132 仍需在真实 API 模式下截图证明：知识点下拉、证据包弹窗、核心知识点弹窗、关键词标签、自定义时长、PPT 模板下拉全部可操作。
+- 当前 store 仍只有“加载教材库第一项”的 action；因为当前固定 fixture 仅一项，前端下拉可满足展示和用户心智。若后端后续开放多教材选择，需要把 `loadTextbookFromLibrary()` 扩展为按 `textbook_id` 加载。
+
+---
+
+## 【本轮】后端工程师 — T128 教材证据包可信化
+
+### 本轮目标
+
+为当前选中 `knowledge_point_id` 生成可信教材资产包：页段 PDF 或预览资产、MinerU Markdown、页码范围、checksum、状态和失败诊断；裁剪失败不能复制整本 PDF 冒充成功，未确认或失败资产不能 approved。
+
+### 已完成事项
+
+- `TextbookParser._write_pdf_slice()` 去掉裁剪失败复制整册 PDF 的兜底；页码非法、空页段或 pypdf 失败会直接抛错。
+- `TextbookParser._load_fixture_markdown()` 为非 `kp_001` 课时生成教材结构化 Markdown，包含课节范围、核心知识点、图片道具、逐页内容、课堂流程、教学目标、板书建议、输出核验说明，不再只写“待 MinerU 精抽”占位。
+- `TextbookLibraryStore.extract_asset()` 只针对当前 `knowledge_point_id` 抽取资产；成功写入 `slice_pdf_path`、`mineru_md_path`、`textbook_pages`、`pdf_pages`、`checksum=sha256:...`、`parse_status=needs_review`、`review_status=needs_review`。
+- 裁剪失败时写 failed 资产记录，保留 `diagnostics.stage=pdf_slice`、失败 message、教材页码和 PDF 页码，并由 API 返回 `409 / TEXTBOOK_ASSET_EXTRACT_FAILED`。
+- `confirm_asset()` 增加可信校验：页段 PDF 必须存在且页数等于知识点页段、不得等于整册 PDF；MinerU Markdown 必须存在且包含契约章节；checksum 必须存在；资产必须处于可确认 pending 状态。不满足返回 `409 / TEXTBOOK_ASSET_NOT_TRUSTED`。
+- 资产响应补 `diagnostics` 和 `preview_images` 字段；当前 fixture 至少提供 `slice_pdf_path` 可预览资产。
+- 同步修正 DeepSeek 教案生成测试中 `textbook_anchor` 旧精确断言，改为验证包含当前知识点标题，保持来源追溯。
+
+### 资产字段
+
+- `asset_id`
+- `textbook_id`
+- `textbook_version_id`
+- `knowledge_point_id`
+- `chapter_id`
+- `source_pdf_path`
+- `slice_pdf_path`
+- `preview_images`
+- `mineru_md_path`
+- `markdown_path`
+- `textbook_pages`
+- `pdf_pages`
+- `parse_status`
+- `review_status`
+- `mineru_job_id`
+- `checksum`
+- `diagnostics`
+
+### 失败处理策略
+
+- PDF 裁剪失败：不复制整册 PDF，不写成功资产；资产进入 `parse_status=failed`、`review_status=needs_review`，API 返回 `TEXTBOOK_ASSET_EXTRACT_FAILED`，details 带诊断字段。
+- 资产不可信或未准备好：确认接口不允许 approved，返回 `TEXTBOOK_ASSET_NOT_TRUSTED`，details 带 `trust_errors`。
+- Markdown 占位或缺契约章节：确认阻断，不把历史教案或占位说明当教材内容。
+- 本轮仍只承诺人教版一年级上册 fixture，不做任意教材泛化，不接真实 MinerU provider。
+
+### 验证
+
+- `python -m pytest apps\api\tests\test_textbook_pdf_parsing.py -q`：`13 passed`。
+- `python -m pytest apps\api\tests\test_real_providers.py::test_real_provider_mode_uses_deepseek_for_lesson_plan -q`：`1 passed`。
+- `python -m pytest apps\api\tests -q`：`221 passed, 2 xfailed`。
+
+### 建议下一个接手角色
+
+前端工程师继续 T130/T131 接入教材证据包与工作区用户态；测试工程师 T132 在 T127-T131 都完成后重点验证页段 PDF 不是整册、Markdown 非占位、失败资产不可确认、普通用户主界面不暴露工程红线词。
+
+---
+
+## 【本轮】后端工程师 — T129 工作区用户态契约
+
+### 本轮目标
+
+给前端提供一层普通教师能直接渲染的工作区用户态步骤契约，不再要求前端主界面解析 raw manifest、StateEngine、schema、R010、node_id 或日志；不重构 StateEngine，不改完整 DAG。
+
+### 已完成事项
+
+- 新增 `apps\api\app\workspace_user_flow.py`，独立把现有 manifest/node detail 映射成用户态工作区契约。
+- 新增 `GET /projects/{project_id}/workspace`。
+- 输出 7 个用户态步骤：项目信息、教材内容、教案生成、导入视频方案、PPT 草稿、视频生成、最终交付。
+- 已完成步骤返回只读回看内容；当前步骤返回可执行主按钮；未解锁步骤返回用户可读锁定原因。
+- 上游未确认会转成行动建议，例如“请先确认【教材内容】后再进入【教案生成】。”
+- 主步骤字段不暴露 `node_id`、`schema`、`manifest`、`R010`、`dependency_gate`。
+- 开发诊断统一放入 `developer_diagnostics`，供前端折叠区使用。
+- 补 `apps\api\tests\test_workspace_user_flow_contract.py`，覆盖 locked/current/completed、上游未确认、回看 Markdown、诊断字段隔离。
+
+### 接口契约
+
+- `GET /projects/{project_id}/workspace`
+- 顶层字段：`project`、`steps`、`current_step_id`、`developer_diagnostics`
+- `steps[]` 主字段：`step_id`、`order`、`title`、`state`、`goal`、`user_action`、`result`、`primary_action`、`lock_reason`、`review`、`can_review`、`can_modify`
+- `developer_diagnostics.steps.{step_id}` 才包含后端节点、schema、依赖、规则、transition、artifact 等工程信息。
+
+### 验证
+
+- 红灯：新增测试初跑 404，证明接口缺失。
+- `python -m pytest apps\api\tests\test_workspace_user_flow_contract.py -q`：`3 passed`。
+- `python -m pytest apps\api\tests\test_workspace_user_flow_contract.py apps\api\tests\test_state_engine_contract.py apps\api\tests\test_ppt_runtime_contract.py apps\api\tests\test_api_contract.py -q`：`39 passed`。
+- `python -m pytest apps\api\tests -q`：当前 `218 passed, 2 xfailed, 3 failed`；3 个失败不在 T129 改动面，分别是 `test_real_provider_mode_uses_deepseek_for_lesson_plan` 的旧断言，以及 T127/T128 教材资产包 Markdown/裁剪失败处理。
+
+### 兼容风险
+
+- 新接口是 additive，不替代 `/manifest` 和 `/nodes/{node_id}`，前端可渐进切换。
+- 用户态 7 步按产品要求线性锁定，不完全等同后端 DAG 分支；开发诊断仍可追踪真实节点。
+- PPT/视频两个分支在用户态被串为“导入视频方案 → PPT 草稿 → 视频生成”，若产品后续要求并行展示，需要调整 mapper，不影响 StateEngine。
+
+### 建议下一个接手角色
+
+前端工程师接 T131，直接使用 `/workspace` 渲染备课工作台；测试工程师 T132 复测时重点检查主界面红线词是否消失，开发诊断是否默认折叠。
+
+---
+
+## 【本轮】前端工程师 — T131 工作区备课工作台重构
+
+### 本轮目标
+
+把工作区从工程节点调试台改为教师可理解的线性备课工作台：普通用户只看到当前步骤、要做什么、结果是什么和下一步按钮；技术诊断默认隐藏但不删除。
+
+### 已完成事项
+
+- `ProjectWorkspaceScreen` 普通主界面新增 7 个用户态步骤：项目信息、教材内容、教案生成、导入视频方案、PPT 草稿、视频生成、最终交付。
+- 已完成步骤可点击回看；未解锁步骤点击后不进入详情，只 toast 提示“请先完成【上一阶段】后，再进入【当前阶段】”。
+- 当前步骤主区域改为任务卡，包含“这一步要做什么”“你现在需要做什么”“依据”“当前结果/可编辑区域”和唯一主按钮。
+- 教案步骤改为 Markdown 编辑/预览；已完成回看默认只读，普通用户不直接编辑 JSON。
+- 视频方案、视频资产、最终视频等主界面保留用户可读摘要与任务状态，不在默认主路径铺 raw JSON。
+- 原输入/运行/结果/依据/日志 Tab、StateEngine、原始 JSON、日志、provider 细节保留在默认关闭的“开发诊断”折叠区。
+- 新增 `apps\web\src\lib\workspace-user-flow-contract.test.ts`，固定 T131 用户态工作区契约。
+
+### 验证证据
+
+```powershell
+cd apps\web
+bun src/lib/workspace-user-flow-contract.test.ts
+bunx tsc --noEmit --pretty false
+bun run lint
+bun run build
+```
+
+结果：全部退出码 0；`bun run build` 成功。
+
+浏览器验证使用既有本地 dev 服务 `http://127.0.0.1:3010`：
+
+- 7 个用户态步骤可见，前三步可回看，当前为“导入视频方案”，后三步未解锁。
+- 点击未解锁 “PPT 草稿” 后仍停留当前步骤，并提示“请先完成【导入视频方案】后，再进入【PPT 草稿】。”
+- 回看“教案生成”显示 Markdown 编辑/Markdown 预览，正文只读，普通主界面无 JSON 高级入口。
+- 开发诊断默认只显示标题；未展开时主界面未出现 StateEngine、schema、R010、dependency_gate、node_id、输出路径、安全模式。
+- 展开“开发诊断”后仍可看到输入/运行/结果/依据/日志等诊断能力。
+
+截图证据：
+
+- `docs\qa-audits\t131-workspace-user-flow-evidence\user-step-task-card.png`
+- `docs\qa-audits\t131-workspace-user-flow-evidence\lesson-markdown-preview.png`
+- `docs\qa-audits\t131-workspace-user-flow-evidence\developer-diagnostics-open.png`
+
+### 已更新文件
+
+- `apps\web\src\components\screens\ProjectWorkspaceScreen.tsx`
+- `apps\web\src\lib\workspace-user-flow-contract.test.ts`
+- `workflow\multi-agent\dispatch.md`
+- `workflow\multi-agent\roles\frontend-ui-engineer.md`
+- `workflow\multi-agent\handoffs\latest.md`
+
+### 剩余风险
+
+- T132 仍需在测试工程师口径下跑完整真实 API 用户流，包括 T127/T128/T129 后端契约是否已经全部落地。
+- 本轮只验证已有项目工作区路径，未重新创建项目贯穿 T127-T131 全链路。
+- `开发诊断` 展开后仍会显示工程词，这是按需求保留的诊断能力，不应纳入普通主界面红线。
+
+### 建议下一个接手角色
+
+测试工程师接 T132，按 `docs\qa-audits\t127-t132-user-flow-regression-plan.md` 做完整用户态回归。
+
+---
+
+## 【本轮】首席系统架构师 — V0.5 文档绑定派发与 T127-T132 任务下发
+
+### 本轮目标
+
+响应用户对团队协作机制的纠偏：不能只给角色提示词，必须先沉淀共同参考文档、接口/数据/体验契约和测试验收依据，再向 3 个后端、2 个前端、1 个测试并行派发任务。
+
+### 已完成事项
+
+- 新增共同需求文档：`docs\product-workspace-user-flow-requirements.md`，统一新建项目页和工作区用户态体验要求。
+- 新增教材契约文档：`docs\textbook-directory-and-evidence-contract.md`，统一目录章节、页码映射、知识点资产包和 MinerU Markdown 结构。
+- 新增测试验收文档：`docs\qa-audits\t127-t132-user-flow-regression-plan.md`，统一浏览器证据、红线检查和通过标准。
+- 更新 `docs\multi-agent\README.md` 到 V0.5 文档绑定派发，明确重要任务不得只靠聊天提示词。
+- 更新 `workflow\multi-agent\decisions.md`，登记“多角色任务派发升级为 V0.5 文档绑定派发”决策。
+- 更新 `workflow\multi-agent\dispatch.md`，正式下发 T127-T132：
+  - T127 后端：教材目录解析。
+  - T128 后端：教材证据包可信化。
+  - T129 后端：工作区用户态契约。
+  - T130 前端：新建项目页用户态重构。
+  - T131 前端：工作区备课工作台重构。
+  - T132 测试：用户态回归。
+- 更新 `workflow\multi-agent\shared-facts.md`，同步当前协作机制版本为 V0.5。
+- 更新 `workflow\multi-agent\stage-review.md`，记录 T127-T132 已进入“任务已下发、待角色执行”阶段。
+- 更新 `workflow\multi-agent\roles\architect.md`，沉淀本轮架构师派发规则。
+
+### 关键结论
+
+- 本轮不是直接开发，而是先补齐“怎么协作、按什么验收”的团队契约。
+- T127-T132 已是正式任务编号，不是口头编号。
+- 后续角色接任务时，必须同时读取共同需求文档、契约文档、测试计划和 `dispatch.md`。
+- 测试工程师 T132 只在 T127-T131 完成后执行；若普通用户主界面出现 `StateEngine`、`schema`、`JSON`、`R010`、`manifest`、`输出路径`、`安全模式` 等红线词，直接判不通过。
+
+### 下一个建议接手角色
+
+后端工程师 1、后端工程师 2、后端工程师 3、前端工程师 1、前端工程师 2 可以并行接手 T127-T131；测试工程师等待 T127-T131 完成后执行 T132。
+
+---
+
+## 【本轮】首席系统架构师 / 测试工程师 — T126 教材库边界收尾浏览器 E2E
+
+### 本轮目标
+
+在 T119-T125 代码级/契约级通过后，补齐真实 API 浏览器 E2E 证据：覆盖教材库选择、上传 fixture 入全局教材库、解析 job 轮询、知识点资产抽取与确认、教案库查询/查看/选为参考，以及 `reference_lesson_plan_id` 持久化和 `lesson_plan/generate` 来源追溯。
+
+### 验收结论
+
+T126 通过。报告：`docs\qa-audits\2026-06-23-t126-textbook-library-browser-e2e.md`；证据目录：`docs\qa-audits\t126-textbook-library-browser-e2e`。
+
+### 关键证据
+
+- 真实 API 模式：API `8126`，Web `3126`，storage `storage-t126-browser-e2e`。
+- 新建项目：`proj_4bd7d8ae2f59`；教材：`renjiao-grade1-volume1-2024`；知识点：`kp_001 / 5以内数的认识`；参考教案：`lp_b16b139739bb`。
+- 浏览器页面显示教材证据包、课时知识点、PDF 页码 `19-28`、教材页码 `14-23`、教案参考卡和“已选择”；console error/warn 为空。
+- PDF 页段预览通过：`slice-pdf-http-evidence.json` 显示 200 / `application/pdf` / `6820773` bytes；截图 `browser-pdf-dialog.png`。
+- Markdown 弹窗通过：`browser-dialog-states.json` 证明包含 `MinerU Markdown`、`5以内数的认识`、页码信息；截图 `browser-markdown-dialog.png`。
+- 教案抽屉通过：截图 `browser-lesson-drawer.png`，正文提示“本次教案生成仍以当前教材 PDF 页段和 MinerU Markdown 为主输入”。
+- Web 代理上传 fixture PDF 入库通过：`upload-via-web-proxy.status.txt` 为 `HTTP_STATUS=200`，`upload-job-via-web-proxy.json` 为 `status=indexed`、provider `mineru_fixture`。
+- 项目持久化通过：`project-after-reference-and-lesson.json` 记录 `reference_lesson_plan_id=lp_b16b139739bb`，并保留当前教材/版本/知识点绑定。
+
+### 本轮顺手修复
+
+- 修复 `apps\web\src\app\api\backend\[...path]\route.ts`：Web 代理转发 multipart 上传时删除 `Expect` header，避免 Undici `UND_ERR_NOT_SUPPORTED` 导致 `/api/backend/textbook-library/uploads` 500。
+- 增加 `apps\web\src\lib\api-proxy-contract.test.ts` 契约检查。
+- 验证：`cd apps\web && bun src/lib/api-proxy-contract.test.ts` 退出码 0。
+
+### 保守边界 / 不得误宣称
+
+- 当前 MinerU 仍是 `mineru_fixture` provider，不是真实 MinerU CLI/provider。
+- 当前只验证人教版一年级上册 fixture，不承诺任意教材自动泛化。
+- 浏览器文件选择器未作为自动化路径单独证明；上传入库由 Web 代理 multipart HTTP 复测证明。
+- 生产级教材库后台、教案库后台、权限/RBAC、旧项目迁移仍不在本轮范围。
+
+### 下一棒建议
+
+下一阶段若继续教材主线，应拆为两个专项：后端接真实 MinerU CLI/provider 和异步失败重试；前端/测试补浏览器文件选择器上传路径与教材库后台管理。不建议再把 fixture 教材库、教案库参考和真实视频生成混在同一任务里推进。
+
+---
+
+## 【本轮】首席系统架构师 / 全栈工程师 — 教材库 / MinerU / 教案库边界收尾（T119-T125）
+
+### 本轮目标
+
+把上一轮 fixture 教材资产库 MVP 收口成可持续平台化闭环：上传教材进入全局教材库 DB，MinerU 精抽以异步 job/资产包契约落地，教案库成为正式参考资产，`reference_lesson_plan_id` 可持久化但不能绕过当前教材绑定。
+
+### 已完成事项
+
+- 新增全局教材库 DB：`storage/textbook_library.db`，由 `TextbookLibraryStore` 管理，fixture 教材 seed 进入 DB，重复启动不覆盖已有版本。
+- 新增教材上传入库接口：`POST /textbook-library/uploads`，上传后记录 `textbook_id`、`textbook_version_id`、`job_id` 和解析状态；fixture PDF 会通过 hash 复用既有教材版本。
+- 新增解析 job 轮询：`GET /textbook-library/jobs/{job_id}`，当前 provider 为 `mineru_fixture`，状态可从 `uploaded` 进入 `indexed`。
+- 新增知识点资产抽取和确认：`POST /textbook-library/{textbook_id}/knowledge-points/{knowledge_point_id}/assets/extract`、`POST /textbook-library/assets/{asset_id}/confirm`；资产记录 `source_pdf_path`、`slice_pdf_path`、`mineru_md_path`、页码、`mineru_job_id`、checksum、`parse_status`、`review_status`。
+- 新增正式教案库 DB：`storage/lesson_plan_library.db`，提供 `GET /lesson-plan-library`、`GET /lesson-plan-library/{lesson_plan_id}`、`POST /lesson-plan-library/import/from-project`。
+- `project_meta` 新增 `reference_lesson_plan_id`，`PATCH /projects/{id}` 可持久化；项目创建、更新、列表和 manifest 均返回该字段。
+- `lesson_plan/generate` / `retry` 会输出 `reference_lesson_plan_id` 和参考教案快照，同时保留当前教材证据来源字段，历史教案不替代当前 MinerU Markdown 主输入。
+- 前端新建流程接入真实教材库上传、job 轮询、资产抽取、资产确认、教案库查询、教案正文抽屉和“选为参考”持久化。
+
+### 关键文件
+
+- `apps\api\app\textbook_library.py`
+- `apps\api\app\lesson_plan_library.py`
+- `apps\api\app\main.py`
+- `apps\api\app\services.py`
+- `apps\api\app\store.py`
+- `apps\api\app\models.py`
+- `apps\api\tests\test_textbook_pdf_parsing.py`
+- `apps\web\src\lib\api-client.ts`
+- `apps\web\src\lib\api-mappers.ts`
+- `apps\web\src\lib\store.ts`
+- `apps\web\src\lib\types.ts`
+- `apps\web\src\components\screens\NewProjectScreen.tsx`
+- `apps\web\src\lib\api-mappers-contract.test.ts`
+
+### 当前通过范围
+
+- 上传 fixture PDF 可以进入全局教材库 DB，并可从全局库复用。
+- 教材索引和知识点资产包已从纯项目目录能力升级为全局库 + 项目绑定双层结构。
+- 知识点资产包可生成并人工确认，确认后状态进入 `approved`。
+- 教案库 API 已具备导入、查询、查看正文能力。
+- `reference_lesson_plan_id` 已从前端选择持久化到项目级 DB，并参与后续教案生成输出。
+- 教案库仍是参考层，主输入仍固定为当前知识点 MinerU Markdown。
+
+### 保守边界 / 不得误宣称
+
+- 真实 MinerU CLI/provider 尚未替换；当前异步 job 契约由 `mineru_fixture` provider 驱动。
+- 上传非人教版一年级上册教材仍不承诺自动泛化；当前只做模板预留和人工确认边界。
+- 浏览器完整 E2E 还未在本轮补证据；当前已有后端、前端契约、类型、lint、build 证据。
+- 生产级教材库后台、教案库后台、权限/RBAC、批量迁移旧项目仍不在本轮范围。
+
+### 验证证据
+
+```powershell
+python -m pytest apps/api/tests/test_textbook_pdf_parsing.py -q
+```
+
+结果：`10 passed`。
+
+```powershell
+cd apps\web
+bun src/lib/api-mappers-contract.test.ts
+bunx tsc --noEmit --pretty false
+bun run lint
+bun run build
+```
+
+结果：全部退出码 0，`bun run build` 成功。
+
+### 建议下一棒
+
+测试工程师补 T126：启动真实 API 模式浏览器 E2E，覆盖“从教材库选择”和“上传 fixture 入库”两条入口，重点验证 PDF 页段预览、Markdown 预览、资产确认、教案库导入/查询/选为参考、生成教案来源追溯。
+
+---
+
+## 【本轮】首席系统架构师 / 全栈工程师 — 教材资产库驱动教案生成 MVP（T111J-T118J）
+
+### 本轮目标
+
+按用户确认的新口径，把新建项目/新教案前置链路改为“教材来源优先”：先从教材库选择或上传教材，再选课时级知识点，再查看教材证据包，最后生成或参考教案。教案库只能作为参考层，不能绕过当前教材和知识点绑定；教案正文不在主页面常驻展示。
+
+### 已完成事项
+
+- 后端新增 fixture 教材库能力：`GET /textbook-library`、`GET /textbook-library/{textbook_id}/knowledge-points`、`GET /textbook-library/{textbook_id}/knowledge-points/{knowledge_point_id}/assets`。
+- 后端新增从教材库挂载教材：`POST /projects/{project_id}/textbook/from-library/{textbook_id}`，本地演示默认使用人教版一年级上册 fixture PDF。
+- `TextbookParser` 固定支持人教版一年级上册，内置第一、第二单元 9 个课时级知识点；未知 `knowledge_point_id` 返回可读错误。
+- 每个知识点生成资产包：`knowledge-points/{kp}/source.pdf` 和 `knowledge-points/{kp}/mineru.md`，并保留兼容路径 `knowledge-points/{kp}.md`。
+- `5以内数的认识` 复用高质量 fixture Markdown；其他课时输出带“待 MinerU 精抽 / 待人工确认”标识的结构化 Markdown。
+- 项目元数据现在持久化 `textbook_id`、`textbook_version_id`、`knowledge_point_id`，并兼容旧 `project.db` 自动补列。
+- `lesson_plan/generate` 输出来源追溯字段：`source_textbook_id`、`source_textbook_version_id`、`source_knowledge_point_id`、`source_slice_pdf_path`、`source_mineru_md_path`。
+- 前端新建流程已改为教材来源优先：第一步从教材库选择或上传教材解析，第二步确认教材字段、项目名、课型和知识点。
+- 前端证据包改为摘要 + 按需查看：可查看教材页段 PDF、解析 Markdown，可重新解析，可确认用于生成教案。
+- 前端教案正文通过“查看教案”右侧抽屉展示，不再常驻铺在主页面。
+- 修复“重新解析”同一知识点被前端短路的问题：按钮现在强制重新请求后端。
+
+### 关键文件
+
+- `apps\api\app\textbook_parser.py`
+- `apps\api\app\main.py`
+- `apps\api\app\store.py`
+- `apps\api\app\services.py`
+- `apps\api\tests\test_textbook_pdf_parsing.py`
+- `apps\web\src\components\screens\NewProjectScreen.tsx`
+- `apps\web\src\lib\api-client.ts`
+- `apps\web\src\lib\api-mappers.ts`
+- `apps\web\src\lib\store.ts`
+- `apps\web\src\lib\types.ts`
+- `apps\web\src\lib\api-mappers-contract.test.ts`
+
+### 当前通过范围
+
+- 本地演示 MVP：固定人教版一年级上册 fixture。
+- 教材库默认教材可选择，上传 fixture PDF 可解析。
+- 知识点下拉来自后端，不使用前端 mock 知识点。
+- 选中知识点后可生成裁剪 PDF 和 MinerU Markdown 资产包。
+- 教案生成能追溯到当前教材、知识点、PDF 裁剪件和 Markdown。
+- 前端主页面保持摘要化，PDF/Markdown/教案正文按需弹出。
+
+### 未完成 / 不得误宣称
+
+- 还不是完整教材库平台：上传新教材解析后写入全局教材库的持久化 DB 还未做。
+- 还不是真实 MinerU 异步流水线：非 fixture 课时暂用结构化占位 Markdown。
+- 还没有正式教案库后台和真实历史教案 API；当前“教案参考”是前端演示摘要。
+- `reference_lesson_plan_id` 的后端记录与校验尚未 GA。
+- 多版本、多年级、多出版社泛化不在本轮范围。
+
+### 验证证据
+
+- 后端目标：`python -m pytest apps/api/tests/test_textbook_pdf_parsing.py -q` -> `7 passed`。
+- 后端相关回归：`python -m pytest apps/api/tests/test_textbook_pdf_parsing.py apps/api/tests/test_video_demo_contract.py -q` -> `18 passed`。
+- 前端契约：`bunx tsx src/lib/api-mappers-contract.test.ts` -> 通过。
+- 前端类型：`bunx tsc --noEmit --pretty false` -> 通过。
+- 前端 lint：`bun run lint` -> 通过。
+- 前端 build：`bun run build` -> 通过。
+- 浏览器真实 API 模式：教材库选择成功；知识点下拉包含 9 个课时；切换到 `6-9的加、减法` 后证据包更新为 `kp_006`、教材页 `44-53`、PDF 页 `49-58`、Markdown 路径 `knowledge-points/kp_006/mineru.md`；Markdown 弹窗和“查看教案”抽屉可打开；console error/warn 为 0。
+- HTTP 文件证据：`/api/backend/projects/{project_id}/files/knowledge-points/kp_006/source.pdf` 返回 `200 application/pdf`，大小约 3.7 MB。
+- 证据文件：`docs\qa-audits\t118j-textbook-evidence\evidence.json`。
+- 说明：浏览器截图 API 两次超时，未产出截图；已用 DOM、console、HTTP 文件和后端状态证据替代。
+### 下一步建议
+
+测试工程师接 T117J，按教材库选择和上传 fixture 两条入口做浏览器回归；通过后由首席系统架构师将 `stage-review.md` 的本阶段状态改为通过或返工。
+
+---
 # 最新角色交接记录
+
+## 【本轮】后端工程师 — T109 StateEngine Phase 2 剩余状态写入收口
+
+### 本轮目标
+
+执行 `docs\superpowers\plans\2026-06-23-state-engine-phase2.md`，只收口 StateEngine Phase 2：`RuleExecutor` hard_block、provider failed/blocked、`intro_video_asset` 部分失败、`VideoOrchestrator.final_video` drafted/blocked/needs_review 写入全部接入 StateEngine；不做 RuleExecutor Phase 2、Flywheel、真实 provider E2E 或前端 UI。
+
+### 已完成事项
+
+- `RuleExecutor.run_for_event()` 不再直接 `update_node_state(..., blocked)`，只记录规则结果并抛 `RuleHardBlockError`。
+- `WorkflowService` 新增 `_run_rules_for_event()`，在 `on_save/on_generate` hard block 时调用 `StateEngine.mark_blocked()` 写 `hard_block_rule_hit` transition，reason 包含 `handled_by=StateEngine` 和 `rule_id`。
+- provider 失败路径 `_record_failed_node()` 改为：先写 blocked 版本，再用 `StateEngine.record_written_version(..., trigger=provider_failed)` 记录业务状态迁移。
+- `intro_video_asset` 图片任务失败和最小成功数不足的 blocked 写入改为同一 StateEngine helper 路径。
+- `VideoOrchestrator` 注入 `StateEngine`，`final_video` 的 fake/placeholder 成功、真实任务提交 drafted、provider failed、compose failed、compose success 都在写版本后立即记录 StateEngine transition。
+- `workflow\workflow.yaml` 新增合法触发：`provider_failed`、`final_video_compose_failed`、`video_tasks_submitted`。
+- 新增 `apps\api\tests\test_state_engine_phase2_contract.py`，覆盖 hard_block、final_video generate、provider failure 三条 Phase 2 契约。
+
+### 仍允许存在的直写
+
+- `apps\api\app\store.py`：保留 `write_version()` / `update_node_state()` 作为底层 persistence primitive。
+- `apps\api\app\state_engine.py`：允许调用 `store.update_node_state()`，这是统一状态迁移入口本身。
+- `apps\api\app\services.py`：允许 `store.write_version()` 创建版本，但同一分支必须立即调用 `StateEngine.record_version_ready()` 或 `record_written_version()`。
+- `apps\api\app\video_orchestrator.py`：允许 `store.write_version()` 创建 `final_video` 版本，但同一分支必须立即调用 `StateEngine.record_written_version()`。
+- 测试 fixture 中的 `write_version()` 仍允许用于 seed 状态，不属于业务流程入口。
+
+### 验证证据
+
+```powershell
+python -m pytest apps\api\tests\test_state_engine_phase2_contract.py -q
+```
+
+结果：`3 passed`。
+
+```powershell
+python -m pytest apps\api\tests\test_state_engine_contract.py apps\api\tests\test_rule_executor_contract.py apps\api\tests\test_state_engine_phase2_contract.py -q
+```
+
+结果：`36 passed`。
+
+```powershell
+python -m pytest apps\api\tests\test_video_orchestrator.py apps\api\tests\test_tts_and_final_video.py apps\api\tests\test_real_providers.py apps\api\tests\test_state_engine_phase2_contract.py -q
+```
+
+结果：`82 passed`。
+
+```powershell
+python -m pytest apps\api\tests -q
+```
+
+结果：`204 passed, 2 xfailed`。
+
+```powershell
+rg -n "write_version\(|update_node_state\(" apps\api\app
+```
+
+结果：剩余命中只在 `store.py`、`state_engine.py`、以及服务/视频编排中“写版本后立即接 StateEngine helper”的分支。
+
+### 剩余风险
+
+- 本轮未做真实 provider E2E，真实视频/图片供应商可用性仍按既有 provider readiness 和真实 smoke 流程处理。
+- `store.write_version()` 仍会立即改 `node_state`，当前通过同分支 StateEngine transition 记录业务迁移；若后续要做到物理层完全不改状态，需要更大的 store API 拆分，不在 T109 范围。
+- T110 可以在本轮基础上继续推进 RuleExecutor Phase 2，但不要重新让 R010 或 hard_block 回到 `rule_result_log` 驱动状态。
+
+### 已更新文件
+
+- `apps\api\app\rule_executor.py`
+- `apps\api\app\services.py`
+- `apps\api\app\video_orchestrator.py`
+- `apps\api\tests\test_state_engine_phase2_contract.py`
+- `apps\api\tests\test_video_orchestrator.py`
+- `workflow\workflow.yaml`
+- `workflow\multi-agent\dispatch.md`
+- `workflow\multi-agent\roles\backend-engineer.md`
+- `workflow\multi-agent\handoffs\latest.md`
+
+### 建议下一个接手角色
+
+首席系统架构师复核 T109；通过后再派发 T110 RuleExecutor Phase 2 准入准备。
+
+## 【本轮】首席系统架构师 — T108 StateEngine Phase 1 架构复核
+
+### 本轮目标
+
+复核 T104-T107 的 StateEngine Phase 1 交付，裁决状态迁移入口、R010 依赖门禁归属、旧项目/旧节点兼容风险、下一阶段方向和是否需要返工。
+
+### 复核依据
+
+- T104 后端交接：`StateEngine.transition()`、主状态流收口、R010 诊断日志、`/retry` 状态流。
+- T105 后端交接：`StateEngine.assert_can_generate()` 作为依赖门禁主入口，R010 从 RuleExecutor 结果中移出。
+- T106 前端交接：真实 API 工作区展示 `latest_transition`、`review_reason` 和阻断/规则提示文案。
+- T107 测试报告：`docs\qa-audits\2026-06-23-t107-state-engine-phase1-regression.md`。
+- QA 证据目录：`docs\qa-audits\t107-state-engine-phase1-evidence\20260623-113852\`。
+- 关键代码 diff：`apps\api\app\state_engine.py`、`apps\api\app\services.py`、`apps\api\app\rule_executor.py`、`apps\web\src\components\screens\ProjectWorkspaceScreen.tsx`、`apps\web\src\lib\api-mappers.ts`。
+
+### 新鲜验证
+
+```powershell
+python -m pytest apps/api/tests/test_state_engine_contract.py apps/api/tests/test_rule_executor_contract.py -q
+```
+
+结果：`33 passed in 23.20s`。
+
+```powershell
+python -m pytest apps/api/tests -q
+```
+
+结果：`201 passed, 2 xfailed in 84.91s`。
+
+```powershell
+cd apps\web
+bun src/lib/api-mappers-contract.test.ts
+bunx tsc --noEmit --pretty false
+bun run lint
+bun run build
+```
+
+结果：全部退出码 0，`bun run build` 成功完成 Next.js 生产构建。
+
+浏览器证据复核：
+
+- `browser-console.json` 为 `[]`。
+- `browser-workspace-snapshot.txt` 显示真实 API 工作区可见“上游未确认：请先确认依赖节点后再继续”。
+- `blocked-lesson-plan-transitions.json` 显示 `trigger=dependency_gate_blocked`，`reason_json.rule_id=R010`，`handled_by=StateEngine`。
+- `rule-result-r010-after-block.json` 为空，说明 R010 不再落 `rule_result_log`。
+
+### 裁决
+
+- StateEngine 是否成为状态迁移唯一入口：【有条件通过】。主流程 `generate/edit/approve/retry/config skip/restore/cascade` 和依赖门禁已经由 StateEngine 承接；但全系统层面仍有剩余直写路径。
+- R010 是否归入 StateEngine：【通过】。R010 不再由 RuleExecutor 写 `rule_result_log`，依赖阻断由 `state_transition_log.trigger=dependency_gate_blocked` 记录。
+- 旧项目、旧节点状态兼容风险：【低到中】。现有合法业务状态被 `store._assert_workflow_status()` 保护，测试覆盖 skipped、blocked、needs_review 等兼容路径；风险集中在历史 blocked 节点、provider failed/blocked 和异步 final_video。
+- 是否进入下一阶段：【可以，但顺序调整】。先进入 StateEngine Phase 2 收口剩余状态写入旁路，再进入 RuleExecutor Phase 2 / Flywheel。
+- 是否需要返工：【不返工 T104-T107】。本轮按 Phase 1 目标通过；新增 T109/T110 处理剩余架构债。
+
+### 发现的剩余架构债
+
+- `RuleExecutor.run_for_event()` 在 hard_block 且 `on_save/on_generate` 时仍直接 `store.update_node_state(..., "blocked")` 并写 transition。
+- `WorkflowService._record_failed_node()`、`intro_video_asset` 部分失败路径仍直接 `store.write_version(..., "blocked")`。
+- `VideoOrchestrator` 对 `final_video` 的 `drafted/blocked/needs_review` 仍直接 `store.write_version()`。
+- 因此不能对外宣称“全系统所有状态迁移唯一入口已完成”，只能宣称“Phase 1 主流程入口已完成”。
+
+### 已更新文件
+
+- `workflow\multi-agent\dispatch.md`
+- `workflow\multi-agent\stage-review.md`
+- `workflow\multi-agent\handoffs\latest.md`
+- `workflow\multi-agent\roles\architect.md`
+
+### 下一棒
+
+后端工程师接 T109：StateEngine Phase 2 收口剩余状态写入旁路。T109 完成并测试通过后，后端再接 T110：RuleExecutor Phase 2 准入准备。
+
+## 【本轮】测试工程师 — T107 StateEngine Phase 1 专项回归
+
+### 本轮目标
+
+只测新增 StateEngine 状态流和旧阻塞点，不做真实 provider 全链路；验证 T104-T106 交付后，后端状态机、R010 依赖门禁、规则 warning/hard_block 区分和前端真实 API 诊断展示是否可回归。
+
+### 已完成事项
+
+- 启动隔离 API：`http://127.0.0.1:8107`，`PROVIDER_MODE=fake`，视频/图片/TTS 均为 placeholder，storage 为 `storage-t107-state-engine-phase1`。
+- 启动 Web 真实 API 模式：`http://127.0.0.1:3107`，代理到 `http://127.0.0.1:8107`。
+- 采集 API 证据目录：`docs\qa-audits\t107-state-engine-phase1-evidence\20260623-113852\`。
+- API 专项覆盖：
+  - 创建项目后 `project_config=approved`。
+  - 上游未 approved 时 `lesson_plan/generate` 返回 `409 / UPSTREAM_NOT_APPROVED`。
+  - R010 阻断写入 `state_transition_log.trigger=dependency_gate_blocked`，`reason.handled_by=StateEngine`，且不写 `rule_result_log`。
+  - `textbook_parse` approved 后，`lesson_plan/generate` 可继续并进入 `needs_review`。
+  - `lesson_plan/edit` 后进入 `needs_review`，transition 包含 `user_edit`、`user_save_edit`。
+  - `lesson_plan/approve` 后进入 `approved`，transition 包含 `user_approve`。
+  - `needs_intro_video=false` 的 skipped 分支允许 PPT 下游继续生成；skipped 节点自身 generate 返回 `NODE_SKIPPED`。
+  - 规则 warning 返回 `RULE_WARNING`，hard block 返回 `RULE_VIOLATION_R004`，与 StateEngine 依赖阻断语义不混淆。
+- 浏览器真实 API 工作区验证：
+  - `T107-Browser-Diagnostics` 项目可打开。
+  - `PPT 总装方案` 节点展示 `review_reason`、`approved → needs_review`、`cascade_invalidate` 和重审详情。
+  - `公开课教案` 节点展示 `drafted → needs_review`、`user_save_edit` 和状态迁移详情。
+  - 触发未满足依赖的下游生成时，页面展示“上游未确认：请先确认依赖节点后再继续”，toast 保留 `UPSTREAM_NOT_APPROVED`。
+  - 浏览器 console error/warn 为空。
+
+### 验证证据
+
+```powershell
+python -m pytest apps\api\tests -q
+```
+
+结果：`201 passed, 2 xfailed in 67.78s`。
+
+```powershell
+cd apps\web
+bun src/lib/api-mappers-contract.test.ts
+bun src/lib/admin-rules-contract.test.ts
+bun src/lib/api-proxy-contract.test.ts
+bun src/lib/api-warning-override-contract.test.ts
+bunx tsc --noEmit --pretty false
+bun run lint
+bun run build
+```
+
+结果：全部退出码 0，`bun run build` 成功。
+
+### 关键结论
+
+- T107 结论：【通过】。
+- QA 报告：`docs\qa-audits\2026-06-23-t107-state-engine-phase1-regression.md`。
+- 证据目录：`docs\qa-audits\t107-state-engine-phase1-evidence\20260623-113852\`。
+- 阻塞项：无。
+
+### 已更新文件
+
+- `docs\qa-audits\2026-06-23-t107-state-engine-phase1-regression.md`
+- `docs\qa-audits\t107-state-engine-phase1-evidence\20260623-113852\*`
+- `workflow\multi-agent\roles\qa-engineer.md`
+- `workflow\multi-agent\handoffs\latest.md`
+- `workflow\multi-agent\dispatch.md`
+
+### 剩余风险 / 上线前再修
+
+- 本轮不是上线验收，不覆盖真实 provider 图片/视频/PPT 全链路。
+- StateEngine Phase 2 仍建议继续收口异步任务、provider failed/blocked 路径和 `VideoOrchestrator` 直接写版本路径。
+- 浏览器只做真实 API 模式最小核验，未覆盖多浏览器、多分辨率。
+
+### 建议下一个接手角色
+
+首席系统架构师复核 T107，并裁决是否进入 StateEngine Phase 2 或下一阶段 RuleExecutor/Flywheel。
+
+## 【本轮】前端工程师 — T106 StateEngine 状态诊断展示
+
+### 本轮目标
+
+轻量接入后端 StateEngine 诊断信息，不做工作区大重构，让真实 API 模式下的节点详情能清楚展示节点状态、重审原因、最近状态迁移和上游依赖阻断原因。
+
+### 已完成事项
+
+- `WorkflowStage` 增加 `latestTransition`，前端保留后端 `latest_transition`。
+- `mapApiManifest()` / `mapApiNodeDetailToStage()` 已把 manifest 和节点详情中的 `latest_transition`、`review_reason` 映射到工作区 stage。
+- 工作区节点详情标题下方新增轻量 `StateEngineDiagnostics`，仅真实 API 模式渲染。
+- 诊断区展示：
+  - 当前 UI 节点状态。
+  - `review_reason` / `reviewTrigger`。
+  - 最近迁移 `from_status -> to_status`、`trigger`、`triggered_at`。
+  - 上游阻断、规则警告、硬阻断的可读说明。
+- API 动作错误文案补充分类：
+  - `UPSTREAM_NOT_APPROVED`：上游未确认。
+  - `RULE_WARNING`：规则警告可覆盖。
+  - `RULE_VIOLATION*`：硬阻断不可继续。
+- demo/mock 模式不展示 StateEngine 诊断块，避免影响演示假数据口径。
+
+### 修改文件
+
+- `apps\web\src\lib\types.ts`
+- `apps\web\src\lib\api-mappers.ts`
+- `apps\web\src\lib\api-mappers-contract.test.ts`
+- `apps\web\src\components\screens\ProjectWorkspaceScreen.tsx`
+- `workflow\multi-agent\roles\frontend-ui-engineer.md`
+- `workflow\multi-agent\handoffs\latest.md`
+- `workflow\multi-agent\dispatch.md`
+
+### 验证证据
+
+```powershell
+cd apps\web
+bun src/lib/api-mappers-contract.test.ts
+bunx tsc --noEmit --pretty false
+bun run lint
+bun run build
+```
+
+结果：已通过。
+
+### 剩余风险 / 需要后端或测试确认
+
+- 本轮未启动本地 API 和浏览器，不声明浏览器 smoke 已通过。
+- 需要 QA 用真实阻断节点复核：未确认上游时是否显示 `dependency_gate_blocked/R010`，规则警告是否仍能走 override 流程。
+- 后端如后续新增独立状态诊断接口，前端可再替换当前从节点详情/manifest 读取的轻量展示。
+
+## 【本轮】后端工程师2 — T105 R010 依赖门禁归入 StateEngine
+
+### 本轮目标
+
+把“上游必须 approved/skipped”的依赖检查从 RuleExecutor 旁路彻底收口到 StateEngine；RuleExecutor 只负责质量规则执行，同时保持 `UPSTREAM_NOT_APPROVED` 错误语义和 `/rules/coverage` 可解释性。
+
+### 已完成事项
+
+- `StateEngine.assert_can_generate()` 成为依赖门禁主入口；`assert_upstreams_passable()` 保留为兼容代理。
+- `WorkflowService._assert_dependencies()` 统一调用 StateEngine，不再调用 `RuleExecutor.record_r010_result()` 写 R010 规则结果。
+- `final_delivery/generate` 也纳入统一依赖门禁，避免特殊分支绕过 StateEngine。
+- 依赖不满足时写入 `state_transition_log`，`trigger=dependency_gate_blocked`，`reason` 包含 `rule_id=R010`、`handled_by=StateEngine` 和未通过上游节点状态。
+- RuleExecutor 对 `dependency_check/dependency_passable` 不再执行质量规则检查；`/rules/coverage` 中 R010 仍显示 implemented，并标明 `handled_by=StateEngine`。
+- 补充测试覆盖未 approved 阻断、skipped 放行、多上游混合状态、旧 RuleExecutor 结果不再影响 R010 行为、coverage 解释状态。
+
+### 验证证据
+
+```powershell
+python -m pytest apps\api\tests\test_state_engine_contract.py apps\api\tests\test_rule_executor_contract.py -q
+```
+
+结果：`33 passed`。
+
+```powershell
+python -m pytest apps\api\tests -q
+```
+
+结果：`201 passed, 2 xfailed`。
+
+### 当前状态
+
+- T105 已完成。
+- R010 不再作为 RuleExecutor 质量规则执行结果落 `rule_result_log`；诊断改看 `state_transition_log.trigger=dependency_gate_blocked`。
+- 错误码兼容保持：API 仍返回 `409 / UPSTREAM_NOT_APPROVED`。
+- 管理员规则控制面对 R010 的启停或 check_json 改动不应改变 StateEngine 依赖门禁行为；coverage 只负责解释归属。
+
+### 下个角色需要知道的上下文
+
+- 前端/QA 如需展示依赖阻断详情，应优先读取节点 latest_transition 或 transition log 中的 `dependency_gate_blocked` reason。
+- RuleExecutor 后续只做质量规则；不要再把 DAG 上游依赖写回 `workflow\rules\R010` 的运行时执行分支。
+
+## 【本轮】后端工程师1 — T104 StateEngine Phase 1 核心状态机收口
+
+### 本轮目标
+
+把 `generate/edit/approve/redo/skip` 的状态流从 `WorkflowService` 零散逻辑中收口到 `StateEngine`，形成统一状态迁移入口；所有主链路状态变更必须写入 `state_transition_log`，并保持现有 API 响应兼容。
+
+### 已完成事项
+
+- `apps\api\app\state_engine.py` 新增 `StateEngine.transition()`，统一执行状态合法性校验、`node_state` 更新、当前版本状态同步和 `state_transition_log` 记录。
+- `approve()`、`cascade_invalidate()`、`apply_config_change()`、`restore_config_skips()` 改为复用 `transition()`。
+- `record_version_ready()` 显式记录两段状态流：
+  - `not_started -> drafted -> needs_review`
+  - `approved -> drafted -> needs_review`
+  - `blocked -> drafted -> needs_review`
+- `apps\api\app\services.py` 新增 `retry_node()`，`/retry` 先记录 `user_redo` 到 `drafted`，再复用生成链路，API 响应保持原生成响应格式。
+- R010 依赖门禁改由 StateEngine 记录到 `state_transition_log`，触发器为 `dependency_gate_blocked`，`reason` 中包含脱敏 JSON：`rule_id=R010`、`handled_by=StateEngine`、阻断上游节点和状态。
+- `RuleExecutor` 不再写 R010 的 `rule_result_log`，避免控制面规则和状态机依赖门禁双写。
+- 补充/更新契约测试，覆盖 generate 两段迁移、edit 后失效、approve、skip/restore、redo、R010 状态机诊断日志。
+
+### 验证证据
+
+```powershell
+python -m pytest apps/api/tests/test_state_engine_contract.py apps/api/tests/test_ppt_runtime_contract.py apps/api/tests/test_video_demo_contract.py apps/api/tests/test_rule_executor_contract.py apps/api/tests/test_api_contract.py -q
+```
+
+结果：`63 passed`。
+
+```powershell
+python -m pytest apps/api/tests -q
+```
+
+结果：`201 passed, 2 xfailed`。
+
+### 当前状态
+
+- StateEngine Phase 1 已满足本地后端契约验收。
+- 前端 API 响应格式未变，`generate/edit/approve/retry` 调用方式不变。
+- 下游未 approve 仍不能生成；被上游编辑失效的 approved 下游会降级到 `needs_review` 并保留内容。
+- 跳过分支仍由 `project_config.needs_intro_video=false` 驱动，状态变更写入 transition log。
+
+### 剩余风险
+
+- 本轮未改完整 DAG、规则控制面 UI 或前端。
+- `VideoOrchestrator` 真实/异步视频路径和 provider 失败路径仍有少量直接 `store.write_version(..., blocked|needs_review|drafted)`；Phase 2 建议继续把 blocked/async task 状态写入统一收口到 StateEngine。
+- R010 现在是 StateEngine 诊断日志，不再是 `rule_result_log`，测试和前端若要展示依赖阻断原因，应读取节点 `latest_transition` / `review_reason` 或未来新增状态机诊断接口。
+
+### 已更新文件
+
+- `apps\api\app\state_engine.py`
+- `apps\api\app\services.py`
+- `apps\api\app\main.py`
+- `apps\api\tests\test_state_engine_contract.py`
+- `apps\api\tests\test_rule_executor_contract.py`
+- `apps\api\tests\test_ppt_runtime_contract.py`
+- `workflow\multi-agent\dispatch.md`
+- `workflow\multi-agent\roles\backend-engineer.md`
+- `workflow\multi-agent\handoffs\latest.md`
+
+### 建议下一个接手角色
+
+首席系统架构师复核 T104 是否通过，并决定 StateEngine Phase 2 是否继续收口 `blocked`、异步任务和 `VideoOrchestrator` 直接写版本路径。
+
+## 【本轮】全栈架构师 — T103 Workflow Control Plane Phase 1
+
+### 本轮目标
+
+继续上次未完成的控制面重构：把质量门禁规则从 `workflow\rules\*.yaml` + `RuleExecutor` 规则 ID 硬编码，升级为 `storage\control_plane.db` 运行时真源；管理员可治理规则版本；新规则发布只影响新项目，旧项目默认不迁移。
+
+### 已完成事项
+
+- 新增 `apps\api\app\control_plane.py`，建立 `rule_templates`、`rule_versions`、`rule_set_versions`、`rule_release_channels`、`rule_audit_log`、`project_rule_binding`。
+- API 启动时从 `workflow\rules\index.yaml` seed 规则基线；已有规则版本不被文件 seed 覆盖。
+- 新项目创建时绑定当前 active rule set；控制面改造前已存在且未绑定的项目，会在 API 启动时补 pin 到当前 active rule set，避免后续规则发布隐式迁移旧项目。
+- `RuleExecutor` 改为读取项目绑定 rule set 并解释 `check_json` 通用算子，不再维护 `IMPLEMENTED_RULE_IDS` 和规则 ID 分支。
+- R001/R004/R005/R006/R023/R024/R026/R030 已迁移为参数化规则。
+- 新增管理员规则 API：列表、详情、创建草稿、发布、回滚、审计、只读 workflow graph。
+- 新增前端 `AdminWorkflowScreen`，接入侧栏“规则控制面”、快捷键 `G W`、命令面板入口、规则编辑/发布/回滚/审计日志。
+- 新增正式交接文档 `docs\workflow-control-plane-phase1-handoff.md`。
+- 已更新 `dispatch.md`、`stage-review.md`、`roles\architect.md`、`shared-facts.md`、`decisions.md`。
+
+### 验证证据
+
+```powershell
+python -m pytest apps/api/tests/test_control_plane_rules.py apps/api/tests/test_rule_executor_contract.py -q
+```
+
+结果：`23 passed`。
+
+```powershell
+python -m pytest apps/api/tests -q
+```
+
+结果：`196 passed, 2 xfailed`。
+
+```powershell
+cd apps\web
+bun src/lib/admin-rules-contract.test.ts
+bun run lint
+bun run build
+```
+
+结果：三项均通过，其中 `bun run build` 成功完成 Next.js 生产构建。
+
+### 当前状态
+
+- Workflow Control Plane Phase 1 通过，范围仅限规则控制面。
+- 管理员可以治理质量门禁规则，但不能修改完整 DAG、节点依赖、schema 或状态机。
+- 生产级 admin JWT/RBAC/session 尚未完成；当前后端 admin API 仍依赖 `BACKEND_API_TOKEN`，前端本地代理只是演示级角色拦截。
+- PromptRegistry 仍是独立控制面，后续再评估合并到统一 Control Plane。
+
+### 下个角色需要知道的上下文
+
+- 下一阶段仍应回到 StateEngine 深化：统一 generate/edit/approve/redo/skip 状态流、R010 依赖检查和迁移审计，不要直接扩大 DAG 编辑权限。
+- 若要上线管理员后台，必须先做生产级鉴权和权限边界，不得把当前本地 cookie 拦截当成安全闭环。
 
 ## 【本轮】全栈架构师 — T102 architecture-optimization-v2 第0周 PPT 主链路
 
@@ -4354,7 +6409,5 @@ fake 模式结果：
 - 运维已完成 T004 Runbook 草案，未实现 Dockerfile/compose，也未修改业务代码。
 - 建议首席系统架构师先裁决部署路线；随后后端工程师补 API 依赖清单、`.env.example` 和生产启动边界；再由运维补容器化或 Cloud Run 配置草案。
 - 测试工程师可基于 `docs\ops-runbook-draft.md` 第 11 节建立新人冷启动回归清单。
-
-
 
 

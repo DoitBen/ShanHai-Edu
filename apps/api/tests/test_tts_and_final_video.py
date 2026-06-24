@@ -56,7 +56,7 @@ def test_minimax_tts_provider_writes_audio_from_hex_response(tmp_path: Path):
         return {"data": {"audio": "49443304000000000000"}}
 
     provider = MinimaxTTSProvider(
-        api_key="test-key",
+        api_key="fake",
         base_url="https://api.minimaxi.com",
         model="speech-2.8-hd",
         voice_id="Chinese (Mandarin)_Gentleman",
@@ -135,7 +135,7 @@ def test_final_video_generate_creates_audio_manifest_and_schema_fields(tmp_path:
     project_dir = Path(project["project_dir"])
 
     assert generated["video_path"] == FINAL_VIDEO_REL_PATH
-    assert content["voice_gender"] == "unknown"
+    assert content["voice_gender"] == "male"
     assert content["voice_language"] == "zh-CN"
     assert content["audio_path"] == content["narration_audio_path"]
     assert content["subtitle_path"] == content["subtitle_srt_path"]

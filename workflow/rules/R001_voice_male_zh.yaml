@@ -4,11 +4,16 @@ trigger_node: final_video
 trigger_event: on_approve_attempt
 severity: warning
 check:
-  type: jsonpath_assertion
-  expression: |
-    $.audio_verified == true
-    AND $.voice_language == "zh-CN"
-    AND $.narration_audio_path IS NOT EMPTY
+  type: all
+  checks:
+    - type: field_equals
+      field: audio_verified
+      value: true
+    - type: field_equals
+      field: voice_language
+      value: zh-CN
+    - type: field_exists
+      field: narration_audio_path
 action_message: 建议确认旁白音频已生成、已验证且语言明确；声线不作为硬阻断
 executor: builtin
 legacy_source: 01_执行入口.md「事故防复发规则」已降级

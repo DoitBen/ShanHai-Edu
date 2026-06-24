@@ -65,6 +65,8 @@ apps/web/dist/
 
 # QA 截图存档（不进 git）
 apps/web/download/
+docs/qa-audits/*-evidence/
+docs/qa-audits/manual-real-e2e-continuation/
 
 # 上传素材（logo 已移到 public/）
 apps/web/upload/
@@ -76,11 +78,13 @@ apps/web/dev.log
 *.bak
 *.backup
 *~
+*.zip
 
 # 临时
 .tmp/
 tmp/
 *.tmp
+workbench/
 
 # 百度网盘 / OneDrive 临时文件
 *.baiduyun.uploading.cfg

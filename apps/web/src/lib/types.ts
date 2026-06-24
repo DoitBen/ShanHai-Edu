@@ -62,6 +62,10 @@ export interface ApiProject {
   textbook_version: string;
   volume: string;
   lesson_type: string;
+  textbook_id?: string | null;
+  textbook_version_id?: string | null;
+  knowledge_point_id?: string | null;
+  reference_lesson_plan_id?: string | null;
   created_at: string;
   status: string;
   project_dir: string;
@@ -74,6 +78,10 @@ export interface CreateProjectPayload {
   textbook_version: string;
   volume: string;
   lesson_type: string;
+  textbook_id?: string;
+  textbook_version_id?: string;
+  knowledge_point_id?: string;
+  reference_lesson_plan_id?: string;
   character_profile?: string;
   character_safety_rule?: string;
   visual_palette?: string;
@@ -134,6 +142,40 @@ export interface ApiRuleSummary {
 export interface ApiManifest {
   project: ApiProject;
   nodes: ApiNodeState[];
+}
+
+export interface ApiWorkspaceSubGate {
+  gate_id?: string;
+  id?: string;
+  title?: string;
+  label?: string;
+  state?: string;
+  status?: string;
+  detail?: string;
+  summary?: string;
+  lock_reason?: string | null;
+  review_summary?: string | null;
+  primary_action?: string | null;
+  [key: string]: unknown;
+}
+
+export interface ApiWorkspaceStep {
+  step_id: string;
+  title: string;
+  state: string;
+  primary_action?: string | null;
+  lock_reason?: string | null;
+  review_summary?: string | null;
+  sub_gates?: ApiWorkspaceSubGate[];
+  [key: string]: unknown;
+}
+
+export interface ApiProjectWorkspace {
+  project_id?: string;
+  current_step_id?: string | null;
+  steps: ApiWorkspaceStep[];
+  developer_diagnostics?: Record<string, unknown> | null;
+  [key: string]: unknown;
 }
 
 export interface ApiNodeDetail extends ApiNodeState {
@@ -233,6 +275,10 @@ export interface ProjectMeta {
   textbookVersion: string;
   volume: string;
   lessonType: string;
+  textbookId?: string | null;
+  textbookVersionId?: string | null;
+  knowledgePointId?: string | null;
+  referenceLessonPlanId?: string | null;
   currentStage: string;
   currentStageTitle?: string;
   progress: number;
@@ -265,6 +311,7 @@ export interface WorkflowStage {
   duration?: string;
   reviewReason?: string;
   reviewTrigger?: string;
+  latestTransition?: ApiStateTransition | null;
   capabilities?: ApiNodeCapabilities;
   artifact?: ApiNodeArtifact | null;
   ruleSummary?: ApiRuleSummary;
@@ -282,6 +329,8 @@ export interface TextbookParseResult {
   keyPoints: string[];
   difficulties: string[];
   textbookTitle?: string;
+  textbookId?: string;
+  textbookVersionId?: string;
   knowledgePoints?: TextbookKnowledgePoint[];
   selectedKnowledgePointId?: string;
   selectedKnowledgePointMarkdown?: string;
@@ -289,6 +338,25 @@ export interface TextbookParseResult {
   selectedKnowledgePointPages?: {
     textbookPages?: string;
     pdfPages?: string;
+  };
+  selectedKnowledgePointAssetPackage?: TextbookKnowledgePointAssetPackage;
+}
+
+export interface TextbookKnowledgePointAssetPackage {
+  assetId?: string;
+  sourcePdfPath?: string;
+  slicePdfPath?: string;
+  mineruMdPath?: string;
+  markdownPath?: string;
+  textbookPages?: string;
+  pdfPages?: string;
+  parseStatus?: string;
+  reviewStatus?: string;
+  mineruJobId?: string;
+  checksum?: string;
+  downloadUrls?: {
+    slicePdf?: string;
+    mineruMd?: string;
   };
 }
 
@@ -301,6 +369,20 @@ export interface TextbookKnowledgePoint {
   pdfPageStart?: number;
   pdfPageEnd?: number;
   keywords?: string[];
+  parseStatus?: string;
+  reviewStatus?: string;
+  assetPackage?: TextbookKnowledgePointAssetPackage;
+}
+
+export interface TextbookChapter {
+  chapter_id: string;
+  title: string;
+  page_start?: number;
+  page_end?: number;
+  pdf_page_start?: number;
+  pdf_page_end?: number;
+  source?: string;
+  review_status?: string;
 }
 
 export interface ApiTextbookMeta {
@@ -309,6 +391,33 @@ export interface ApiTextbookMeta {
   textbook_version?: string;
   volume?: string;
   title?: string;
+  textbook_id?: string;
+  textbook_version_id?: string;
+  publisher?: string;
+  version?: string;
+  toc_template_id?: string;
+  page_mapping_strategy?: string;
+  parser_profile?: string;
+  verification_status?: string;
+  review_status?: string;
+}
+
+export interface ApiTextbookKnowledgePointAssetPackage {
+  asset_id?: string;
+  source_pdf_path?: string;
+  slice_pdf_path?: string;
+  mineru_md_path?: string;
+  markdown_path?: string;
+  textbook_pages?: string;
+  pdf_pages?: string;
+  parse_status?: string;
+  review_status?: string;
+  mineru_job_id?: string;
+  checksum?: string;
+  download_urls?: {
+    slice_pdf?: string;
+    mineru_md?: string;
+  };
 }
 
 export interface ApiTextbookKnowledgePoint {
@@ -320,6 +429,9 @@ export interface ApiTextbookKnowledgePoint {
   pdf_page_start?: number;
   pdf_page_end?: number;
   keywords?: string[];
+  parse_status?: string;
+  review_status?: string;
+  asset_package?: ApiTextbookKnowledgePointAssetPackage;
 }
 
 export interface ApiSelectedKnowledgePoint {
@@ -330,6 +442,9 @@ export interface ApiSelectedKnowledgePoint {
     pdf_pages?: string;
   };
   markdown_path?: string;
+  mineru_md_path?: string;
+  slice_pdf_path?: string;
+  asset_package?: ApiTextbookKnowledgePointAssetPackage;
   markdown?: string;
 }
 
@@ -344,13 +459,110 @@ export interface ApiTextbookParseContent {
   key_points?: string[];
   difficulties?: string[];
   textbook_meta?: ApiTextbookMeta;
+  textbook_id?: string;
+  textbook_version_id?: string;
   knowledge_points?: ApiTextbookKnowledgePoint[];
   selected_knowledge_point_id?: string;
   selected_knowledge_point?: ApiSelectedKnowledgePoint;
   parse_artifacts?: {
     outline_path?: string;
     markdown_path?: string;
+    mineru_md_path?: string;
+    slice_pdf_path?: string;
   };
+}
+
+export interface ApiTextbookLibraryItem extends ApiTextbookMeta {
+  textbook_id: string;
+  textbook_version_id: string;
+  source_pdf_path?: string;
+  knowledge_point_count?: number;
+  status?: string;
+}
+
+export interface ApiTextbookLibrary {
+  textbooks: ApiTextbookLibraryItem[];
+}
+
+export interface ApiTextbookUploadResult {
+  textbook_id: string;
+  textbook_version_id: string;
+  job_id: string;
+  parse_status: string;
+  filename?: string;
+}
+
+export interface ApiTextbookParseJob {
+  job_id: string;
+  textbook_id: string;
+  textbook_version_id: string;
+  knowledge_point_id?: string | null;
+  job_type: string;
+  status: string;
+  provider: string;
+  error_message?: string | null;
+  result?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiTextbookKnowledgePoints {
+  textbook?: ApiTextbookMeta;
+  textbook_id: string;
+  textbook_version_id: string;
+  chapters?: TextbookChapter[];
+  knowledge_points: ApiTextbookKnowledgePoint[];
+}
+
+export interface ApiTextbookKnowledgePointAsset extends ApiTextbookKnowledgePointAssetPackage {
+  textbook_id: string;
+  textbook_version_id: string;
+  knowledge_point_id: string;
+  title?: string;
+}
+
+export interface ApiTextbookAssetBatchResult {
+  job_id: string;
+  textbook_id: string;
+  textbook_version_id: string;
+  job_type: "textbook_split" | "mineru_extract_batch" | string;
+  status: string;
+  requested_count: number;
+  successful_count: number;
+  failed_count: number;
+  assets: ApiTextbookKnowledgePointAsset[];
+  failures: Array<{
+    knowledge_point_id?: string;
+    message?: string;
+    asset?: ApiTextbookKnowledgePointAsset;
+  }>;
+}
+
+export interface ApiLessonPlanLibraryItem {
+  lesson_plan_id: string;
+  title: string;
+  source_project_id: string;
+  source_textbook_id?: string | null;
+  source_textbook_version_id?: string | null;
+  source_knowledge_point_id?: string | null;
+  source_slice_pdf_path?: string | null;
+  source_mineru_md_path?: string | null;
+  updated_at: string;
+  created_at: string;
+  markdown?: string;
+  metadata?: Record<string, unknown>;
+  created_by?: string;
+}
+
+export interface ApiLessonPlanLibrary {
+  lesson_plans: ApiLessonPlanLibraryItem[];
+}
+
+export interface UploadLessonPlanLibraryMetadata {
+  textbook_id?: string;
+  textbook_version_id?: string;
+  knowledge_point_id?: string;
+  created_by?: string;
 }
 
 export type VideoIntroType =
@@ -408,8 +620,10 @@ export interface PendingItem {
 
 export interface NewProjectDraft {
   step: number;
+  sourceMode?: "textbook-library" | "lesson-plan";
   // step 1
   name: string;
+  nameEdited: boolean;
   subject: string;
   grade: string;
   textbookVersion: string;
@@ -429,6 +643,13 @@ export interface NewProjectDraft {
   parseStatus: "idle" | "parsing" | "done" | "failed";
   parseError: string | null;
   selectedKnowledgePointId: string;
+  selectedAssetKnowledgePointIds?: string[];
+  assetActionStatus?: "idle" | "imported" | "splitting" | "split_ready" | "extracting" | "needs_review" | "failed";
+  selectedLessonReferenceId?: string;
+  lessonReferences?: ApiLessonPlanLibraryItem[];
+  lessonPlanFileName?: string;
+  lessonPlanContent?: string;
+  lessonPlanSummary?: string;
   // step 3
   videoPurpose: string;
   videoTypes: VideoIntroType[];
@@ -493,13 +714,92 @@ export interface VideoModelOption {
   fullRun: boolean;
 }
 
+export type AdminRuleSeverity = "hard_block" | "warning" | "info";
+export type AdminRuleStatus = "active" | "draft" | "archived";
+
+export interface AdminRuleVersion {
+  version_id: string;
+  rule_id: string;
+  version_number: number;
+  status: AdminRuleStatus;
+  severity: AdminRuleSeverity;
+  enabled: boolean;
+  check_json: Record<string, unknown>;
+  action_message: string;
+  source: string;
+  source_file_path?: string | null;
+  notes?: string | null;
+  created_by: string;
+  created_at: string;
+  activated_at?: string | null;
+}
+
+export interface AdminRule {
+  rule_id: string;
+  title: string;
+  trigger_node: string;
+  trigger_event: string;
+  executor?: string | null;
+  legacy_source?: string | null;
+  created_at: string;
+  active_version: AdminRuleVersion | null;
+  versions: AdminRuleVersion[];
+}
+
+export interface AdminRuleAuditLog {
+  audit_id: string;
+  rule_id?: string | null;
+  version_id?: string | null;
+  rule_set_version_id?: string | null;
+  action: string;
+  actor: string;
+  notes?: string | null;
+  created_at: string;
+}
+
+export interface AdminWorkflowGraphRule {
+  rule_id: string;
+  title?: string | null;
+  trigger_event?: string | null;
+  severity?: AdminRuleSeverity | null;
+  enabled?: boolean | null;
+  version_id?: string | null;
+}
+
+export interface AdminWorkflowGraphNode {
+  id: string;
+  title?: string | null;
+  step?: number | string | null;
+  branch?: string | null;
+  depends_on: string[];
+  rules: AdminWorkflowGraphRule[];
+}
+
+export interface AdminWorkflowGraph {
+  version: string;
+  editable: boolean;
+  edit_scope: string;
+  nodes: AdminWorkflowGraphNode[];
+}
+
+export interface CreateAdminRuleVersionPayload {
+  severity: AdminRuleSeverity;
+  enabled: boolean;
+  action_message: string;
+  check_json: Record<string, unknown>;
+  created_by?: string;
+  notes?: string;
+}
+
 export type ScreenKey =
   | "dashboard"
   | "new-project"
   | "project"
   | "config"
   | "logs"
-  | "scripts";
+  | "scripts"
+  | "admin-workflow"
+  | "admin-textbook-library";
 
 export interface AuthUser {
   username: string;

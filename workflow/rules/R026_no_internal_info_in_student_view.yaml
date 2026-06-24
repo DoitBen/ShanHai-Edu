@@ -4,7 +4,7 @@ trigger_node: pptx_artifact
 trigger_event: on_approve_attempt
 severity: hard_block
 check:
-  type: text_scan
+  type: pptx_visible_text_not_contains
   forbidden_patterns:
     - "准确性提醒"
     - "QA 检查点"

@@ -12,6 +12,8 @@ import {
   ScrollText,
   TerminalSquare,
   LifeBuoy,
+  GitBranch,
+  LibraryBig,
 } from "lucide-react";
 
 type NavItem = {
@@ -40,6 +42,21 @@ const NAV: NavItem[] = [
     screen: "config",
     adminOnly: true,
     shortcut: "G C",
+  },
+  {
+    key: "admin-workflow",
+    label: "规则控制面",
+    icon: GitBranch,
+    screen: "admin-workflow",
+    adminOnly: true,
+    shortcut: "G W",
+  },
+  {
+    key: "admin-textbook-library",
+    label: "管理教材库",
+    icon: LibraryBig,
+    screen: "admin-textbook-library",
+    adminOnly: true,
   },
   { key: "logs", label: "日志", icon: ScrollText, screen: "logs", adminOnly: true, shortcut: "G L" },
   {

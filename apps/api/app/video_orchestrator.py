@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .providers import FakeProvider, ProviderError, sanitize_provider_excerpt
+from .state_engine import StateEngine
 from .store import ProjectStore, now_iso
 from .video_outputs import FINAL_VIDEO_REL_PATH, compose_final_video_from_clips, compose_final_video_with_audio, write_concat_manifest, write_placeholder_narration_audio, write_subtitle_srt
 
@@ -13,6 +14,7 @@ class VideoOrchestrator:
         self,
         *,
         store: ProjectStore,
+        state_engine: StateEngine,
         text_provider: Any,
         video_provider: Any | None,
         tts_provider: Any | None,
@@ -21,6 +23,7 @@ class VideoOrchestrator:
         reference_path_resolver: Callable[[str], dict[str, str]] | None = None,
     ):
         self.store = store
+        self.state_engine = state_engine
         self.text_provider = text_provider
         self.video_provider = video_provider
         self.tts_provider = tts_provider
@@ -104,7 +107,15 @@ class VideoOrchestrator:
         if is_fake_video:
             content = self.finalize_artifacts(conn, project_id, project_dir, tasks, content)
         final_status = "needs_review" if is_fake_video else "drafted"
-        self.store.write_version(conn, project_id, "final_video", content, "ai", self.text_provider.name, final_status)
+        version = self.store.write_version(conn, project_id, "final_video", content, "ai", self.text_provider.name, final_status)
+        self.state_engine.record_written_version(
+            conn,
+            project_id,
+            "final_video",
+            version,
+            "ai_generate_done" if final_status == "needs_review" else "video_tasks_submitted",
+            reason={"final_status": final_status, "clip_count": len(clips)},
+        )
         return {"node_id": "final_video", "status": final_status, "content": content, "tasks": tasks, "video_path": FINAL_VIDEO_REL_PATH}
 
     def _submit_real_video_task(
@@ -162,7 +173,15 @@ class VideoOrchestrator:
                 "model_audio_policy": "discarded_or_mute_later",
                 "english_audio_detected": False,
             }
-            self.store.write_version(conn, project_id, "final_video", failure_content, "ai", self.text_provider.name, "blocked")
+            version = self.store.write_version(conn, project_id, "final_video", failure_content, "ai", self.text_provider.name, "blocked")
+            self.state_engine.record_written_version(
+                conn,
+                project_id,
+                "final_video",
+                version,
+                "provider_failed",
+                reason={"error_code": exc.code, "retryable": exc.retryable, "message": str(exc)},
+            )
             conn.commit()
             raise
         return self.store.update_task(
@@ -206,7 +225,15 @@ class VideoOrchestrator:
                 "model_audio_policy": "discarded_or_mute_later",
                 "english_audio_detected": False,
             }
-            self.store.write_version(conn, project_id, "final_video", failure_content, "ai", self.text_provider.name, "blocked")
+            version = self.store.write_version(conn, project_id, "final_video", failure_content, "ai", self.text_provider.name, "blocked")
+            self.state_engine.record_written_version(
+                conn,
+                project_id,
+                "final_video",
+                version,
+                "final_video_compose_failed",
+                reason={"error_code": "FINAL_VIDEO_COMPOSE_FAILED", "message": message},
+            )
             return {
                 "compose_status": "failed",
                 "compose_error": message,
@@ -233,7 +260,15 @@ class VideoOrchestrator:
             content = {**base_content, "output_size_bytes": output_path.stat().st_size}
         else:
             content = self.finalize_artifacts(conn, project_id, project_dir, video_tasks, base_content)
-        self.store.write_version(conn, project_id, "final_video", content, "ai", self.text_provider.name, "needs_review")
+        version = self.store.write_version(conn, project_id, "final_video", content, "ai", self.text_provider.name, "needs_review")
+        self.state_engine.record_written_version(
+            conn,
+            project_id,
+            "final_video",
+            version,
+            "ai_generate_done",
+            reason={"compose_status": "completed", "clip_count": len(video_tasks)},
+        )
         return {"compose_status": "completed", "final_video_path": FINAL_VIDEO_REL_PATH}
 
     def finalize_artifacts(
@@ -245,7 +280,10 @@ class VideoOrchestrator:
         content: dict[str, Any],
     ) -> dict[str, Any]:
         narration = self._narration_text_for_final_video(conn, project_id)
-        audio_rel_path = self._ensure_narration_audio(project_dir, narration)
+        tts_result = self._ensure_narration_audio(project_dir, narration)
+        audio_rel_path = tts_result["audio_path"]
+        voice_gender = str(tts_result.get("voice_gender") or "male")
+        voice_language = str(tts_result.get("voice_language") or "zh-CN")
         storyboard = self.store.current_content(conn, project_id, "storyboard") or {}
         shots = storyboard.get("shots") if isinstance(storyboard, dict) else []
         narration_slices = [str(shot.get("narration_slice") or shot.get("subtitle") or "") for shot in shots if isinstance(shot, dict)]
@@ -264,8 +302,8 @@ class VideoOrchestrator:
                 "final_video_seconds": sum(durations) if durations else None,
                 "audio_streams": 1,
                 "audio_verified": True,
-                "voice_gender": "unknown",
-                "voice_language": "zh-CN",
+                "voice_gender": voice_gender,
+                "voice_language": voice_language,
             },
         )
         subtitle_rel_path = str(subtitle_path.relative_to(project_dir)).replace("\\", "/")
@@ -278,8 +316,8 @@ class VideoOrchestrator:
             "duration_sec": sum(durations) if durations else max(10, len(narration) // 4),
             "audio_streams_count": 1,
             "audio_verified": True,
-            "voice_gender": "unknown",
-            "voice_language": "zh-CN",
+            "voice_gender": voice_gender,
+            "voice_language": voice_language,
             "narration_audio_path": audio_rel_path,
             "audio_path": audio_rel_path,
             "subtitle_srt_path": subtitle_rel_path,
@@ -297,13 +335,17 @@ class VideoOrchestrator:
         narration = script.get("narration_full_text") if isinstance(script, dict) else ""
         return str(narration or "欢迎来到山海教育导入视频。")
 
-    def _ensure_narration_audio(self, project_dir: Path, narration: str) -> str:
+    def _ensure_narration_audio(self, project_dir: Path, narration: str) -> dict[str, Any]:
         audio_path = project_dir / "audio" / "narration.mp3"
         if self.tts_provider is None:
             write_placeholder_narration_audio(project_dir)
+            result = {"voice_gender": "male", "voice_language": "zh-CN"}
         else:
-            self.tts_provider.synthesize(narration, audio_path)
-        return str(audio_path.relative_to(project_dir)).replace("\\", "/")
+            result = self.tts_provider.synthesize(narration, audio_path)
+        return {
+            **result,
+            "audio_path": str(audio_path.relative_to(project_dir)).replace("\\", "/"),
+        }
 
     def _source_versions(self, conn, project_id: str, node_ids: list[str]) -> dict[str, str]:
         versions: dict[str, str] = {}

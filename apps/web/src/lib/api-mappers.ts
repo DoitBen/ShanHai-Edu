@@ -5,6 +5,7 @@ import type {
   ApiNodeState,
   ApiProject,
   ApiReviewReason,
+  ApiTextbookParseContent,
   CreateProjectPayload,
   NewProjectDraft,
   ProjectMeta,
@@ -211,9 +212,12 @@ const LESSON_TYPE_FROM_API: Record<string, string> = {
   public: "公开课",
 };
 
-export function draftToCreateProjectPayload(draft: NewProjectDraft): CreateProjectPayload {
+export function draftToCreateProjectPayload(
+  draft: NewProjectDraft,
+  options: { fallbackName?: string } = {},
+): CreateProjectPayload {
   return {
-    name: draft.name.trim() || "未命名项目",
+    name: draft.name.trim() || options.fallbackName || "未命名项目",
     subject: SUBJECT_TO_API[draft.subject] || draft.subject,
     grade: GRADE_TO_API[draft.grade] || draft.grade,
     textbook_version: VERSION_TO_API[draft.textbookVersion] || draft.textbookVersion,
@@ -225,6 +229,115 @@ export function draftToCreateProjectPayload(draft: NewProjectDraft): CreateProje
     visual_style_keywords: draft.visualStyleKeywords.trim(),
     font_preference: draft.fontPreference.trim(),
     compliance_notes: draft.complianceNotes.trim(),
+    textbook_id: draft.parseResult?.textbookId,
+    textbook_version_id: draft.parseResult?.textbookVersionId,
+    knowledge_point_id: draft.selectedKnowledgePointId || draft.parseResult?.selectedKnowledgePointId,
+    reference_lesson_plan_id: draft.selectedLessonReferenceId,
+  };
+}
+
+export function mapTextbookParseContent(
+  content: unknown,
+  fallback: NewProjectDraft,
+): NonNullable<NewProjectDraft["parseResult"]> {
+  const data = isRecord(content) ? (content as ApiTextbookParseContent) : {};
+  const meta = isRecord(data.textbook_meta) ? data.textbook_meta : {};
+  const knowledgePoints = Array.isArray(data.knowledge_points)
+    ? data.knowledge_points
+        .filter(isRecord)
+        .map((point) => ({
+          id: stringValue(point.id),
+          title: stringValue(point.title) || "未命名知识点",
+          unit: stringValue(point.unit),
+          pageStart: numberValue(point.page_start),
+          pageEnd: numberValue(point.page_end),
+          pdfPageStart: numberValue(point.pdf_page_start),
+          pdfPageEnd: numberValue(point.pdf_page_end),
+          keywords: Array.isArray(point.keywords)
+            ? point.keywords.filter((item): item is string => typeof item === "string")
+            : [],
+          parseStatus: stringValue(point.parse_status),
+          reviewStatus: stringValue(point.review_status),
+          assetPackage: mapKnowledgePointAssetPackage(point.asset_package),
+        }))
+        .filter((point) => point.id)
+    : [];
+  const selected = isRecord(data.selected_knowledge_point)
+    ? data.selected_knowledge_point
+    : {};
+  const selectedPages = isRecord(selected.source_pages) ? selected.source_pages : {};
+  const subject = apiSubjectToLabel(stringValue(meta.subject) || stringValue(data.subject), fallback.subject);
+  const grade = apiGradeToLabel(stringValue(meta.grade) || stringValue(data.grade), fallback.grade);
+  const textbookVersion = apiVersionToLabel(
+    stringValue(meta.textbook_version) || stringValue(data.textbook_version),
+    fallback.textbookVersion,
+  );
+  const volume = apiVolumeToLabel(stringValue(meta.volume) || stringValue(data.volume), fallback.volume);
+  const selectedTitle = stringValue(selected.title);
+  const lesson = stringValue(data.lesson_title) || selectedTitle || fallback.name || "教材知识点";
+  const coreKnowledgePoints =
+    Array.isArray(data.core_knowledge_points) && data.core_knowledge_points.length
+      ? data.core_knowledge_points.filter((item): item is string => typeof item === "string")
+      : knowledgePoints.map((point) => point.title);
+
+  return {
+    source: "api",
+    subject,
+    grade,
+    textbookVersion,
+    volume,
+    lesson,
+    coreKnowledgePoints,
+    teachingGoalSummary:
+      stringValue(data.teaching_goal_summary) ||
+      `已从后端教材解析结果中选定“${lesson}”。`,
+    keyPoints:
+      Array.isArray(data.key_points) && data.key_points.length
+        ? data.key_points.filter((item): item is string => typeof item === "string")
+        : coreKnowledgePoints,
+    difficulties:
+      Array.isArray(data.difficulties) && data.difficulties.length
+        ? data.difficulties.filter((item): item is string => typeof item === "string")
+        : ["请结合 Markdown 预览核对教学难点"],
+    textbookTitle: stringValue(meta.title),
+    textbookId: stringValue(data.textbook_id) || stringValue(meta.textbook_id),
+    textbookVersionId:
+      stringValue(data.textbook_version_id) || stringValue(meta.textbook_version_id),
+    knowledgePoints,
+    selectedKnowledgePointId:
+      stringValue(data.selected_knowledge_point_id) ||
+      stringValue(selected.knowledge_point_id) ||
+      knowledgePoints[0]?.id ||
+      "",
+    selectedKnowledgePointMarkdown: stringValue(selected.markdown),
+    selectedKnowledgePointMarkdownPath: stringValue(selected.markdown_path),
+    selectedKnowledgePointPages: {
+      textbookPages: stringValue(selectedPages.textbook_pages),
+      pdfPages: stringValue(selectedPages.pdf_pages),
+    },
+    selectedKnowledgePointAssetPackage: mapKnowledgePointAssetPackage(selected.asset_package),
+  };
+}
+
+function mapKnowledgePointAssetPackage(value: unknown) {
+  if (!isRecord(value)) return undefined;
+  const downloadUrls = isRecord(value.download_urls) ? value.download_urls : {};
+  return {
+    assetId: stringValue(value.asset_id),
+    sourcePdfPath: stringValue(value.source_pdf_path),
+    slicePdfPath: stringValue(value.slice_pdf_path),
+    mineruMdPath: stringValue(value.mineru_md_path),
+    markdownPath: stringValue(value.markdown_path),
+    textbookPages: stringValue(value.textbook_pages),
+    pdfPages: stringValue(value.pdf_pages),
+    parseStatus: stringValue(value.parse_status),
+    reviewStatus: stringValue(value.review_status),
+    mineruJobId: stringValue(value.mineru_job_id),
+    checksum: stringValue(value.checksum),
+    downloadUrls: {
+      slicePdf: stringValue(downloadUrls.slice_pdf),
+      mineruMd: stringValue(downloadUrls.mineru_md),
+    },
   };
 }
 
@@ -242,6 +355,10 @@ export function mapApiProject(project: ApiProject, nodes?: ApiNodeState[]): Proj
     textbookVersion: VERSION_FROM_API[project.textbook_version] || project.textbook_version,
     volume: VOLUME_FROM_API[project.volume] || project.volume,
     lessonType: LESSON_TYPE_FROM_API[project.lesson_type] || project.lesson_type,
+    textbookId: project.textbook_id ?? null,
+    textbookVersionId: project.textbook_version_id ?? null,
+    knowledgePointId: project.knowledge_point_id ?? null,
+    referenceLessonPlanId: project.reference_lesson_plan_id ?? null,
     currentStage: current?.key || "project-config",
     currentStageTitle: current?.title,
     progress,
@@ -271,6 +388,7 @@ export function mapApiNodeDetailToStage(stage: WorkflowStage, detail: ApiNodeDet
     status: mapStageStatus(detail.status),
     reviewReason,
     reviewTrigger: detail.review_reason?.trigger,
+    latestTransition: detail.latest_transition ?? null,
     result: formatNodeContent(detail.content),
     logs: [
       ...stage.logs,
@@ -344,6 +462,7 @@ function mapApiNodesToStages(nodes: ApiNodeState[]): WorkflowStage[] {
         status: mapStageStatus(node.status),
         reviewReason,
         reviewTrigger: node.review_reason?.trigger,
+        latestTransition: node.latest_transition ?? null,
         summary: formatNodeSummary(node, def.summary),
         input: "",
         result: "",
@@ -467,4 +586,32 @@ function formatDateTime(value: string | null | undefined): string {
 function formatTime(value: string | null | undefined): string {
   const formatted = formatDateTime(value);
   return formatted ? formatted.slice(11) : "--:--";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" ? value : undefined;
+}
+
+function apiSubjectToLabel(value: string, fallback: string): string {
+  return SUBJECT_FROM_API[value] || value || fallback;
+}
+
+function apiGradeToLabel(value: string, fallback: string): string {
+  return GRADE_FROM_API[value] || value || fallback;
+}
+
+function apiVersionToLabel(value: string, fallback: string): string {
+  return VERSION_FROM_API[value] || value || fallback;
+}
+
+function apiVolumeToLabel(value: string, fallback: string): string {
+  return VOLUME_FROM_API[value] || value || fallback;
 }

@@ -76,6 +76,9 @@
 
 ## 当前记忆
 
+- 2026-06-24：ShanHaiEdu 已真实上线到腾讯云 Lighthouse，公网入口 `http://124.221.149.145:3020/`。当前线上拓扑：nginx 监听 `3020` 并反代 Web 容器 `127.0.0.1:3021`；API 容器 `shanhaiedu-api-1` 映射 `127.0.0.1:8020->8000` 且状态 healthy；Web 容器 `shanhaiedu-web-1` 运行 Next standalone。最近一次 Web standalone 回滚备份为 `/opt/shanhaiedu/backups/web-standalone/standalone.20260624-213151`。
+- 2026-06-24：真实上线验收命令口径：公网 `GET /api/backend/health` 应返回 `ok=true/status=ok/workflow_version=1.0.0`；公网 `GET /api/backend/textbook-library` 应返回“人教版小学数学一年级上册”、`display_name=人教版 / 小学数学 / 一年级 / 上册`、`knowledge_point_count=9`、`status=indexed`；浏览器登录页不得出现“演示项目/工作流节点/视频方案/演示账号/demo mock/第一阶段演示版”，console error/warn 应为空。
+- 2026-06-24：后续用户要求“上线/部署/发布”时，运维默认按真实环境处理：备份当前线上包，部署到真实服务器，公网 URL、容器状态、nginx 配置、真实 API 和浏览器 DOM 都要复验；不得用本地 demo/mock 或本地真实 API 模式替代上线。
 - 2026-06-20：运维/部署工程师角色正式建立，作为第六个开发团队固定角色加入多角色协作机制。
 - 2026-06-20：当前仓库尚缺正式 Dockerfile、docker-compose、部署 Runbook、环境变量总表和备份/回滚方案；首轮任务应优先补齐最小本地部署可复现基础。
 - 2026-06-20：T004 已完成最小部署可复现盘点并新增 `docs\ops-runbook-draft.md`。当前 Web 本地开发命令为 `cd apps\web; bun install; bun run dev`，默认端口 `3000`；Web 构建/生产启动为 `bun run build`、`bun run start`，生产日志写入 `apps\web\server.log`。
@@ -87,3 +90,7 @@
 - 2026-06-21：T066 已新增 `docs\ops-real-provider-demo-runbook.md`，统一真实文本 LLM、生图 provider、视频 provider、storage、ffmpeg 和 PPT 导出演示手册；同步更新 `apps\api\.env.example` 为占位说明版，不含真实密钥。
 - 2026-06-21：真实演示推荐拆分：完整 E2E 用 `PROVIDER_MODE=real` + `VIDEO_PROVIDER_MODE=placeholder`；真实 Octo 视频单独用 `VIDEO_PROVIDER_MODE=real` 和 `scripts\smoke-octo-real-video.ps1` 做单镜头 smoke。
 - 2026-06-21：当前后端合成只从 `PATH` 查找 `ffmpeg`，`FFMPEG_PATH` 仅作为运维预留说明；`.gitignore` 已补 provider 日志、`storage-*`、真实生图/视频 smoke 产物和 fullchain 二进制证据目录。
+- 2026-06-24：T008 已新增 `docs\ops-containerization-plan.md`，按 T006 API 运行契约补本地/内网最小容器化部署草案。当前建议仍是 docker-compose/内网优先、Cloud Run 后置；最小拓扑为 Web + API + 持久 storage volume + 单 bridge network，API 默认单实例，`GET /health` 只做 liveness，readiness 必须另测 storage 写入和 provider smoke。
+- 2026-06-24：T008 选择只落文档草案，不创建正式 Dockerfile、compose 或 `.dockerignore`，避免未经 T009 冷启动验收的配置被误认为可发布资产。草案明确 `.dockerignore` 应排除 `.env`、storage、logs、SQLite、node_modules、`.next`、真实 provider 产物和 `skills\imagegen-myself\.env.local`。
+- 2026-06-24：T008 密钥策略为只列变量名和注入方式，不读取真实密钥；`BACKEND_API_TOKEN` 与 provider keys 只能通过后端服务端环境、Docker secrets 或部署主机私有 env 注入，禁止进入 `NEXT_PUBLIC_*`、镜像、源码、日志或提交信息。
+- 2026-06-24：T008 记录 ffmpeg 镜像取舍：默认最小 API 镜像不安装 ffmpeg，只保证 fake/placeholder 与文本链路；若要容器内验收真实多 clip 合成，需安装 ffmpeg 并单独 smoke。未安装时不得宣称真实 `final_video` 多 clip 合成通过。

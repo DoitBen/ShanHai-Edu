@@ -121,7 +121,7 @@ def error_payload(response, status_code: int, code: str) -> dict[str, Any]:
     return payload["error"]
 
 
-def test_r010_blocks_downstream_generate_and_logs_rule_result(tmp_path: Path):
+def test_r010_blocks_downstream_generate_and_logs_state_engine_diagnostic(tmp_path: Path):
     client = make_client(tmp_path)
     project = create_project(client)
     project_id = project["project_id"]
@@ -129,10 +129,14 @@ def test_r010_blocks_downstream_generate_and_logs_rule_result(tmp_path: Path):
     response = client.post(f"/projects/{project_id}/nodes/lesson_plan/generate", json={})
 
     error_payload(response, 409, "UPSTREAM_NOT_APPROVED")
-    rows = rule_rows(project, "R010")
-    assert len(rows) == 1
-    assert rows[0]["passed"] == 0
-    assert rows[0]["trigger_event"] == "on_generate"
+    assert rule_rows(project, "R010") == []
+    rows = transition_rows(project, "lesson_plan")
+    blocked_rows = [row for row in rows if row["trigger"] == "dependency_gate_blocked"]
+    assert len(blocked_rows) == 1
+    reason = json.loads(blocked_rows[0]["reason"])
+    assert reason["rule_id"] == "R010"
+    assert reason["handled_by"] == "StateEngine"
+    assert reason["blocked_dependencies"][0]["node_id"] == "textbook_parse"
 
 
 def test_rule_executor_coverage_marks_yaml_rules_without_runtime_checks_unimplemented(tmp_path: Path):
@@ -142,6 +146,8 @@ def test_rule_executor_coverage_marks_yaml_rules_without_runtime_checks_unimplem
 
     by_id = {rule["rule_id"]: rule for rule in coverage["rules"]}
     assert by_id["R010"]["implemented"] is True
+    assert by_id["R010"]["handled_by"] == "StateEngine"
+    assert by_id["R010"]["executor_type"] == "StateEngine"
     assert by_id["R001"]["implemented"] is True
     assert by_id["R004"]["implemented"] is True
     assert by_id["R005"]["implemented"] is True

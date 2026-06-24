@@ -7,11 +7,12 @@ from .flywheel import FeedbackPayloadError, FeedbackTypeError, FlywheelService
 from .ppt_exporter import export_project_ppt
 from .providers import DeepSeekTextProvider, FakeProvider, MinimaxTextProvider, NewApiImageProvider, OctoVideoProvider, ProviderError, sanitize_provider_excerpt
 from .prompt_loader import PromptTemplateMissing, PromptVariableMissing, render_prompt_file
-from .rule_executor import RuleExecutor
+from .rule_executor import RuleExecutor, RuleHardBlockError
 from .state_engine import NodeSkippedError, StateEngine
 from .store import ProjectStore, now_iso
 from .textbook_parser import TextbookParser, TextbookSource
 from .video_orchestrator import VideoOrchestrator
+from .workspace_user_flow import build_workspace_user_flow
 
 
 INTRO_DESIGN_TYPES = ("science", "application", "story")
@@ -96,6 +97,8 @@ def normalize_node_content(node_id: str, content: dict[str, Any], context: dict[
     for field in [
         "textbook_source",
         "textbook_meta",
+        "textbook_id",
+        "textbook_version_id",
         "knowledge_points",
         "selected_knowledge_point_id",
         "selected_knowledge_point",
@@ -112,8 +115,43 @@ def _normalize_lesson_plan(content: dict[str, Any], context: dict[str, Any]) -> 
     selected = context.get("textbook_parse", {}).get("selected_knowledge_point", {})
     if lesson_markdown:
         normalized["lesson_plan_markdown"] = str(lesson_markdown)
-    if "textbook_anchor" not in normalized:
-        normalized["textbook_anchor"] = "基于已选知识点 Markdown 生成" if selected else "基于项目教材信息生成"
+    if selected:
+        selected_title = str(selected.get("title") or context.get("textbook_parse", {}).get("lesson_title") or "").strip()
+        selected_id = str(selected.get("knowledge_point_id") or context.get("textbook_parse", {}).get("selected_knowledge_point_id") or "").strip()
+        markdown_path = str(selected.get("markdown_path") or "").strip()
+        asset_package = selected.get("asset_package") if isinstance(selected.get("asset_package"), dict) else {}
+        if selected_id:
+            normalized["source_knowledge_point_id"] = selected_id
+        if markdown_path:
+            normalized["source_markdown_path"] = markdown_path
+        textbook_parse = context.get("textbook_parse", {})
+        source_textbook_id = str(textbook_parse.get("textbook_id") or textbook_parse.get("textbook_meta", {}).get("textbook_id") or "").strip()
+        source_textbook_version_id = str(textbook_parse.get("textbook_version_id") or textbook_parse.get("textbook_meta", {}).get("textbook_version_id") or "").strip()
+        if source_textbook_id:
+            normalized["source_textbook_id"] = source_textbook_id
+        if source_textbook_version_id:
+            normalized["source_textbook_version_id"] = source_textbook_version_id
+        if asset_package:
+            if asset_package.get("slice_pdf_path"):
+                normalized["source_slice_pdf_path"] = str(asset_package["slice_pdf_path"])
+            if asset_package.get("mineru_md_path"):
+                normalized["source_mineru_md_path"] = str(asset_package["mineru_md_path"])
+        if "textbook_anchor" not in normalized:
+            normalized["textbook_anchor"] = f"基于已选知识点《{selected_title}》Markdown 生成" if selected_title else "基于已选知识点 Markdown 生成"
+    elif "textbook_anchor" not in normalized:
+        normalized["textbook_anchor"] = "基于项目教材信息生成"
+    reference_id = str(context.get("reference_lesson_plan_id") or "").strip()
+    reference = context.get("reference_lesson_plan") if isinstance(context.get("reference_lesson_plan"), dict) else None
+    if reference_id:
+        normalized["reference_lesson_plan_id"] = reference_id
+    if reference:
+        normalized["reference_lesson_plan"] = {
+            "lesson_plan_id": reference.get("lesson_plan_id"),
+            "title": reference.get("title"),
+            "source_textbook_id": reference.get("source_textbook_id"),
+            "source_knowledge_point_id": reference.get("source_knowledge_point_id"),
+            "markdown_excerpt": str(reference.get("markdown") or "")[:800],
+        }
     if "teaching_objectives" not in normalized:
         normalized["teaching_objectives"] = _extract_markdown_section(lesson_markdown, "教学目标") or "围绕本课知识点，帮助学生理解核心概念、掌握基本方法，并能在生活情境中表达和应用。"
     if "key_difficulty" not in normalized:
@@ -430,7 +468,10 @@ class WorkflowService:
         video_provider: OctoVideoProvider | None = None,
         image_provider: NewApiImageProvider | None = None,
         workflow=None,
+        control_plane=None,
         textbook_parser: TextbookParser | None = None,
+        textbook_library=None,
+        lesson_plan_library=None,
         prompt_registry=None,
         prompt_root: Path | None = None,
         tts_provider=None,
@@ -441,16 +482,20 @@ class WorkflowService:
         self.video_provider = video_provider
         self.image_provider = image_provider
         self.workflow = workflow
+        self.control_plane = control_plane
         self.textbook_parser = textbook_parser or TextbookParser()
+        self.textbook_library_store = textbook_library
+        self.lesson_plan_library_store = lesson_plan_library
         self.prompt_registry = prompt_registry
         self.prompt_root = prompt_root or Path("workflow") / "prompts"
         self.tts_provider = tts_provider
         self.video_model = video_model
         self.state_engine = StateEngine(store, self._dependencies(), workflow)
-        self.rule_executor = RuleExecutor(workflow.root / "rules" if workflow else None)
+        self.rule_executor = RuleExecutor(control_plane)
         self.flywheel = FlywheelService()
         self.video_orchestrator = VideoOrchestrator(
             store=self.store,
+            state_engine=self.state_engine,
             text_provider=self.provider,
             video_provider=self.video_provider,
             tts_provider=self.tts_provider,
@@ -460,17 +505,32 @@ class WorkflowService:
         )
 
     def generate_node(self, project_id: str, node_id: str, options: dict[str, Any] | None = None) -> dict[str, Any]:
+        return self._generate_node(project_id, node_id, options, "ai_generate_done")
+
+    def _generate_node(
+        self,
+        project_id: str,
+        node_id: str,
+        options: dict[str, Any] | None = None,
+        ready_trigger: str = "ai_generate_done",
+    ) -> dict[str, Any]:
         project = self.store.get_project(project_id)
         project_dir = Path(project["project_dir"])
         with self.store.connect(project_dir) as conn:
+            self._assert_dependencies(conn, project_id, node_id)
             if node_id == "final_delivery":
                 return self._generate_final_delivery(conn, project_id, project, project_dir)
-            self._assert_dependencies(conn, project_id, node_id)
             context: dict[str, Any] = {
                 "grade": project["grade"],
                 "textbook_version": project["textbook_version"],
                 "volume": project["volume"],
+                "reference_lesson_plan_id": project.get("reference_lesson_plan_id"),
             }
+            if node_id == "lesson_plan" and project.get("reference_lesson_plan_id") and self.lesson_plan_library_store is not None:
+                try:
+                    context["reference_lesson_plan"] = self.lesson_plan_library_store.get(project["reference_lesson_plan_id"])
+                except KeyError:
+                    context["reference_lesson_plan_error"] = "REFERENCE_LESSON_PLAN_NOT_FOUND"
             for dep in self._dependencies().get(node_id, []):
                 content = self.store.current_content(conn, project_id, dep)
                 if content is not None:
@@ -500,8 +560,12 @@ class WorkflowService:
                     context["textbook_text"] = parsed_source["textbook_text"]
                     context["textbook_source"] = parsed_source.get("textbook_source")
                 else:
+                    if project.get("textbook_id") and project["textbook_id"] != parsed_source.get("textbook_id"):
+                        parsed_source["textbook_id"] = project["textbook_id"]
+                    if project.get("textbook_version_id") and project["textbook_version_id"] != parsed_source.get("textbook_version_id"):
+                        parsed_source["textbook_version_id"] = project["textbook_version_id"]
                     content = normalize_node_content(node_id, parsed_source, {**context, **parsed_source})
-                    return self._write_review_version(conn, project_id, node_id, content, "ai", self.provider.name, "ai_generate_done")
+                    return self._write_review_version(conn, project_id, node_id, content, "ai", self.provider.name, ready_trigger)
 
             if node_id == "final_video":
                 self.video_orchestrator.text_provider = self.provider
@@ -522,7 +586,7 @@ class WorkflowService:
                     raise
             if node_id == "intro_video_asset" and self.image_provider is not None:
                 content = self._generate_image_tasks(conn, project_id, project_dir, content, options or {})
-            return self._write_review_version(conn, project_id, node_id, content, "ai", self.provider.name, "ai_generate_done")
+            return self._write_review_version(conn, project_id, node_id, content, "ai", self.provider.name, ready_trigger)
 
     def edit_node(self, project_id: str, node_id: str, content: dict[str, Any]) -> dict[str, Any]:
         project = self.store.get_project(project_id)
@@ -531,7 +595,7 @@ class WorkflowService:
             before_content = self.store.current_content(conn, project_id, node_id) if before_state.get("current_version_id") else None
             self._assert_dependencies(conn, project_id, node_id, allow_existing=True)
             validate_edit_content(node_id, content, self._edit_validation_context(conn, project_id))
-            self.rule_executor.run_for_event(conn, self.store, project_id, node_id, "on_save", content)
+            self._run_rules_for_event(conn, project_id, node_id, "on_save", content)
             result = self._write_review_version(conn, project_id, node_id, content, "human_edit", None, "user_save_edit")
             if node_id == "project_config":
                 self.state_engine.apply_config_change(conn, project_id, content)
@@ -558,9 +622,8 @@ class WorkflowService:
             if content is not None and node_id in {"intro_selection", "storyboard"}:
                 validate_approve_content(node_id, content, self._edit_validation_context(conn, project_id))
             state = self.store.node_state(conn, project_id, node_id)
-            rule_results = self.rule_executor.run_for_event(
+            rule_results = self._run_rules_for_event(
                 conn,
-                self.store,
                 project_id,
                 node_id,
                 "on_approve_attempt",
@@ -584,6 +647,24 @@ class WorkflowService:
                     )
             return approved
 
+    def retry_node(self, project_id: str, node_id: str) -> dict[str, Any]:
+        project = self.store.get_project(project_id)
+        project_dir = Path(project["project_dir"])
+        with self.store.connect(project_dir) as conn:
+            self.state_engine.assert_upstreams_passable(conn, project_id, node_id)
+            state = self.store.node_state(conn, project_id, node_id)
+            if state.get("status") in {"needs_review", "approved"}:
+                self.state_engine.transition(
+                    conn,
+                    project_id,
+                    node_id,
+                    "drafted",
+                    "user_redo",
+                    current_version_id=state.get("current_version_id"),
+                    reason="用户请求重新生成节点产物",
+                )
+        return self.generate_node(project_id, node_id)
+
     def record_feedback(self, project_id: str, feedback_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         project = self.store.get_project(project_id)
         with self.store.connect(Path(project["project_dir"])) as conn:
@@ -592,10 +673,50 @@ class WorkflowService:
     def flywheel_events(self, project_id: str) -> dict[str, list[dict[str, Any]]]:
         return self.store.flywheel_events(project_id)
 
+    def workspace_user_flow(self, project_id: str) -> dict[str, Any]:
+        manifest = self.store.manifest(project_id, self.workflow, self.rule_runtime_summary())
+        node_details = {
+            node["node_id"]: self.store.node_detail(project_id, node["node_id"], self.workflow, self.rule_runtime_summary())
+            for node in manifest["nodes"]
+        }
+        return build_workspace_user_flow(manifest["project"], manifest, node_details, self.store.tasks(project_id))
+
     def rule_runtime_summary(self) -> dict[str, dict[str, Any]]:
         if not self.workflow:
             return {}
         return {node_id: self.rule_executor.summary_for_node(node_id) for node_id in self.workflow.runtime_node_ids()}
+
+    def _run_rules_for_event(
+        self,
+        conn,
+        project_id: str,
+        node_id: str,
+        trigger_event: str,
+        content: dict[str, Any] | None,
+        **kwargs,
+    ) -> list[dict[str, Any]]:
+        try:
+            return self.rule_executor.run_for_event(
+                conn,
+                self.store,
+                project_id,
+                node_id,
+                trigger_event,
+                content,
+                **kwargs,
+            )
+        except RuleHardBlockError as exc:
+            if trigger_event in {"on_save", "on_generate"}:
+                self.state_engine.mark_blocked(
+                    conn,
+                    project_id,
+                    node_id,
+                    "hard_block_rule_hit",
+                    rule_id=exc.rule_id,
+                    message=str(exc),
+                )
+                conn.commit()
+            raise
 
     def _write_review_version(
         self,
@@ -625,28 +746,7 @@ class WorkflowService:
         dependencies = self._dependencies().get(node_id, [])
         if not dependencies:
             return
-        try:
-            self.state_engine.assert_upstreams_passable(conn, project_id, node_id)
-        except NodeSkippedError:
-            raise
-        except PermissionError as exc:
-            self.rule_executor.record_r010_result(
-                conn,
-                self.store,
-                project_id,
-                node_id,
-                False,
-                {"message": str(exc), "dependencies": dependencies},
-            )
-            raise
-        self.rule_executor.record_r010_result(
-            conn,
-            self.store,
-            project_id,
-            node_id,
-            True,
-            {"dependencies": dependencies},
-        )
+        self.state_engine.assert_can_generate(conn, project_id, node_id)
 
     def _assert_selected_anchor(self, context: dict[str, Any]) -> None:
         if not _valid_anchor(_selected_anchor_from_context(context)):
@@ -741,7 +841,15 @@ class WorkflowService:
             "retryable": exc.retryable,
         }
         self.store.record_error(conn, project_id, node_id, exc.code, content["error_message"])
-        self.store.write_version(conn, project_id, node_id, content, "ai", self.provider.name, "blocked")
+        version = self.store.write_version(conn, project_id, node_id, content, "ai", self.provider.name, "blocked")
+        self.state_engine.record_written_version(
+            conn,
+            project_id,
+            node_id,
+            version,
+            "provider_failed",
+            reason={"error_code": exc.code, "retryable": exc.retryable, "message": content["error_message"]},
+        )
         conn.commit()
 
     def _build_prompt(self, node_id: str, context: dict[str, Any]) -> str:
@@ -837,6 +945,106 @@ class WorkflowService:
             "context_json": json.dumps(context, ensure_ascii=False, indent=2),
             "node_id": node_id,
         }
+
+    def textbook_library(self) -> dict[str, Any]:
+        if self.textbook_library_store is not None:
+            return self.textbook_library_store.list_library()
+        return self.textbook_parser.list_library()
+
+    def textbook_library_knowledge_points(self, textbook_id: str) -> dict[str, Any]:
+        if self.textbook_library_store is not None:
+            return self.textbook_library_store.knowledge_points(textbook_id)
+        return self.textbook_parser.library_knowledge_points(textbook_id)
+
+    def textbook_library_asset_package(self, textbook_id: str, knowledge_point_id: str) -> dict[str, Any]:
+        if self.textbook_library_store is not None:
+            return self.textbook_library_store.asset_package(textbook_id, knowledge_point_id)
+        return self.textbook_parser.library_asset_package(textbook_id, knowledge_point_id)
+
+    def upload_textbook_to_library(self, file) -> dict[str, Any]:
+        if self.textbook_library_store is None:
+            raise ValueError("textbook library store is not configured")
+        return self.textbook_library_store.upload_textbook(file)
+
+    def textbook_library_job(self, job_id: str) -> dict[str, Any]:
+        if self.textbook_library_store is None:
+            raise ValueError("textbook library store is not configured")
+        return self.textbook_library_store.job(job_id)
+
+    def extract_textbook_asset(self, textbook_id: str, knowledge_point_id: str) -> dict[str, Any]:
+        if self.textbook_library_store is None:
+            raise ValueError("textbook library store is not configured")
+        return self.textbook_library_store.extract_asset(textbook_id, knowledge_point_id)
+
+    def split_textbook_assets(self, textbook_id: str, knowledge_point_ids: list[str] | None = None) -> dict[str, Any]:
+        if self.textbook_library_store is None:
+            raise ValueError("textbook library store is not configured")
+        return self.textbook_library_store.split_assets(textbook_id, knowledge_point_ids)
+
+    def extract_textbook_assets(self, textbook_id: str, knowledge_point_ids: list[str] | None = None) -> dict[str, Any]:
+        if self.textbook_library_store is None:
+            raise ValueError("textbook library store is not configured")
+        return self.textbook_library_store.extract_assets(textbook_id, knowledge_point_ids)
+
+    def confirm_textbook_asset(self, asset_id: str, reviewer: str | None = None) -> dict[str, Any]:
+        if self.textbook_library_store is None:
+            raise ValueError("textbook library store is not configured")
+        return self.textbook_library_store.confirm_asset(asset_id, reviewer)
+
+    def lesson_plan_library(self, textbook_id: str | None = None, knowledge_point_id: str | None = None) -> dict[str, Any]:
+        if self.lesson_plan_library_store is None:
+            return {"lesson_plans": []}
+        return self.lesson_plan_library_store.list(textbook_id=textbook_id, knowledge_point_id=knowledge_point_id)
+
+    def lesson_plan_library_item(self, lesson_plan_id: str) -> dict[str, Any]:
+        if self.lesson_plan_library_store is None:
+            raise KeyError(lesson_plan_id)
+        return self.lesson_plan_library_store.get(lesson_plan_id)
+
+    def upload_lesson_plan_to_library(
+        self,
+        file,
+        *,
+        textbook_id: str | None = None,
+        textbook_version_id: str | None = None,
+        knowledge_point_id: str | None = None,
+        created_by: str = "admin",
+    ) -> dict[str, Any]:
+        if self.lesson_plan_library_store is None:
+            raise ValueError("lesson plan library store is not configured")
+        uploaded = self.lesson_plan_library_store.upload_file(file, created_by=created_by)
+        metadata = dict(uploaded.get("metadata") or {})
+        metadata["source_label"] = "管理员上传"
+        metadata["created_by_label"] = created_by
+        if textbook_id and self.textbook_library_store is not None:
+            knowledge_points = self.textbook_library_store.knowledge_points(textbook_id)
+            metadata["textbook_display_name"] = knowledge_points.get("textbook", {}).get("display_name")
+            if knowledge_point_id:
+                point = next(
+                    (item for item in knowledge_points.get("knowledge_points", []) if item.get("id") == knowledge_point_id),
+                    None,
+                )
+                if point is None:
+                    raise ValueError(f"Unknown knowledge point: {knowledge_point_id}")
+                metadata["knowledge_point_title"] = point.get("title")
+                metadata["knowledge_point_display_name"] = point.get("title")
+        if textbook_id or textbook_version_id or knowledge_point_id or metadata != uploaded.get("metadata"):
+            return self.lesson_plan_library_store.update_source_metadata(
+                uploaded["lesson_plan_id"],
+                source_textbook_id=textbook_id or None,
+                source_textbook_version_id=textbook_version_id or None,
+                source_knowledge_point_id=knowledge_point_id or None,
+                metadata=metadata,
+            )
+        return uploaded
+
+    def import_lesson_plan_from_project(self, project_id: str, created_by: str = "system") -> dict[str, Any]:
+        if self.lesson_plan_library_store is None:
+            raise ValueError("lesson plan library store is not configured")
+        project = self.store.get_project(project_id)
+        with self.store.connect(Path(project["project_dir"])) as conn:
+            content = self.store.current_content(conn, project_id, "lesson_plan") or {}
+        return self.lesson_plan_library_store.import_from_project(project, content, created_by=created_by)
 
     def export_ppt(self, project_id: str) -> dict[str, str]:
         project = self.store.get_project(project_id)
@@ -1123,7 +1331,15 @@ class WorkflowService:
                         "error_message": str(exc),
                         "failed_asset_id": failed_assets[-1].get("asset_id") if failed_assets else None,
                     }
-                    self.store.write_version(conn, project_id, "intro_video_asset", failure_content, "ai", self.provider.name, "blocked")
+                    version = self.store.write_version(conn, project_id, "intro_video_asset", failure_content, "ai", self.provider.name, "blocked")
+                    self.state_engine.record_written_version(
+                        conn,
+                        project_id,
+                        "intro_video_asset",
+                        version,
+                        "provider_failed",
+                        reason={"error_code": exc.code, "retryable": exc.retryable, "message": str(exc)},
+                    )
                     conn.commit()
                     raise exc
                 continue
@@ -1138,7 +1354,15 @@ class WorkflowService:
                 "error_message": str(last_error),
                 "failed_asset_id": failed_assets[-1].get("asset_id") if failed_assets else None,
             }
-            self.store.write_version(conn, project_id, "intro_video_asset", failure_content, "ai", self.provider.name, "blocked")
+            version = self.store.write_version(conn, project_id, "intro_video_asset", failure_content, "ai", self.provider.name, "blocked")
+            self.state_engine.record_written_version(
+                conn,
+                project_id,
+                "intro_video_asset",
+                version,
+                "provider_failed",
+                reason={"error_code": last_error.code, "retryable": last_error.retryable, "message": str(last_error)},
+            )
             conn.commit()
             raise last_error
         if failed_assets:

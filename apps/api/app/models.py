@@ -10,8 +10,31 @@ class ProjectCreateRequest(BaseModel):
     textbook_version: str = Field(min_length=1)
     volume: str = Field(min_length=1)
     lesson_type: str = Field(min_length=1)
+    textbook_id: str | None = None
+    textbook_version_id: str | None = None
+    knowledge_point_id: str | None = None
+    reference_lesson_plan_id: str | None = None
     needs_intro_video: bool | None = None
     embed_video_in_ppt: bool | None = None
+    character_profile: str | None = None
+    character_safety_rule: str | None = None
+    visual_palette: str | None = None
+    visual_style_keywords: str | None = None
+    font_preference: str | None = None
+    compliance_notes: str | None = None
+
+
+class ProjectUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1)
+    subject: str | None = Field(default=None, min_length=1)
+    grade: str | None = Field(default=None, min_length=1)
+    textbook_version: str | None = Field(default=None, min_length=1)
+    volume: str | None = Field(default=None, min_length=1)
+    lesson_type: str | None = Field(default=None, min_length=1)
+    textbook_id: str | None = None
+    textbook_version_id: str | None = None
+    knowledge_point_id: str | None = None
+    reference_lesson_plan_id: str | None = None
     character_profile: str | None = None
     character_safety_rule: str | None = None
     visual_palette: str | None = None

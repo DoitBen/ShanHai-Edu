@@ -33,3 +33,7 @@ assert(
   proxyRoute.includes("Authorization") && proxyRoute.includes("Bearer"),
   "backend proxy must forward Authorization bearer header to FastAPI",
 );
+assert(
+  proxyRoute.includes('headers.delete("expect")'),
+  "backend proxy must drop the Expect header because Undici fetch cannot forward it",
+);

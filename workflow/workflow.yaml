@@ -76,6 +76,15 @@ transitions:
     to: blocked
     trigger: hard_block_rule_hit
   - from: any
+    to: blocked
+    trigger: provider_failed
+  - from: any
+    to: blocked
+    trigger: final_video_compose_failed
+  - from: any
+    to: drafted
+    trigger: video_tasks_submitted
+  - from: any
     to: skipped
     trigger: config_change
   - from: skipped

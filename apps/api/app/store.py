@@ -57,8 +57,13 @@ class ProjectStore:
             conn.execute(
                 """
                 INSERT INTO project_meta
-                (project_id, name, subject, grade, textbook_version, volume, lesson_type, created_at, status, project_dir)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (
+                  project_id, name, subject, grade, textbook_version, volume, lesson_type,
+                  textbook_id, textbook_version_id, knowledge_point_id, reference_lesson_plan_id,
+                  lesson_plan_source, direct_lesson,
+                  created_at, status, project_dir
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     project_id,
@@ -68,6 +73,12 @@ class ProjectStore:
                     payload.get("textbook_version", "renjiao"),
                     payload.get("volume", "xia"),
                     payload.get("lesson_type", "public"),
+                    payload.get("textbook_id"),
+                    payload.get("textbook_version_id"),
+                    payload.get("knowledge_point_id"),
+                    payload.get("reference_lesson_plan_id"),
+                    self._lesson_plan_source(payload),
+                    1 if self._is_direct_lesson_project(payload) else 0,
                     created_at,
                     "active",
                     str(project_dir),
@@ -76,6 +87,8 @@ class ProjectStore:
             node_ids = workflow.runtime_node_ids() if workflow else []
             for node_id in node_ids:
                 status = "approved" if node_id in {"project_meta", "project_config"} else "not_started"
+                if node_id == "textbook_parse" and self._is_direct_lesson_project(payload):
+                    status = "skipped"
                 conn.execute(
                     """
                     INSERT INTO node_state (project_id, node_id, status, current_version_id, updated_at)
@@ -89,7 +102,47 @@ class ProjectStore:
 
                 project_config = self.current_content(conn, project_id, "project_config") or {}
                 StateEngine(self, workflow.runtime_dependencies(), workflow).apply_config_change(conn, project_id, project_config)
+            self._seed_reference_lesson_plan_start(conn, project_id, payload, node_ids)
             self.record_event(conn, project_id, "project_meta", "project_created", payload)
+        return self.get_project(project_id)
+
+    def update_project(self, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        project = self.get_project(project_id)
+        allowed_fields = {
+            "name",
+            "subject",
+            "grade",
+            "textbook_version",
+            "volume",
+            "lesson_type",
+            "textbook_id",
+            "textbook_version_id",
+            "knowledge_point_id",
+            "reference_lesson_plan_id",
+            "lesson_plan_source",
+            "direct_lesson",
+        }
+        updates = {
+            key: _clean_text(value)
+            for key, value in payload.items()
+            if key in allowed_fields and value is not None and _clean_text(value)
+        }
+        with self.connect(Path(project["project_dir"])) as conn:
+            if updates:
+                assignments = ", ".join(f"{key} = ?" for key in updates)
+                conn.execute(
+                    f"UPDATE project_meta SET {assignments} WHERE project_id = ?",
+                    (*updates.values(), project_id),
+                )
+            node_ids = [
+                row["node_id"]
+                for row in conn.execute(
+                    "SELECT node_id FROM node_state WHERE project_id = ?",
+                    (project_id,),
+                )
+            ]
+            self._seed_create_project_runtime_nodes(conn, project_id, {**project, **payload}, node_ids)
+            self.record_event(conn, project_id, "project_meta", "project_updated", payload)
         return self.get_project(project_id)
 
     def _seed_create_project_runtime_nodes(
@@ -128,6 +181,78 @@ class ProjectStore:
                 {"version_id": written["version_id"], "generated_by": "user_create_project"},
             )
 
+    def _seed_reference_lesson_plan_start(
+        self,
+        conn: sqlite3.Connection,
+        project_id: str,
+        payload: dict[str, Any],
+        node_ids: list[str],
+    ) -> None:
+        reference = payload.get("_reference_lesson_plan") if isinstance(payload.get("_reference_lesson_plan"), dict) else None
+        reference_id = _clean_text(payload.get("reference_lesson_plan_id"))
+        if not reference or not reference_id or "lesson_plan" not in node_ids:
+            return
+        if "textbook_parse" in node_ids and not payload.get("textbook_id") and not payload.get("knowledge_point_id"):
+            state = self.node_state(conn, project_id, "textbook_parse")
+            if state["status"] != "skipped":
+                self.update_node_state(conn, project_id, "textbook_parse", "skipped", state.get("current_version_id"))
+                self.record_state_transition(
+                    conn,
+                    project_id,
+                    "textbook_parse",
+                    state.get("status"),
+                    "skipped",
+                    "config_change",
+                    version_id_before=state.get("current_version_id"),
+                    version_id_after=state.get("current_version_id"),
+                    reason="项目直接引用教案文件创建，教材解析步骤跳过",
+                )
+        markdown = str(reference.get("markdown") or "").strip()
+        if not markdown:
+            return
+        content = {
+            "lesson_plan_markdown": markdown,
+            "reference_lesson_plan_id": reference_id,
+            "reference_lesson_plan": {
+                "lesson_plan_id": reference.get("lesson_plan_id"),
+                "title": reference.get("title"),
+                "source_type": reference.get("source_type"),
+                "source_filename": reference.get("source_filename"),
+                "extract_status": reference.get("extract_status"),
+            },
+            "textbook_anchor": "基于教师提供的教案文件创建项目，待教师核对后继续。",
+        }
+        written = self.write_version(conn, project_id, "lesson_plan", content, "user_create_project", None, "needs_review")
+        self.record_state_transition(
+            conn,
+            project_id,
+            "lesson_plan",
+            written.get("_previous_status"),
+            "drafted",
+            "user_edit",
+            version_id_before=written.get("_previous_version_id"),
+            version_id_after=written.get("_previous_version_id"),
+            reason="项目创建时写入引用教案草稿",
+        )
+        self.record_state_transition(
+            conn,
+            project_id,
+            "lesson_plan",
+            "drafted",
+            "needs_review",
+            "user_save_edit",
+            version_id_before=written.get("_previous_version_id"),
+            version_id_after=written["version_id"],
+            reason="项目创建时从引用教案文件生成待确认教案草稿",
+        )
+        self.record_event(
+            conn,
+            project_id,
+            "lesson_plan",
+            "runtime_node_seeded",
+            {"version_id": written["version_id"], "generated_by": "user_create_project"},
+        )
+
     def _project_config_from_create_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         needs_intro_video = payload.get("needs_intro_video")
         if needs_intro_video is None:
@@ -148,6 +273,27 @@ class ProjectStore:
                 "embed_video_in_ppt": embed_video_in_ppt,
             },
         }
+
+    @staticmethod
+    def _lesson_plan_source(payload: dict[str, Any]) -> str | None:
+        source = str(payload.get("lesson_plan_source") or "").strip()
+        if source:
+            return source
+        if ProjectStore._is_direct_lesson_project(payload):
+            return "direct_lesson"
+        return None
+
+    @staticmethod
+    def _is_direct_lesson_project(payload: dict[str, Any]) -> bool:
+        source = str(payload.get("lesson_plan_source") or "").strip().lower()
+        if source in {"direct_lesson", "lesson_plan", "reference_lesson_plan", "existing_lesson_plan"}:
+            return True
+        direct_flag = payload.get("direct_lesson")
+        if isinstance(direct_flag, bool):
+            return direct_flag
+        if isinstance(direct_flag, str) and direct_flag.strip().lower() in {"1", "true", "yes", "direct_lesson"}:
+            return True
+        return bool(str(payload.get("reference_lesson_plan_id") or "").strip())
 
     def _visual_contract_from_create_payload(self, payload: dict[str, Any]) -> dict[str, Any] | None:
         source = {
@@ -211,6 +357,12 @@ class ProjectStore:
               textbook_version TEXT NOT NULL,
               volume TEXT NOT NULL,
               lesson_type TEXT NOT NULL,
+              textbook_id TEXT,
+              textbook_version_id TEXT,
+              knowledge_point_id TEXT,
+              reference_lesson_plan_id TEXT,
+              lesson_plan_source TEXT,
+              direct_lesson INTEGER DEFAULT 0,
               created_at TEXT NOT NULL,
               status TEXT NOT NULL,
               project_dir TEXT NOT NULL
@@ -346,6 +498,18 @@ class ProjectStore:
             );
             """
         )
+        self._ensure_project_meta_columns(conn)
+
+    def _ensure_project_meta_columns(self, conn: sqlite3.Connection) -> None:
+        existing = {
+            str(row["name"] if isinstance(row, sqlite3.Row) else row[1])
+            for row in conn.execute("PRAGMA table_info(project_meta)").fetchall()
+        }
+        for column in ["textbook_id", "textbook_version_id", "knowledge_point_id", "reference_lesson_plan_id", "lesson_plan_source"]:
+            if column not in existing:
+                conn.execute(f"ALTER TABLE project_meta ADD COLUMN {column} TEXT")
+        if "direct_lesson" not in existing:
+            conn.execute("ALTER TABLE project_meta ADD COLUMN direct_lesson INTEGER DEFAULT 0")
 
     def connect(self, project_dir: Path) -> sqlite3.Connection:
         project_dir.mkdir(parents=True, exist_ok=True)
@@ -370,11 +534,25 @@ class ProjectStore:
             data["project_dir"] = str(project_dir)
             return data
 
+    def is_direct_lesson_project(self, conn: sqlite3.Connection, project_id: str) -> bool:
+        row = conn.execute(
+            """
+            SELECT reference_lesson_plan_id, lesson_plan_source, direct_lesson
+            FROM project_meta
+            WHERE project_id = ?
+            """,
+            (project_id,),
+        ).fetchone()
+        if row is None:
+            return False
+        return self._is_direct_lesson_project(dict(row))
+
     def list_projects(self) -> list[dict[str, Any]]:
         projects = []
         for db_path in self.projects_root.glob("*/project.db"):
             with sqlite3.connect(db_path) as conn:
                 conn.row_factory = sqlite3.Row
+                self.init_db(conn)
                 row = conn.execute("SELECT * FROM project_meta LIMIT 1").fetchone()
                 if row:
                     data = dict(row)
@@ -961,6 +1139,18 @@ class ProjectStore:
         with self.connect(project_dir) as conn:
             asset = self.save_asset(conn, project_id, "textbook", f"uploads/{safe_name}", file.content_type, "textbook_parse")
             self.record_event(conn, project_id, "textbook_parse", "textbook_uploaded", asset)
+        return {**asset, "filename": safe_name, "status": "uploaded"}
+
+    def attach_textbook_file(self, project_id: str, source_path: Path, filename: str, mime_type: str = "application/pdf") -> dict[str, Any]:
+        project = self.get_project(project_id)
+        project_dir = Path(project["project_dir"])
+        safe_name = Path(filename).name
+        target = project_dir / "uploads" / safe_name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source_path, target)
+        with self.connect(project_dir) as conn:
+            asset = self.save_asset(conn, project_id, "textbook", f"uploads/{safe_name}", mime_type, "textbook_parse")
+            self.record_event(conn, project_id, "textbook_parse", "textbook_attached_from_library", asset)
         return {**asset, "filename": safe_name, "status": "uploaded"}
 
     def latest_textbook_text(self, conn: sqlite3.Connection, project_dir: Path, project_id: str) -> str:

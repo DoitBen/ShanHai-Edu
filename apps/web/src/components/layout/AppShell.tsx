@@ -71,6 +71,28 @@ const ScriptsScreen = dynamic(
   }
 );
 
+const AdminWorkflowScreen = dynamic(
+  () =>
+    import("@/components/screens/AdminWorkflowScreen").then(
+      (m) => m.AdminWorkflowScreen
+    ),
+  {
+    ssr: false,
+    loading: () => <ScreenLoading label="正在加载规则控制面..." />,
+  }
+);
+
+const AdminTextbookLibraryScreen = dynamic(
+  () =>
+    import("@/components/screens/AdminTextbookLibraryScreen").then(
+      (m) => m.AdminTextbookLibraryScreen
+    ),
+  {
+    ssr: false,
+    loading: () => <ScreenLoading label="正在加载教材库管理..." />,
+  }
+);
+
 const CommandPalette = dynamic(
   () =>
     import("@/components/command-palette/CommandPalette").then(
@@ -137,13 +159,15 @@ export function AppShell() {
             {screen === "config" && <ConfigScreen />}
             {screen === "logs" && <LogsScreen />}
             {screen === "scripts" && <ScriptsScreen />}
+            {screen === "admin-workflow" && <AdminWorkflowScreen />}
+            {screen === "admin-textbook-library" && <AdminTextbookLibraryScreen />}
           </PageTransition>
         </main>
         <footer className="mt-auto border-t border-border bg-background/80 px-4 py-4 lg:px-8">
           <div className="flex flex-col items-center justify-between gap-2 text-center sm:flex-row sm:text-left">
             <Logo size={22} showWordmark={false} />
             <p className="t-caption text-muted-foreground">
-              山海教育 · AI幼教ProMax可视化工作台 · 第一阶段演示版
+              山海教育 · AI幼教ProMax可视化工作台 · 真实 API 工作台
             </p>
             {demoMode ? (
               <p className="t-caption text-muted-foreground/70">

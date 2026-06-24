@@ -104,9 +104,9 @@ export function LoginScreen() {
             </p>
 
             <div className="mt-10 grid w-full max-w-lg grid-cols-3 gap-3">
-              <BrandStat label="工作流节点" value="14" />
-              <BrandStat label="演示项目" value="3" />
-              <BrandStat label="视频方案" value="9" />
+              <BrandStat label="真实接口" value="API" />
+              <BrandStat label="项目数据" value="实时" />
+              <BrandStat label="教材库" value="已接入" />
             </div>
           </div>
         </section>

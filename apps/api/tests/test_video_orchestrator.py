@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Any
 
 from app.providers import FakeProvider
+from app.state_engine import StateEngine
 from app.store import ProjectStore
 from app.video_orchestrator import VideoOrchestrator
 from app.workflow_config import WorkflowConfig
@@ -54,6 +55,7 @@ def test_video_orchestrator_fake_run_creates_tasks_and_final_content(tmp_path: P
 
         orchestrator = VideoOrchestrator(
             store=store,
+            state_engine=StateEngine(store, workflow.runtime_dependencies(), workflow),
             text_provider=FakeProvider(),
             video_provider=None,
             tts_provider=None,

@@ -1294,7 +1294,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   loadMediaWorkbench: async () => {
-    if (get().dataMode === "demo") return;
     set({ mediaWorkbenchStatus: "loading", mediaWorkbenchError: null });
     try {
       const mediaWorkbench = await fetchMediaWorkbench();

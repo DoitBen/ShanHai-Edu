@@ -50,13 +50,18 @@ assert(
 );
 
 assert(
-  proxyRoute.includes("shanhai_auth"),
-  "backend proxy must verify local auth state before forwarding admin paths",
+  !proxyRoute.includes("shanhai_auth") && !proxyRoute.includes("isLocalAdminRequest"),
+  "backend proxy must not trust editable local auth cookies for admin paths",
+);
+
+assert(
+  proxyRoute.includes("ENABLE_ADMIN_BACKEND_PROXY") && proxyRoute.includes("canProxyAdminBackend"),
+  "backend proxy must only allow admin paths through an explicit server-side flag",
 );
 
 assert(
   proxyRoute.includes("return NextResponse.json") && proxyRoute.includes("NOT_FOUND"),
-  "backend proxy must hide admin backend paths from non-admin users",
+  "backend proxy must fail closed for admin backend paths without trusted server auth",
 );
 
 assert(

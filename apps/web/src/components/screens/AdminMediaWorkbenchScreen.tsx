@@ -28,10 +28,12 @@ import {
   ImagePlus,
   Images,
   Loader2,
+  Monitor,
   Play,
   RefreshCw,
   Send,
   ShieldAlert,
+  Smartphone,
   Upload,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -90,11 +92,15 @@ export function AdminMediaWorkbenchScreen() {
     image: mediaWorkbench?.capabilities.image.provider_ready ?? false,
     video: mediaWorkbench?.capabilities.video.provider_ready ?? false,
   };
+  const workbenchLoaded = Boolean(mediaWorkbench);
+  const imageProviderUnavailable = workbenchLoaded && !providerReady.image;
+  const videoProviderUnavailable = workbenchLoaded && !providerReady.video;
   const selectedCount = selectedImageIds.length;
   const basketCount = basket?.assets.length || 0;
   const videoSubmitDisabled =
     videoBusy ||
-    !providerReady.video ||
+    !workbenchLoaded ||
+    videoProviderUnavailable ||
     !videoPrompt.trim() ||
     (videoMode === "reference" && basketCount < 1) ||
     basketCount > maxReferenceImages;
@@ -209,8 +215,16 @@ export function AdminMediaWorkbenchScreen() {
       )}
 
       <div className="mt-6 grid gap-3 md:grid-cols-4">
-        <StatusTile label="图片接口" value={providerReady.image ? "已配置" : "未配置"} tone={providerReady.image ? "success" : "warning"} />
-        <StatusTile label="视频接口" value={providerReady.video ? "已配置" : "未配置"} tone={providerReady.video ? "success" : "warning"} />
+        <StatusTile
+          label="图片接口"
+          value={!workbenchLoaded ? "检测中" : providerReady.image ? "已连接" : "未连接"}
+          tone={!workbenchLoaded ? "neutral" : providerReady.image ? "success" : "warning"}
+        />
+        <StatusTile
+          label="视频接口"
+          value={!workbenchLoaded ? "检测中" : providerReady.video ? "已连接" : "未连接"}
+          tone={!workbenchLoaded ? "neutral" : providerReady.video ? "success" : "warning"}
+        />
         <StatusTile label="图片素材" value={`${imageAssets.length} 张`} tone="neutral" />
         <StatusTile label="视频参考篮" value={`${basketCount} / 最多 7 张`} tone={basketCount > maxReferenceImages ? "warning" : "neutral"} />
       </div>
@@ -251,11 +265,13 @@ export function AdminMediaWorkbenchScreen() {
                   <SelectField label="质量" value={imageQuality} onValueChange={setImageQuality} values={["high", "low"]} />
                   <SelectField label="张数" value={imageCount} onValueChange={setImageCount} values={["1", "2", "3", "4"]} />
                 </div>
-                <Button className="w-full gap-2" onClick={() => void submitImageRun()} disabled={imageBusy || !providerReady.image}>
+                <Button className="w-full gap-2" onClick={() => void submitImageRun()} disabled={imageBusy || !workbenchLoaded || imageProviderUnavailable}>
                   {imageBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
                   生成图片
                 </Button>
-                {!providerReady.image && <p className="t-caption text-warning">图片 provider 未配置，不能提交真实生图任务。</p>}
+                {imageProviderUnavailable && (
+                  <p className="t-caption text-warning">后端没有检测到图片生成接口配置，暂时不能提交真实生图任务。</p>
+                )}
               </div>
             </Card>
 
@@ -284,51 +300,55 @@ export function AdminMediaWorkbenchScreen() {
         </TabsContent>
 
         <TabsContent value="videos" className="mt-5">
-          <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
             <Card className="border-border bg-card p-5 shadow-soft">
-              <SectionTitle icon={<Film className="h-4 w-4" />} title="视频生成" desc="默认 omni_flash-10s / 1280x720 / 10秒" />
-              <div className="mt-5 space-y-4">
-                <div className="space-y-2">
-                  <Label>视频提示词</Label>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <SectionTitle icon={<Film className="h-4 w-4" />} title="视频生成" desc="Omni 默认生成 10 秒横版视频" />
+                <ToneBadge tone={providerReady.video ? "success" : "neutral"}>
+                  {providerReady.video ? "真实接口已连接" : "检测中"}
+                </ToneBadge>
+              </div>
+
+              <div className="mt-5 rounded-[22px] border border-border bg-background p-4">
+                <div className="grid gap-4 lg:grid-cols-[84px_minmax(0,1fr)]">
+                  <label className="flex h-[76px] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-border bg-card text-muted-foreground hover:border-primary/50 hover:text-primary">
+                    <Images className="h-5 w-5" />
+                    <span className="mt-2 text-xs font-medium">参考图</span>
+                    <span className="text-[11px]">{basketCount}/{maxReferenceImages}</span>
+                    <input type="file" accept="image/*" multiple className="sr-only" onChange={(event) => void uploadReferences(event.target.files)} />
+                  </label>
+
                   <Textarea
                     value={videoPrompt}
                     onChange={(event) => setVideoPrompt(event.target.value)}
-                    className="min-h-36 bg-background"
-                    placeholder="例如：一个温暖明亮的小学数学课堂导入镜头，镜头缓慢推进桌面上的计数棒和卡片，非写实卡通风格。"
+                    className="min-h-[76px] resize-none border-0 bg-transparent px-0 py-0 text-base shadow-none focus-visible:ring-0"
+                    placeholder="描述你想生成的视频内容，例如：温暖明亮的小学数学课堂导入镜头，镜头缓慢推进桌面上的计数棒和卡片。"
                   />
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <SelectField label="模型" value={videoModel} onValueChange={setVideoModel} values={[DEFAULT_VIDEO_MODEL]} />
-                  <SelectField label="模式" value={videoMode} onValueChange={(value) => setVideoMode(value as VideoGenerationMode)} values={["text", "reference"]} />
-                  <SelectField label="尺寸" value={videoSize} onValueChange={setVideoSize} values={["1280x720"]} />
-                  <div className="space-y-2">
-                    <Label>时长</Label>
-                    <Input value={`${DEFAULT_VIDEO_DURATION} 秒`} readOnly className="bg-background" />
+
+                {basketCount > 0 && <MiniAssetList assets={basket?.assets || []} compact />}
+
+                <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="flex flex-wrap gap-2">
+                    <PillSelect icon={<span className="text-sm font-semibold">O</span>} value={videoModel} onValueChange={setVideoModel} values={[DEFAULT_VIDEO_MODEL]} />
+                    <PillSelect icon={<Film className="h-4 w-4" />} value={videoMode} onValueChange={(value) => setVideoMode(value as VideoGenerationMode)} values={["text", "reference"]} />
+                    <PillSelect icon={<Monitor className="h-4 w-4" />} value={videoSize} onValueChange={setVideoSize} values={["1280x720"]} />
+                    <ReadonlyPill icon={<Smartphone className="h-4 w-4" />} value={`${DEFAULT_VIDEO_DURATION} 秒`} />
                   </div>
+
+                  <Button className="h-10 shrink-0 gap-2 px-5" disabled={videoSubmitDisabled} onClick={() => void submitVideoRun()}>
+                    {videoBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                    生成 10 秒视频
+                  </Button>
                 </div>
-                <div className="rounded-md border border-dashed border-border bg-background p-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <div className="t-body font-medium">视频参考篮</div>
-                      <p className="t-caption text-muted-foreground">当前 {basketCount} 张，Omni 最多 7 张。图生视频会走本地 multipart input_reference。</p>
-                    </div>
-                    <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-muted">
-                      <Upload className="h-4 w-4" />
-                      上传参考图
-                      <input type="file" accept="image/*" multiple className="sr-only" onChange={(event) => void uploadReferences(event.target.files)} />
-                    </label>
-                  </div>
-                  <MiniAssetList assets={basket?.assets || []} />
-                </div>
-                <Button className="w-full gap-2" disabled={videoSubmitDisabled} onClick={() => void submitVideoRun()}>
-                  {videoBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                  生成 10 秒视频
-                </Button>
-                {!providerReady.video && <p className="t-caption text-warning">视频 provider 未配置，不能提交真实视频任务。</p>}
               </div>
+
+              {videoProviderUnavailable && (
+                <p className="mt-3 t-caption text-warning">后端没有检测到视频生成接口配置，暂时不能提交真实视频任务。</p>
+              )}
             </Card>
 
-            <Card className="border-border bg-card p-5 shadow-soft">
+            <Card className="border-border bg-card p-4 shadow-soft">
               <SectionTitle icon={<RefreshCw className="h-4 w-4" />} title="视频任务" desc="创建后可同步状态并下载 mp4" />
               <RunList runs={mediaWorkbench?.video_runs || []} syncingRunId={syncingRunId} onSync={syncRun} />
             </Card>
@@ -406,6 +426,43 @@ function SelectField({
   );
 }
 
+function PillSelect({
+  icon,
+  value,
+  values,
+  onValueChange,
+}: {
+  icon: ReactNode;
+  value: string;
+  values: string[];
+  onValueChange: (value: string) => void;
+}) {
+  return (
+    <Select value={value} onValueChange={onValueChange}>
+      <SelectTrigger className="h-10 w-auto gap-2 rounded-full border-0 bg-muted px-4 shadow-none">
+        <span className="text-muted-foreground">{icon}</span>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {values.map((item) => (
+          <SelectItem key={item} value={item}>
+            {item}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function ReadonlyPill({ icon, value }: { icon: ReactNode; value: string }) {
+  return (
+    <div className="inline-flex h-10 items-center gap-2 rounded-full bg-muted px-4 text-sm">
+      <span className="text-muted-foreground">{icon}</span>
+      <span>{value}</span>
+    </div>
+  );
+}
+
 function AssetGrid({
   assets,
   selectedIds,
@@ -453,17 +510,23 @@ function AssetGrid({
   );
 }
 
-function MiniAssetList({ assets }: { assets: MediaAsset[] }) {
+function MiniAssetList({ assets, compact = false }: { assets: MediaAsset[]; compact?: boolean }) {
   if (!assets.length) return null;
   return (
-    <div className="mt-4 grid gap-2 sm:grid-cols-2">
+    <div className={cn("mt-4 grid gap-2", compact ? "sm:grid-cols-4" : "sm:grid-cols-2")}>
       {assets.map((asset) => (
         <div key={asset.asset_id} className="flex items-center gap-2 rounded-md border border-border bg-card p-2">
-          <img src={downloadMediaWorkbenchAsset(asset.asset_id)} alt={asset.filename} className="h-12 w-16 rounded object-cover" />
-          <div className="min-w-0">
-            <div className="truncate t-caption font-medium">{asset.filename}</div>
-            <div className="t-caption text-muted-foreground">{asset.source}</div>
-          </div>
+          <img
+            src={downloadMediaWorkbenchAsset(asset.asset_id)}
+            alt={asset.filename}
+            className={cn("rounded object-cover", compact ? "h-9 w-12" : "h-12 w-16")}
+          />
+          {!compact && (
+            <div className="min-w-0">
+              <div className="truncate t-caption font-medium">{asset.filename}</div>
+              <div className="t-caption text-muted-foreground">{asset.source}</div>
+            </div>
+          )}
         </div>
       ))}
     </div>
@@ -489,8 +552,8 @@ function RunList({
   return (
     <div className="mt-5 space-y-3">
       {runs.map((run) => (
-        <div key={run.run_id} className="rounded-md border border-border bg-background p-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div key={run.run_id} className="rounded-md border border-border bg-background p-3">
+          <div className="flex flex-col gap-3">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <ToneBadge tone={run.status === "failed" ? "warning" : run.status === "completed" ? "success" : "neutral"}>{run.status}</ToneBadge>

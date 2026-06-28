@@ -42,6 +42,7 @@ assert(apiClient.includes("/admin/media-workbench/videos/runs"), "api client mus
 
 assert(store.includes("mediaWorkbench"), "store must cache media workbench state");
 assert(store.includes("loadMediaWorkbench"), "store must load media workbench");
+assert(!store.includes('loadMediaWorkbench: async () => {\n    if (get().dataMode === "demo") return;'), "media workbench must load real admin backend even when the UI shell is demo-login enabled");
 assert(store.includes("createImageWorkbenchRun"), "store must create image runs");
 assert(store.includes("importImagesToVideoReferences"), "store must import images to video references");
 assert(store.includes("createVideoWorkbenchRun"), "store must create video runs");

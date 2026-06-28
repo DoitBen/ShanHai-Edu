@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 const BACKEND_BASE_URL = process.env.BACKEND_API_BASE_URL || "http://localhost:8000";
 const BACKEND_API_TOKEN = process.env.BACKEND_API_TOKEN;
-const AUTH_COOKIE_NAME = "shanhai_auth";
+const ENABLE_ADMIN_BACKEND_PROXY = process.env.ENABLE_ADMIN_BACKEND_PROXY === "true";
 
 type RouteContext = {
   params: Promise<{ path?: string[] }> | { path?: string[] };
@@ -12,7 +12,7 @@ async function proxyBackend(request: NextRequest, context: RouteContext) {
   const params = await context.params;
   const pathParts = params.path || [];
   const path = pathParts.map(encodeURIComponent).join("/");
-  if (isAdminBackendPath(pathParts) && !isLocalAdminRequest(request)) {
+  if (isAdminBackendPath(pathParts) && !canProxyAdminBackend()) {
     return NextResponse.json(
       {
         ok: false,
@@ -55,15 +55,8 @@ function isAdminBackendPath(path: string[]) {
   return path[0] === "admin";
 }
 
-function isLocalAdminRequest(request: NextRequest) {
-  const raw = request.cookies.get(AUTH_COOKIE_NAME)?.value;
-  if (!raw) return false;
-  try {
-    const parsed = JSON.parse(decodeURIComponent(raw)) as { role?: unknown };
-    return parsed.role === "admin";
-  } catch {
-    return false;
-  }
+function canProxyAdminBackend() {
+  return ENABLE_ADMIN_BACKEND_PROXY && Boolean(BACKEND_API_TOKEN);
 }
 
 export async function GET(request: NextRequest, context: RouteContext) {

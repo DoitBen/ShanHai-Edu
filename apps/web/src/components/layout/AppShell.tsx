@@ -93,6 +93,17 @@ const AdminTextbookLibraryScreen = dynamic(
   }
 );
 
+const AdminMediaWorkbenchScreen = dynamic(
+  () =>
+    import("@/components/screens/AdminMediaWorkbenchScreen").then(
+      (m) => m.AdminMediaWorkbenchScreen
+    ),
+  {
+    ssr: false,
+    loading: () => <ScreenLoading label="正在加载媒体生成工作台..." />,
+  }
+);
+
 const CommandPalette = dynamic(
   () =>
     import("@/components/command-palette/CommandPalette").then(
@@ -161,6 +172,7 @@ export function AppShell() {
             {screen === "scripts" && <ScriptsScreen />}
             {screen === "admin-workflow" && <AdminWorkflowScreen />}
             {screen === "admin-textbook-library" && <AdminTextbookLibraryScreen />}
+            {screen === "admin-media-workbench" && <AdminMediaWorkbenchScreen />}
           </PageTransition>
         </main>
         <footer className="mt-auto border-t border-border bg-background/80 px-4 py-4 lg:px-8">

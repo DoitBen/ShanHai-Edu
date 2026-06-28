@@ -20,6 +20,9 @@ from .settings import Settings
 from .state_engine import NodeSkippedError
 from .store import ProjectStore
 from .textbook_library import TextbookAssetExtractionError, TextbookAssetNotTrustedError, TextbookLibraryStore
+from .video_provider_readiness import build_video_provider_readiness_report
+from .media_workbench import MediaWorkbenchError
+from .video_workflow import VideoWorkflowError
 from .workflow_config import WorkflowConfig
 
 
@@ -75,6 +78,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         prompt_root=Path(settings.workflow_root) / "prompts",
         tts_provider=tts_provider,
         video_model=settings.video_model,
+        capabilities_path=settings.capabilities_path,
     )
 
     app = FastAPI(title="ShanHaiEdu Video MVP API")
@@ -129,6 +133,35 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
     @app.get("/health")
     def health():
         return ok({"status": "ok", "workflow_version": workflow.version})
+
+    @app.get("/readiness")
+    def readiness():
+        return ok(
+            build_video_provider_readiness_report(
+                env={
+                    "PROVIDER_MODE": settings.provider_mode,
+                    "DEEPSEEK_API_KEY": settings.deepseek_api_key,
+                    "DEEPSEEK_BASE_URL": settings.deepseek_base_url,
+                    "DEEPSEEK_MODEL": settings.deepseek_model,
+                    "MINMAX_API_KEY": settings.minmax_api_key,
+                    "MINMAX_BASE_URL": settings.minmax_base_url,
+                    "MINMAX_TEXT_MODEL": settings.minmax_text_model,
+                    "VIDEO_PROVIDER_MODE": settings.video_provider_mode,
+                    "OCTO_API_KEY": settings.octo_api_key,
+                    "OCTO_BASE_URL": settings.octo_base_url,
+                    "OCTO_VIDEO_PROVIDER": settings.octo_video_provider,
+                    "VIDEO_MODEL": settings.video_model,
+                    "IMAGE_PROVIDER_MODE": settings.image_provider_mode,
+                    "IMAGEGEN_API_KEY": settings.imagegen_api_key,
+                    "IMAGEGEN_BASE_URL": settings.imagegen_base_url,
+                    "TTS_PROVIDER_MODE": settings.tts_provider_mode,
+                    "MINMAX_TTS_MODEL": settings.minmax_tts_model,
+                },
+                api_alive=True,
+                web_alive=None,
+                live_smoke_executed=False,
+            )
+        )
 
     @app.get("/workflow")
     def get_workflow():
@@ -346,6 +379,103 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
             }
         )
 
+    def provider_error_response(exc: ProviderError):
+        details = {}
+        if getattr(exc, "status_code", None) is not None:
+            details["http_status"] = exc.status_code
+        if getattr(exc, "response_excerpt", ""):
+            details["response_excerpt"] = sanitize_provider_excerpt(exc.response_excerpt)
+        return fail(502, exc.code, str(exc), retryable=exc.retryable, details=details or None)
+
+    @app.get("/admin/media-workbench", dependencies=[Depends(require_admin)])
+    def admin_media_workbench():
+        return ok(service.media_workbench.summary())
+
+    @app.get("/admin/media-workbench/capabilities", dependencies=[Depends(require_admin)])
+    def admin_media_workbench_capabilities():
+        return ok(service.media_workbench.capabilities())
+
+    @app.get("/admin/media-workbench/assets", dependencies=[Depends(require_admin)])
+    def admin_media_workbench_assets(type: str | None = None, source: str | None = None):
+        return ok(service.media_workbench.assets(type, source))
+
+    @app.get("/admin/media-workbench/assets/{asset_id}/download", dependencies=[Depends(require_admin)])
+    def admin_media_workbench_download_asset(asset_id: str):
+        try:
+            path = service.media_workbench.asset_path(asset_id)
+        except KeyError:
+            return fail(404, "MEDIA_ASSET_NOT_FOUND", "素材不存在", retryable=False)
+        if not path.exists():
+            return fail(404, "MEDIA_ASSET_NOT_FOUND", "素材不存在", retryable=False)
+        media_type = "video/mp4" if path.suffix.lower() == ".mp4" else "image/png"
+        return FileResponse(path, media_type=media_type, filename=path.name)
+
+    @app.post("/admin/media-workbench/images/runs", dependencies=[Depends(require_admin)])
+    def admin_media_workbench_create_image_run(payload: dict[str, Any]):
+        try:
+            return ok(service.media_workbench.create_image_run(payload))
+        except MediaWorkbenchError as exc:
+            return fail(400, exc.code, str(exc), retryable=False)
+        except ProviderError as exc:
+            return provider_error_response(exc)
+
+    @app.get("/admin/media-workbench/images/runs/{run_id}", dependencies=[Depends(require_admin)])
+    def admin_media_workbench_get_image_run(run_id: str):
+        try:
+            return ok(service.media_workbench.get_image_run(run_id))
+        except KeyError:
+            return fail(404, "IMAGE_WORKBENCH_RUN_NOT_FOUND", "图片生成任务不存在", retryable=False)
+
+    @app.post("/admin/media-workbench/videos/references", dependencies=[Depends(require_admin)])
+    def admin_media_workbench_upload_video_references(files: list[UploadFile]):
+        try:
+            return ok(service.media_workbench.upload_video_references(files))
+        except MediaWorkbenchError as exc:
+            return fail(400, exc.code, str(exc), retryable=False)
+
+    @app.post("/admin/media-workbench/videos/references/import", dependencies=[Depends(require_admin)])
+    def admin_media_workbench_import_video_references(payload: dict[str, Any]):
+        try:
+            asset_ids = payload.get("asset_ids") if isinstance(payload.get("asset_ids"), list) else []
+            return ok(service.media_workbench.import_video_references([str(item) for item in asset_ids]))
+        except MediaWorkbenchError as exc:
+            return fail(400, exc.code, str(exc), retryable=False)
+
+    @app.post("/admin/media-workbench/videos/runs", dependencies=[Depends(require_admin)])
+    def admin_media_workbench_create_video_run(payload: dict[str, Any]):
+        try:
+            return ok(service.media_workbench.create_video_run(payload))
+        except MediaWorkbenchError as exc:
+            return fail(400, exc.code, str(exc), retryable=False)
+        except ProviderError as exc:
+            return provider_error_response(exc)
+
+    @app.get("/admin/media-workbench/videos/runs/{run_id}", dependencies=[Depends(require_admin)])
+    def admin_media_workbench_get_video_run(run_id: str):
+        try:
+            return ok(service.media_workbench.get_video_run(run_id))
+        except KeyError:
+            return fail(404, "VIDEO_WORKBENCH_RUN_NOT_FOUND", "视频生成任务不存在", retryable=False)
+
+    @app.post("/admin/media-workbench/videos/runs/{run_id}/sync", dependencies=[Depends(require_admin)])
+    def admin_media_workbench_sync_video_run(run_id: str):
+        try:
+            return ok(service.media_workbench.sync_video_run(run_id))
+        except ProviderError as exc:
+            return provider_error_response(exc)
+        except KeyError:
+            return fail(404, "VIDEO_WORKBENCH_RUN_NOT_FOUND", "视频生成任务不存在", retryable=False)
+
+    @app.get("/admin/media-workbench/videos/runs/{run_id}/download", dependencies=[Depends(require_admin)])
+    def admin_media_workbench_download_video_run(run_id: str):
+        try:
+            path = service.media_workbench.video_download_path(run_id)
+        except KeyError:
+            return fail(404, "VIDEO_WORKBENCH_OUTPUT_NOT_FOUND", "视频输出不存在", retryable=False)
+        if not path.exists():
+            return fail(404, "VIDEO_WORKBENCH_OUTPUT_NOT_FOUND", "视频输出不存在", retryable=False)
+        return FileResponse(path, media_type="video/mp4", filename=path.name)
+
     @app.get("/admin/prompts/templates/{template_id}", dependencies=[Depends(require_admin)])
     def admin_prompt_template(template_id: str):
         return ok({"template_id": template_id, "versions": prompt_store.list_versions(template_id)})
@@ -384,6 +514,76 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
             return ok(workflow.schema(schema_name))
         except FileNotFoundError:
             return fail(404, "SCHEMA_NOT_FOUND", f"未找到 schema：{schema_name}")
+
+    @app.get("/projects/{project_id}/video-workflow", dependencies=protected)
+    def get_video_workflow(project_id: str):
+        try:
+            return ok(service.video_workflow.get_workflow(project_id))
+        except KeyError:
+            return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
+
+    @app.put("/projects/{project_id}/video-workflow", dependencies=protected)
+    def save_video_workflow(project_id: str, payload: dict[str, Any]):
+        try:
+            return ok(service.video_workflow.save_workflow(project_id, payload))
+        except KeyError:
+            return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
+
+    @app.post("/projects/{project_id}/video-workflow/assets", dependencies=protected)
+    def upload_video_workflow_assets(project_id: str, files: list[UploadFile]):
+        try:
+            return ok(service.video_workflow.upload_assets(project_id, files))
+        except VideoWorkflowError as exc:
+            return fail(400, exc.code, str(exc), retryable=False)
+        except KeyError:
+            return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
+
+    @app.post("/projects/{project_id}/video-workflow/runs", dependencies=protected)
+    def create_video_workflow_run(project_id: str, payload: dict[str, Any]):
+        try:
+            return ok(service.video_workflow.create_run(project_id, payload))
+        except VideoWorkflowError as exc:
+            return fail(400, exc.code, str(exc), retryable=False)
+        except ProviderError as exc:
+            details = {}
+            if getattr(exc, "status_code", None) is not None:
+                details["http_status"] = exc.status_code
+            if getattr(exc, "response_excerpt", ""):
+                details["response_excerpt"] = sanitize_provider_excerpt(exc.response_excerpt)
+            return fail(502, exc.code, str(exc), retryable=exc.retryable, details=details or None)
+        except KeyError:
+            return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
+
+    @app.get("/projects/{project_id}/video-workflow/runs/{run_id}", dependencies=protected)
+    def get_video_workflow_run(project_id: str, run_id: str):
+        try:
+            return ok(service.video_workflow.get_run(project_id, run_id))
+        except KeyError:
+            return fail(404, "VIDEO_WORKFLOW_RUN_NOT_FOUND", "视频画布任务不存在")
+
+    @app.post("/projects/{project_id}/video-workflow/runs/{run_id}/sync", dependencies=protected)
+    def sync_video_workflow_run(project_id: str, run_id: str):
+        try:
+            return ok(service.video_workflow.sync_run(project_id, run_id))
+        except ProviderError as exc:
+            details = {}
+            if getattr(exc, "status_code", None) is not None:
+                details["http_status"] = exc.status_code
+            if getattr(exc, "response_excerpt", ""):
+                details["response_excerpt"] = sanitize_provider_excerpt(exc.response_excerpt)
+            return fail(502, exc.code, str(exc), retryable=exc.retryable, details=details or None)
+        except KeyError:
+            return fail(404, "VIDEO_WORKFLOW_RUN_NOT_FOUND", "视频画布任务不存在")
+
+    @app.get("/projects/{project_id}/video-workflow/runs/{run_id}/download", dependencies=protected)
+    def download_video_workflow_run(project_id: str, run_id: str):
+        try:
+            path = service.video_workflow.download_path(project_id, run_id)
+        except KeyError:
+            return fail(404, "VIDEO_WORKFLOW_OUTPUT_NOT_FOUND", "视频画布输出不存在")
+        if not path.exists():
+            return fail(404, "VIDEO_WORKFLOW_OUTPUT_NOT_FOUND", "视频画布输出不存在")
+        return FileResponse(path, media_type="video/mp4", filename=path.name)
 
     @app.get("/rules/coverage", dependencies=protected)
     def get_rule_coverage():

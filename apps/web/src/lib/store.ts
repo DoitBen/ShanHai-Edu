@@ -11,10 +11,19 @@ import type {
   ApiTask,
   WorkflowStage,
   VideoIntroPlan,
+  VideoReferenceAsset,
+  VideoWorkflowGraph,
+  VideoWorkflowResponse,
+  VideoWorkflowRun,
   ScreenKey,
   NewProjectDraft,
   Role,
   VideoModelOption,
+  ImageWorkbenchRun,
+  ImageWorkbenchRunRequest,
+  MediaWorkbenchResponse,
+  VideoWorkbenchRun,
+  VideoWorkbenchRunRequest,
 } from "./types";
 import {
   MOCK_PROJECTS,
@@ -40,11 +49,21 @@ import {
   fetchProjectTask,
   fetchProjectTasks,
   fetchProjects,
+  fetchVideoWorkflow,
+  fetchMediaWorkbench,
   generateProjectNode,
   retryProjectTask as retryProjectTaskRequest,
+  saveVideoWorkflow,
+  createVideoWorkflowRun as createVideoWorkflowRunRequest,
+  syncVideoWorkflowRun,
+  uploadVideoWorkflowAssets,
+  createImageWorkbenchRun as createImageWorkbenchRunRequest,
+  createVideoWorkbenchRun as createVideoWorkbenchRunRequest,
+  importMediaWorkbenchVideoReferences,
+  syncVideoWorkbenchRun as syncVideoWorkbenchRunRequest,
+  uploadMediaWorkbenchVideoReferences,
   submitProjectFeedback,
   updateProject,
-  uploadProjectTextbook,
   uploadTextbookToLibrary,
   isApiClientError,
 } from "./api-client";
@@ -201,6 +220,12 @@ interface AppState {
   workspaceByProject: Record<string, ApiProjectWorkspace>;
   workspaceStatusByProject: Record<string, LoadStatus>;
   workspaceErrorByProject: Record<string, string | null>;
+  videoWorkflowByProject: Record<string, VideoWorkflowResponse>;
+  videoWorkflowStatusByProject: Record<string, LoadStatus>;
+  videoWorkflowErrorByProject: Record<string, string | null>;
+  mediaWorkbench: MediaWorkbenchResponse | null;
+  mediaWorkbenchStatus: LoadStatus;
+  mediaWorkbenchError: string | null;
   loadProjects: () => Promise<void>;
   createProjectFromDraft: () => Promise<string>;
   loadProjectManifest: (projectId: string) => Promise<void>;
@@ -209,6 +234,24 @@ interface AppState {
   loadProjectTasks: (projectId: string) => Promise<void>;
   refreshProjectTask: (projectId: string, taskId: string) => Promise<{ ok: boolean; msg?: string }>;
   retryProjectTask: (projectId: string, taskId: string) => Promise<{ ok: boolean; msg?: string }>;
+  loadVideoWorkflow: (projectId: string) => Promise<void>;
+  saveVideoWorkflowGraph: (projectId: string, graph: VideoWorkflowGraph) => Promise<{ ok: boolean; msg?: string }>;
+  uploadVideoWorkflowReferences: (projectId: string, files: File[]) => Promise<{ ok: boolean; msg?: string; assets?: VideoReferenceAsset[] }>;
+  createVideoWorkflowRun: (projectId: string, payload: {
+    prompt: string;
+    model: string;
+    mode: "text" | "reference" | "first_last_frame" | "extend";
+    size: string;
+    duration_sec: number;
+    reference_asset_ids: string[];
+  }) => Promise<{ ok: boolean; msg?: string; run?: VideoWorkflowRun }>;
+  syncVideoWorkflowRun: (projectId: string, runId: string) => Promise<{ ok: boolean; msg?: string; run?: VideoWorkflowRun }>;
+  loadMediaWorkbench: () => Promise<void>;
+  createImageWorkbenchRun: (payload: ImageWorkbenchRunRequest) => Promise<{ ok: boolean; msg?: string; run?: ImageWorkbenchRun }>;
+  uploadMediaWorkbenchReferences: (files: File[]) => Promise<{ ok: boolean; msg?: string }>;
+  importImagesToVideoReferences: (assetIds: string[]) => Promise<{ ok: boolean; msg?: string }>;
+  createVideoWorkbenchRun: (payload: VideoWorkbenchRunRequest) => Promise<{ ok: boolean; msg?: string; run?: VideoWorkbenchRun }>;
+  syncVideoWorkbenchRun: (runId: string) => Promise<{ ok: boolean; msg?: string; run?: VideoWorkbenchRun }>;
   parseDraftTextbook: (
     file: File,
     knowledgePointId?: string,
@@ -271,18 +314,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   authReady: false,
   login: (username, password) => {
     if (!isDemoMode()) {
-      if (!username.trim()) {
-        return { ok: false, msg: "请输入用户名" };
-      }
-      const user: AuthUser = {
-        username: username.trim(),
-        role: "teacher",
-        displayName: username.trim(),
-        loginAt: new Date().toISOString(),
-      };
-      saveAuth(user);
-      set({ user });
-      return { ok: true };
+      saveAuth(null);
+      set({ user: null });
+      return { ok: false, msg: "真实 API 模式未接入后端登录，禁止使用本地账号进入工作台" };
     }
     if (username === "admin" && password === DEMO_PASSWORD) {
       const user: AuthUser = {
@@ -313,6 +347,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ user: null, screen: "dashboard", activeProjectId: null });
   },
   switchRole: (role) => {
+    if (!isDemoMode()) return;
     const u = get().user;
     if (!u) return;
     const next: AuthUser = { ...u, role, displayName: role === "admin" ? "管理员" : "演示教师" };
@@ -348,6 +383,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   workspaceByProject: {},
   workspaceStatusByProject: {},
   workspaceErrorByProject: {},
+  videoWorkflowByProject: {},
+  videoWorkflowStatusByProject: {},
+  videoWorkflowErrorByProject: {},
+  mediaWorkbench: null,
+  mediaWorkbenchStatus: "idle",
+  mediaWorkbenchError: null,
 
   loadProjects: async () => {
     if (get().dataMode === "demo") {
@@ -446,13 +487,9 @@ export const useAppStore = create<AppState>((set, get) => ({
           status: "active",
           project_dir: "",
         });
-    const textbookContent = buildTextbookUploadContent(draft);
-    if (draft.sourceMode === "textbook-library" && !draft.apiProjectId && textbookContent.trim()) {
-      await uploadProjectTextbook(
-        mapped.id,
-        textbookContent,
-        draft.textbookFileName || "textbook.txt",
-      );
+    const libraryTextbookId = draft.parseResult?.textbookId;
+    if (draft.sourceMode === "textbook-library" && !draft.apiProjectId && libraryTextbookId) {
+      await attachProjectTextbookFromLibrary(mapped.id, libraryTextbookId);
     }
     set({
       projects: [mapped, ...get().projects.filter((item) => item.id !== mapped.id)],
@@ -1134,6 +1171,251 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  loadVideoWorkflow: async (projectId) => {
+    if (get().dataMode === "demo") return;
+    set({
+      videoWorkflowStatusByProject: {
+        ...get().videoWorkflowStatusByProject,
+        [projectId]: "loading",
+      },
+      videoWorkflowErrorByProject: {
+        ...get().videoWorkflowErrorByProject,
+        [projectId]: null,
+      },
+    });
+    try {
+      const workflow = await fetchVideoWorkflow(projectId);
+      set({
+        videoWorkflowByProject: {
+          ...get().videoWorkflowByProject,
+          [projectId]: workflow,
+        },
+        videoWorkflowStatusByProject: {
+          ...get().videoWorkflowStatusByProject,
+          [projectId]: "ready",
+        },
+      });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "视频画布加载失败";
+      set({
+        videoWorkflowStatusByProject: {
+          ...get().videoWorkflowStatusByProject,
+          [projectId]: "error",
+        },
+        videoWorkflowErrorByProject: {
+          ...get().videoWorkflowErrorByProject,
+          [projectId]: msg,
+        },
+      });
+    }
+  },
+
+  saveVideoWorkflowGraph: async (projectId, graph) => {
+    try {
+      const workflow = await saveVideoWorkflow(projectId, graph);
+      set({
+        videoWorkflowByProject: {
+          ...get().videoWorkflowByProject,
+          [projectId]: workflow,
+        },
+        videoWorkflowStatusByProject: {
+          ...get().videoWorkflowStatusByProject,
+          [projectId]: "ready",
+        },
+      });
+      return { ok: true };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "视频画布保存失败";
+      set({
+        videoWorkflowErrorByProject: {
+          ...get().videoWorkflowErrorByProject,
+          [projectId]: msg,
+        },
+      });
+      return { ok: false, msg };
+    }
+  },
+
+  uploadVideoWorkflowReferences: async (projectId, files) => {
+    try {
+      const result = await uploadVideoWorkflowAssets(projectId, files);
+      const current = get().videoWorkflowByProject[projectId];
+      if (current) {
+        set({
+          videoWorkflowByProject: {
+            ...get().videoWorkflowByProject,
+            [projectId]: { ...current, assets: result.assets },
+          },
+        });
+      }
+      return { ok: true, assets: result.assets };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "参考图上传失败";
+      return { ok: false, msg };
+    }
+  },
+
+  createVideoWorkflowRun: async (projectId, payload) => {
+    try {
+      const run = await createVideoWorkflowRunRequest(projectId, payload);
+      const current = get().videoWorkflowByProject[projectId];
+      if (current) {
+        set({
+          videoWorkflowByProject: {
+            ...get().videoWorkflowByProject,
+            [projectId]: { ...current, latest_run: run },
+          },
+        });
+      }
+      return { ok: true, run };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "视频画布任务创建失败";
+      return { ok: false, msg };
+    }
+  },
+
+  syncVideoWorkflowRun: async (projectId, runId) => {
+    try {
+      const run = await syncVideoWorkflowRun(projectId, runId);
+      const current = get().videoWorkflowByProject[projectId];
+      if (current) {
+        set({
+          videoWorkflowByProject: {
+            ...get().videoWorkflowByProject,
+            [projectId]: { ...current, latest_run: run },
+          },
+        });
+      }
+      return { ok: true, run };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "视频画布任务同步失败";
+      return { ok: false, msg };
+    }
+  },
+
+  loadMediaWorkbench: async () => {
+    if (get().dataMode === "demo") return;
+    set({ mediaWorkbenchStatus: "loading", mediaWorkbenchError: null });
+    try {
+      const mediaWorkbench = await fetchMediaWorkbench();
+      set({ mediaWorkbench, mediaWorkbenchStatus: "ready", mediaWorkbenchError: null });
+    } catch (error) {
+      set({
+        mediaWorkbenchStatus: "error",
+        mediaWorkbenchError: error instanceof Error ? error.message : "媒体生成工作台加载失败",
+      });
+    }
+  },
+
+  createImageWorkbenchRun: async (payload) => {
+    try {
+      const run = await createImageWorkbenchRunRequest(payload);
+      const current = get().mediaWorkbench;
+      if (current) {
+        set({
+          mediaWorkbench: {
+            ...current,
+            assets: [...run.assets, ...current.assets.filter((asset) => !run.assets.some((item) => item.asset_id === asset.asset_id))],
+            image_runs: [run, ...current.image_runs.filter((item) => item.run_id !== run.run_id)],
+          },
+          mediaWorkbenchStatus: "ready",
+        });
+      } else {
+        await get().loadMediaWorkbench();
+      }
+      return { ok: true, run };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "图片生成任务创建失败";
+      set({ mediaWorkbenchError: msg });
+      return { ok: false, msg };
+    }
+  },
+
+  uploadMediaWorkbenchReferences: async (files) => {
+    try {
+      const basket = await uploadMediaWorkbenchVideoReferences(files);
+      const current = get().mediaWorkbench;
+      if (current) {
+        await get().loadMediaWorkbench();
+        set({
+          mediaWorkbench: {
+            ...(get().mediaWorkbench || current),
+            reference_basket: basket,
+          },
+        });
+      }
+      return { ok: true };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "视频参考图上传失败";
+      set({ mediaWorkbenchError: msg });
+      return { ok: false, msg };
+    }
+  },
+
+  importImagesToVideoReferences: async (assetIds) => {
+    try {
+      const basket = await importMediaWorkbenchVideoReferences(assetIds);
+      const current = get().mediaWorkbench;
+      if (current) {
+        set({ mediaWorkbench: { ...current, reference_basket: basket } });
+      } else {
+        await get().loadMediaWorkbench();
+      }
+      return { ok: true };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "图片加入视频参考篮失败";
+      set({ mediaWorkbenchError: msg });
+      return { ok: false, msg };
+    }
+  },
+
+  createVideoWorkbenchRun: async (payload) => {
+    try {
+      const run = await createVideoWorkbenchRunRequest(payload);
+      const current = get().mediaWorkbench;
+      if (current) {
+        set({
+          mediaWorkbench: {
+            ...current,
+            video_runs: [run, ...current.video_runs.filter((item) => item.run_id !== run.run_id)],
+          },
+          mediaWorkbenchStatus: "ready",
+        });
+      } else {
+        await get().loadMediaWorkbench();
+      }
+      return { ok: true, run };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "视频生成任务创建失败";
+      set({ mediaWorkbenchError: msg });
+      return { ok: false, msg };
+    }
+  },
+
+  syncVideoWorkbenchRun: async (runId) => {
+    try {
+      const run = await syncVideoWorkbenchRunRequest(runId);
+      const current = get().mediaWorkbench;
+      if (current) {
+        const assets = run.asset
+          ? [run.asset, ...current.assets.filter((asset) => asset.asset_id !== run.asset?.asset_id)]
+          : current.assets;
+        set({
+          mediaWorkbench: {
+            ...current,
+            assets,
+            video_runs: [run, ...current.video_runs.filter((item) => item.run_id !== run.run_id)],
+          },
+        });
+      }
+      return { ok: true, run };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "视频任务同步失败";
+      set({ mediaWorkbenchError: msg });
+      return { ok: false, msg };
+    }
+  },
+
   generateStage: async (projectId, stageKey, option) => {
     if (get().dataMode === "demo") {
       get().runStage(projectId, stageKey);
@@ -1167,6 +1449,7 @@ export const useAppStore = create<AppState>((set, get) => ({
               size: option.size,
               mode: option.mode,
               full_run: option.fullRun,
+              video_shot_limit: option.fullRun ? undefined : 1,
             }
           : undefined;
       const result = await generateProjectNode(projectId, nodeId, payload);
@@ -1566,21 +1849,6 @@ function nowStr() {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(
     d.getHours()
   )}:${p(d.getMinutes())}`;
-}
-
-function buildTextbookUploadContent(draft: NewProjectDraft): string {
-  if (draft.textbookContent.trim()) return draft.textbookContent.trim();
-  const parsed = draft.parseResult;
-  if (!parsed) return "";
-  return [
-    `${parsed.grade}${parsed.subject}，${parsed.lesson}。`,
-    parsed.teachingGoalSummary,
-    `核心知识点：${parsed.coreKnowledgePoints.join("、")}。`,
-    `教学重点：${parsed.keyPoints.join("、")}。`,
-    `教学难点：${parsed.difficulties.join("、")}。`,
-  ]
-    .filter(Boolean)
-    .join("\n");
 }
 
 async function enrichParseResultWithLibraryAsset(

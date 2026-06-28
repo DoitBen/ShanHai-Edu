@@ -12,6 +12,9 @@ from .state_engine import NodeSkippedError, StateEngine
 from .store import ProjectStore, now_iso
 from .textbook_parser import TextbookParser, TextbookSource
 from .video_orchestrator import VideoOrchestrator
+from .video_outputs import PLACEHOLDER_MP4
+from .media_workbench import MediaWorkbenchService
+from .video_workflow import VideoWorkflowService
 from .workspace_user_flow import build_workspace_user_flow
 
 
@@ -107,6 +110,27 @@ def normalize_node_content(node_id: str, content: dict[str, Any], context: dict[
         if field in content:
             normalized[field] = content[field]
     return normalized
+
+
+def _textbook_source_from_library_asset(asset_package: dict[str, Any]) -> TextbookSource:
+    source_path = Path(str(asset_package.get("source_pdf_path") or ""))
+    if not source_path.exists():
+        raise ValueError("Library textbook source PDF is missing")
+    return TextbookSource(
+        path=source_path,
+        rel_path=str(source_path),
+        mime_type="application/pdf",
+        filename=source_path.name,
+    )
+
+
+def _is_placeholder_video(path: Path) -> bool:
+    try:
+        if path.stat().st_size != len(PLACEHOLDER_MP4):
+            return False
+        return path.read_bytes() == PLACEHOLDER_MP4
+    except OSError:
+        return False
 
 
 def _normalize_lesson_plan(content: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
@@ -476,6 +500,7 @@ class WorkflowService:
         prompt_root: Path | None = None,
         tts_provider=None,
         video_model: str = "omni_flash-10s",
+        capabilities_path: Path | None = None,
     ):
         self.store = store
         self.provider = provider
@@ -490,6 +515,7 @@ class WorkflowService:
         self.prompt_root = prompt_root or Path("workflow") / "prompts"
         self.tts_provider = tts_provider
         self.video_model = video_model
+        self.capabilities_path = capabilities_path or Path("docs/api-research/octo-video/capabilities.json")
         self.state_engine = StateEngine(store, self._dependencies(), workflow)
         self.rule_executor = RuleExecutor(control_plane)
         self.flywheel = FlywheelService()
@@ -502,6 +528,18 @@ class WorkflowService:
             video_model=self.video_model,
             reference_url_resolver=self._video_reference_urls,
             reference_path_resolver=self._video_reference_paths,
+        )
+        self.video_workflow = VideoWorkflowService(
+            store=self.store,
+            capabilities_path=self.capabilities_path,
+            video_provider=self.video_provider,
+        )
+        self.media_workbench = MediaWorkbenchService(
+            store=self.store,
+            capabilities_path=self.capabilities_path,
+            image_provider=self.image_provider,
+            video_provider=self.video_provider,
+            image_model=getattr(self.image_provider, "model", "gpt-image-2") if self.image_provider is not None else "gpt-image-2",
         )
 
     def generate_node(self, project_id: str, node_id: str, options: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -544,18 +582,36 @@ class WorkflowService:
             if node_id == "intro_video_script":
                 self._assert_selected_anchor(context)
             if node_id == "textbook_parse":
-                source = self.store.latest_textbook_source(conn, project_dir, project_id)
-                parsed_source = self.textbook_parser.parse_uploaded_textbook(
-                    project_dir=project_dir,
-                    project=project,
-                    source=TextbookSource(
-                        path=source["path"],
-                        rel_path=source["rel_path"],
-                        mime_type=source["mime_type"],
-                        filename=source["filename"],
-                    ),
-                    selected_knowledge_point_id=(options or {}).get("knowledge_point_id"),
-                )
+                selected_knowledge_point_id = (options or {}).get("knowledge_point_id") or project.get("knowledge_point_id")
+                try:
+                    source = self.store.latest_textbook_source(conn, project_dir, project_id)
+                    parsed_source = self.textbook_parser.parse_uploaded_textbook(
+                        project_dir=project_dir,
+                        project=project,
+                        source=TextbookSource(
+                            path=source["path"],
+                            rel_path=source["rel_path"],
+                            mime_type=source["mime_type"],
+                            filename=source["filename"],
+                        ),
+                        selected_knowledge_point_id=selected_knowledge_point_id,
+                    )
+                except ValueError as exc:
+                    if not project.get("textbook_id") or not selected_knowledge_point_id:
+                        raise
+                    message = str(exc)
+                    if not (
+                        "No textbook uploaded" in message
+                        or "Unsupported textbook type for MVP" in message
+                    ):
+                        raise
+                    asset_package = self.textbook_library_asset_package(project["textbook_id"], selected_knowledge_point_id)
+                    parsed_source = self.textbook_parser.parse_uploaded_textbook(
+                        project_dir=project_dir,
+                        project=project,
+                        source=_textbook_source_from_library_asset(asset_package),
+                        selected_knowledge_point_id=selected_knowledge_point_id,
+                    )
                 if "textbook_text" in parsed_source:
                     context["textbook_text"] = parsed_source["textbook_text"]
                     context["textbook_source"] = parsed_source.get("textbook_source")
@@ -1163,6 +1219,12 @@ class WorkflowService:
                 video_source = self._resolve_project_file(project_dir, final_video_content.get("video_path"), "FINAL_VIDEO_NOT_READY")
                 if not video_source.exists() or video_source.suffix.lower() != ".mp4":
                     raise ProviderError("FINAL_VIDEO_NOT_READY", "FINAL_VIDEO_NOT_READY: video_path file is not available", retryable=False)
+                if _is_placeholder_video(video_source):
+                    raise ProviderError(
+                        "FINAL_VIDEO_PLACEHOLDER",
+                        "FINAL_VIDEO_PLACEHOLDER: placeholder video cannot pass final_delivery",
+                        retryable=False,
+                    )
             elif final_video_state["status"] not in {"skipped", "approved", "not_started"}:
                 raise ProviderError("FINAL_VIDEO_NOT_READY", "FINAL_VIDEO_NOT_READY: final_video is not skipped or approved", retryable=False)
         except ProviderError as exc:
@@ -1195,13 +1257,40 @@ class WorkflowService:
         gate_result = {
             "mode": "final",
             "gate_passed": True,
+            "executor": "service_final_delivery_gate",
             "checks": [
-                {"id": "lesson_plan_ready", "passed": True},
-                {"id": "pptx_artifact_ready", "passed": True},
-                {"id": "final_video_ready_or_skipped", "passed": True},
+                {
+                    "id": "lesson_plan_file_written",
+                    "passed": (project_dir / lesson_rel).exists() and bool(lesson_markdown.strip()),
+                    "path": lesson_rel,
+                },
+                {
+                    "id": "pptx_artifact_file_copied",
+                    "passed": (project_dir / pptx_rel).exists() and (project_dir / pptx_rel).suffix.lower() == ".pptx",
+                    "path": pptx_rel,
+                },
+                {
+                    "id": "final_video_real_or_explicitly_skipped",
+                    "passed": video_rel is None or (
+                        (project_dir / video_rel).exists()
+                        and (project_dir / video_rel).suffix.lower() == ".mp4"
+                        and not _is_placeholder_video(project_dir / video_rel)
+                    ),
+                    "path": video_rel,
+                    "skipped": video_rel is None,
+                },
             ],
             "generated_at": generated_at,
         }
+        if not all(check["passed"] for check in gate_result["checks"]):
+            failed_checks = [str(check["id"]) for check in gate_result["checks"] if not check["passed"]]
+            exc = ProviderError(
+                "FINAL_DELIVERY_GATE_FAILED",
+                f"FINAL_DELIVERY_GATE_FAILED: {', '.join(failed_checks)}",
+                retryable=False,
+            )
+            self._record_failed_node(conn, project_id, "final_delivery", exc)
+            raise ValueError(str(exc)) from exc
         delivery_manifest = {
             "project_id": project_id,
             "project_name": project.get("name"),
@@ -1234,7 +1323,7 @@ class WorkflowService:
             "gate_result_json_path": gate_rel,
             "gate_result_json": gate_result,
             "gate_passed": True,
-            "qa_records": ["minimal_delivery_gate_passed"],
+            "qa_records": ["service_final_delivery_gate_passed"],
             "time_stats_md_path": time_stats_rel,
             "feedback_trigger_at": generated_at,
             "source_versions": source_versions,

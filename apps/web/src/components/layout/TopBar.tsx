@@ -3,6 +3,7 @@
 import { useAppStore } from "@/lib/store";
 import type { ScreenKey } from "@/lib/types";
 import { LogoMark } from "@/components/brand/Logo";
+import { isDemoMode } from "@/lib/demo-mode";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
@@ -33,6 +34,7 @@ const SCREEN_TITLE: Record<ScreenKey, string> = {
   scripts: "脚本",
   "admin-workflow": "规则控制面",
   "admin-textbook-library": "管理教材库",
+  "admin-media-workbench": "媒体生成工作台",
 };
 
 export function TopBar({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
@@ -43,6 +45,7 @@ export function TopBar({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
   const activeProjectId = useAppStore((s) => s.activeProjectId);
   const projects = useAppStore((s) => s.projects);
   const activeProject = projects.find((p) => p.id === activeProjectId);
+  const demoMode = isDemoMode();
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-background/85 px-4 backdrop-blur-md lg:px-8">
@@ -139,21 +142,25 @@ export function TopBar({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
                 {user?.role === "admin" ? "管理员" : "教师"}
               </Badge>
             </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => switchRole("admin")}
-              className="gap-2"
-            >
-              <ShieldCheck className="h-4 w-4 text-muted-foreground" />
-              切换为管理员
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => switchRole("teacher")}
-              className="gap-2"
-            >
-              <UserRound className="h-4 w-4 text-muted-foreground" />
-              切换为教师
-            </DropdownMenuItem>
+            {demoMode && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => switchRole("admin")}
+                  className="gap-2"
+                >
+                  <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+                  切换为管理员
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => switchRole("teacher")}
+                  className="gap-2"
+                >
+                  <UserRound className="h-4 w-4 text-muted-foreground" />
+                  切换为教师
+                </DropdownMenuItem>
+              </>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={() => logout()}

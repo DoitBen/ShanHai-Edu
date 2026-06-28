@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useAppStore } from "@/lib/store";
+import { isDemoMode } from "@/lib/demo-mode";
 import type { ScreenKey } from "@/lib/types";
 import {
   Dialog,
@@ -37,6 +38,7 @@ import {
   CornerDownLeft,
   Search,
   GitBranch,
+  Images,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -63,6 +65,7 @@ export function CommandPalette() {
   const { setTheme } = useTheme();
 
   const isAdmin = user?.role === "admin";
+  const demoMode = isDemoMode();
 
   const items = React.useMemo<CommandItemDef[]>(() => {
     const navItems: CommandItemDef[] = [
@@ -102,6 +105,14 @@ export function CommandPalette() {
           group: "导航",
           run: () => go("admin-workflow"),
           keywords: "规则 控制面 工作流 DAG rule workflow control plane",
+        },
+        {
+          id: "nav-admin-media-workbench",
+          label: "媒体生成工作台",
+          icon: Images,
+          group: "导航",
+          run: () => go("admin-media-workbench"),
+          keywords: "媒体 生成 图片 视频 生图 生视频 image video media workbench",
         },
         {
           id: "nav-logs",
@@ -164,28 +175,6 @@ export function CommandPalette() {
 
     const accountItems: CommandItemDef[] = [
       {
-        id: "role-admin",
-        label: "切换为管理员",
-        icon: ShieldCheck,
-        group: "账户",
-        run: () => {
-          switchRole("admin");
-          toast.success("已切换为管理员视角");
-        },
-        keywords: "管理员 admin 角色 role",
-      },
-      {
-        id: "role-teacher",
-        label: "切换为教师",
-        icon: UserRound,
-        group: "账户",
-        run: () => {
-          switchRole("teacher");
-          toast.success("已切换为教师视角");
-        },
-        keywords: "教师 teacher 角色 role",
-      },
-      {
         id: "logout",
         label: "退出登录",
         icon: CornerDownLeft,
@@ -194,9 +183,35 @@ export function CommandPalette() {
         keywords: "退出 登出 logout signout",
       },
     ];
+    if (demoMode) {
+      accountItems.unshift(
+        {
+          id: "role-admin",
+          label: "切换为管理员",
+          icon: ShieldCheck,
+          group: "账户",
+          run: () => {
+            switchRole("admin");
+            toast.success("已切换为管理员视角");
+          },
+          keywords: "管理员 admin 角色 role",
+        },
+        {
+          id: "role-teacher",
+          label: "切换为教师",
+          icon: UserRound,
+          group: "账户",
+          run: () => {
+            switchRole("teacher");
+            toast.success("已切换为教师视角");
+          },
+          keywords: "教师 teacher 角色 role",
+        },
+      );
+    }
 
     return [...navItems, ...projectItems, ...themeItems, ...accountItems];
-  }, [projects, isAdmin, go, openProject, setTheme, switchRole, logout]);
+  }, [projects, isAdmin, demoMode, go, openProject, setTheme, switchRole, logout]);
 
   const runItem = (item: CommandItemDef) => {
     setOpen(false);

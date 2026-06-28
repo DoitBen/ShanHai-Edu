@@ -27,6 +27,19 @@ import type {
   GenerateNodePayload,
   UploadLessonPlanLibraryMetadata,
   VideoCapabilitiesResponse,
+  VideoWorkflowAssetsResponse,
+  VideoWorkflowGraph,
+  VideoWorkflowResponse,
+  VideoWorkflowRun,
+  VideoWorkflowRunRequest,
+  ImageWorkbenchRun,
+  ImageWorkbenchRunRequest,
+  MediaAsset,
+  MediaWorkbenchCapabilities,
+  MediaWorkbenchResponse,
+  VideoReferenceBasket,
+  VideoWorkbenchRun,
+  VideoWorkbenchRunRequest,
 } from "./types";
 
 const API_BASE = "/api/backend";
@@ -419,6 +432,145 @@ export async function submitProjectFeedback(
 
 export async function fetchVideoCapabilities(): Promise<VideoCapabilitiesResponse> {
   return request<VideoCapabilitiesResponse>("/video/capabilities");
+}
+
+export async function fetchVideoWorkflow(projectId: string): Promise<VideoWorkflowResponse> {
+  return request<VideoWorkflowResponse>(`/projects/${encodeURIComponent(projectId)}/video-workflow`);
+}
+
+export async function saveVideoWorkflow(
+  projectId: string,
+  graph: VideoWorkflowGraph,
+): Promise<VideoWorkflowResponse> {
+  return request<VideoWorkflowResponse>(`/projects/${encodeURIComponent(projectId)}/video-workflow`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(graph),
+  });
+}
+
+export async function uploadVideoWorkflowAssets(
+  projectId: string,
+  files: File[],
+): Promise<VideoWorkflowAssetsResponse> {
+  const formData = new FormData();
+  for (const file of files) {
+    formData.append("files", file, file.name);
+  }
+  return request<VideoWorkflowAssetsResponse>(`/projects/${encodeURIComponent(projectId)}/video-workflow/assets`, {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export async function createVideoWorkflowRun(
+  projectId: string,
+  payload: VideoWorkflowRunRequest,
+): Promise<VideoWorkflowRun> {
+  return request<VideoWorkflowRun>(`/projects/${encodeURIComponent(projectId)}/video-workflow/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchVideoWorkflowRun(projectId: string, runId: string): Promise<VideoWorkflowRun> {
+  return request<VideoWorkflowRun>(
+    `/projects/${encodeURIComponent(projectId)}/video-workflow/runs/${encodeURIComponent(runId)}`,
+  );
+}
+
+export async function syncVideoWorkflowRun(projectId: string, runId: string): Promise<VideoWorkflowRun> {
+  return request<VideoWorkflowRun>(
+    `/projects/${encodeURIComponent(projectId)}/video-workflow/runs/${encodeURIComponent(runId)}/sync`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    },
+  );
+}
+
+export function downloadVideoWorkflowRun(projectId: string, runId: string): string {
+  return `${API_BASE}/projects/${encodeURIComponent(projectId)}/video-workflow/runs/${encodeURIComponent(runId)}/download`;
+}
+
+export async function fetchMediaWorkbench(): Promise<MediaWorkbenchResponse> {
+  return request<MediaWorkbenchResponse>("/admin/media-workbench");
+}
+
+export async function fetchMediaWorkbenchCapabilities(): Promise<MediaWorkbenchCapabilities> {
+  return request<MediaWorkbenchCapabilities>("/admin/media-workbench/capabilities");
+}
+
+export async function fetchMediaWorkbenchAssets(params: {
+  type?: "image" | "video";
+  source?: string;
+} = {}): Promise<MediaAsset[]> {
+  const search = new URLSearchParams();
+  if (params.type) search.set("type", params.type);
+  if (params.source) search.set("source", params.source);
+  const suffix = search.toString() ? `?${search.toString()}` : "";
+  return request<MediaAsset[]>(`/admin/media-workbench/assets${suffix}`);
+}
+
+export function downloadMediaWorkbenchAsset(assetId: string): string {
+  return `${API_BASE}/admin/media-workbench/assets/${encodeURIComponent(assetId)}/download`;
+}
+
+export async function createImageWorkbenchRun(payload: ImageWorkbenchRunRequest): Promise<ImageWorkbenchRun> {
+  return request<ImageWorkbenchRun>("/admin/media-workbench/images/runs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchImageWorkbenchRun(runId: string): Promise<ImageWorkbenchRun> {
+  return request<ImageWorkbenchRun>(`/admin/media-workbench/images/runs/${encodeURIComponent(runId)}`);
+}
+
+export async function uploadMediaWorkbenchVideoReferences(files: File[]): Promise<VideoReferenceBasket> {
+  const formData = new FormData();
+  for (const file of files) {
+    formData.append("files", file, file.name);
+  }
+  return request<VideoReferenceBasket>("/admin/media-workbench/videos/references", {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export async function importMediaWorkbenchVideoReferences(assetIds: string[]): Promise<VideoReferenceBasket> {
+  return request<VideoReferenceBasket>("/admin/media-workbench/videos/references/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ asset_ids: assetIds }),
+  });
+}
+
+export async function createVideoWorkbenchRun(payload: VideoWorkbenchRunRequest): Promise<VideoWorkbenchRun> {
+  return request<VideoWorkbenchRun>("/admin/media-workbench/videos/runs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchVideoWorkbenchRun(runId: string): Promise<VideoWorkbenchRun> {
+  return request<VideoWorkbenchRun>(`/admin/media-workbench/videos/runs/${encodeURIComponent(runId)}`);
+}
+
+export async function syncVideoWorkbenchRun(runId: string): Promise<VideoWorkbenchRun> {
+  return request<VideoWorkbenchRun>(`/admin/media-workbench/videos/runs/${encodeURIComponent(runId)}/sync`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+}
+
+export function downloadVideoWorkbenchRun(runId: string): string {
+  return `${API_BASE}/admin/media-workbench/videos/runs/${encodeURIComponent(runId)}/download`;
 }
 
 export async function fetchAdminRules(): Promise<AdminRule[]> {

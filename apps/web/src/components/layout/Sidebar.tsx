@@ -14,6 +14,7 @@ import {
   LifeBuoy,
   GitBranch,
   LibraryBig,
+  Images,
 } from "lucide-react";
 
 type NavItem = {
@@ -58,6 +59,14 @@ const NAV: NavItem[] = [
     screen: "admin-textbook-library",
     adminOnly: true,
   },
+  {
+    key: "admin-media-workbench",
+    label: "媒体生成工作台",
+    icon: Images,
+    screen: "admin-media-workbench",
+    adminOnly: true,
+    shortcut: "G M",
+  },
   { key: "logs", label: "日志", icon: ScrollText, screen: "logs", adminOnly: true, shortcut: "G L" },
   {
     key: "scripts",
@@ -74,6 +83,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const activeProjectId = useAppStore((s) => s.activeProjectId);
   const projects = useAppStore((s) => s.projects);
   const user = useAppStore((s) => s.user);
+  const dataMode = useAppStore((s) => s.dataMode);
   const go = useAppStore((s) => s.go);
   const openProject = useAppStore((s) => s.openProject);
 
@@ -167,24 +177,34 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             <div className="rounded-lg border border-sidebar-border bg-card/60 p-3.5">
               <div className="t-body flex items-center justify-between">
                 <span className="text-muted-foreground">调度器</span>
-                <span className="inline-flex items-center gap-1.5 font-medium text-success">
-                  <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
-                  运行中
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1.5 font-medium",
+                    dataMode === "demo" ? "text-success" : "text-muted-foreground"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "h-1.5 w-1.5 rounded-full",
+                      dataMode === "demo" ? "bg-success animate-pulse" : "bg-muted-foreground/50"
+                    )}
+                  />
+                  {dataMode === "demo" ? "演示运行中" : "未接入运行检测"}
                 </span>
               </div>
               <div className="t-body mt-2.5 flex items-center justify-between">
                 <span className="text-muted-foreground">队列任务</span>
-                <span className="font-medium">3</span>
+                <span className="font-medium">{dataMode === "demo" ? "3 个演示任务" : "未接入检测"}</span>
               </div>
               <div className="mt-2.5">
                 <div className="flex items-center justify-between t-body">
                   <span className="text-muted-foreground">存储</span>
-                  <span className="font-medium">38%</span>
+                  <span className="font-medium">{dataMode === "demo" ? "38%" : "未接入检测"}</span>
                 </div>
                 <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted">
                   <div
                     className="h-full rounded-full bg-bronze/70"
-                    style={{ width: "38%" }}
+                    style={{ width: dataMode === "demo" ? "38%" : "0%" }}
                   />
                 </div>
               </div>

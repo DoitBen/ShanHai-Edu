@@ -34,6 +34,7 @@ import type {
 import { StatusBadge, ProjectStatusBadge } from "@/components/common/StatusBadge";
 import { ToneBadge } from "@/components/common/StatusBadge";
 import { EmptyState, LoadingState } from "@/components/common/StateViews";
+import { VideoWorkflowCanvas } from "@/components/video-workflow/VideoWorkflowCanvas";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -156,9 +157,9 @@ const USER_WORKSPACE_STEPS: UserWorkspaceStep[] = [
     id: "textbook-content",
     label: "教材内容",
     stageKeys: ["textbook-parse"],
-    goal: "确认当前课时对应的教材页段、知识点和解析内容。",
+    goal: "确认当前课时对应的教材页段、本课要点和解析内容。",
     todo: "检查教材内容是否对应本节课，确认无误后再生成教案。",
-    basis: "来自教材库知识点资产包、教材页段和教材内容。",
+    basis: "来自教材库课时资产包、教材页段和教材内容。",
   },
   {
     id: "lesson-plan",
@@ -166,7 +167,7 @@ const USER_WORKSPACE_STEPS: UserWorkspaceStep[] = [
     stageKeys: ["open-lesson-plan"],
     goal: "生成并修改一版可用于公开课磨课的教案草稿。",
     todo: "在 Markdown 编辑和预览中检查教学目标、流程、提问和板书。",
-    basis: "基于已确认的教材内容、知识点资产包和可选教案参考。",
+    basis: "基于已确认的教材内容、课时资产包和可选教案参考。",
   },
   {
     id: "intro-video-plan",
@@ -293,10 +294,11 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
   const [videoCapabilities, setVideoCapabilities] = useState<VideoCapability[]>([]);
   const [videoOption, setVideoOption] = useState<VideoModelOption>({
     provider: "octo",
-    model: "veo_3_1-fast",
+    model: "omni_flash-10s",
     size: "1280x720",
-    mode: "reference",
-    fullRun: true,
+    mode: "text",
+    fullRun: false,
+    durationSec: 10,
   });
   const [pptExportStatus, setPptExportStatus] = useState<LoadStatus>("idle");
   const [pptExportError, setPptExportError] = useState<string | null>(null);
@@ -2073,7 +2075,7 @@ function TextbookContentResult({
       </div>
 
       <div className="mt-4 rounded-md border border-border bg-card p-3">
-        <div className="t-caption text-muted-foreground">知识点摘要</div>
+        <div className="t-caption text-muted-foreground">本课要点</div>
         <div className="mt-2 flex flex-wrap gap-2">
           {summary.knowledge.length > 0 ? (
             summary.knowledge.map((item) => (
@@ -2448,7 +2450,7 @@ function DeveloperDiagnostics({
             <TabsContent value="run" className="mt-0">
               {dataMode === "api" && <><ApiNodeNotice status={selectedNodeStatus} error={selectedNodeError} /><ApiActionNotice status={selectedActionStatus} error={selectedActionError} /></>}
               {stage?.key === "video-generation" ? (
-                <VideoGenerationRunTab stage={stage} capabilities={videoCapabilities} option={videoOption} onChange={onChangeVideoOption} onRegenerate={onRegenerate} />
+                <VideoGenerationRunTab projectId={projectId} stage={stage} capabilities={videoCapabilities} option={videoOption} onChange={onChangeVideoOption} onRegenerate={onRegenerate} />
               ) : (
                 <RunTab stage={stage} onRegenerate={onRegenerate} />
               )}
@@ -3026,12 +3028,14 @@ function RunTab({
 }
 
 function VideoGenerationRunTab({
+  projectId,
   stage,
   capabilities,
   option,
   onChange,
   onRegenerate,
 }: {
+  projectId: string;
   stage?: WorkflowStage;
   capabilities: VideoCapability[];
   option: VideoModelOption;
@@ -3048,7 +3052,7 @@ function VideoGenerationRunTab({
 
   return (
     <div className="space-y-5">
-      <RunTab stage={stage} onRegenerate={onRegenerate} />
+      <VideoWorkflowCanvas projectId={projectId} capabilities={capabilities} option={option} onChangeOption={onChange} />
       <div className="rounded-md border border-border bg-muted/20 p-4">
         <div className="mb-4 flex items-center gap-2">
           <Film className="h-4 w-4 text-primary" />
@@ -3070,7 +3074,7 @@ function VideoGenerationRunTab({
                   ...option,
                   model,
                   size: next?.resolution?.supported[0] || option.size,
-                  mode: next?.first_last_frame ? "first_last_frame" : next?.extend ? "extend" : "reference",
+                  mode: next?.first_last_frame ? "first_last_frame" : next?.extend ? "extend" : "text",
                 });
               }}
             >
@@ -3870,7 +3874,7 @@ function FinalVideoResult({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="t-overline text-muted-foreground/70">
-            {placeholderReady ? "演示视频文件已生成" : "视频生成任务"}
+            {placeholderReady ? "演示视频文件可下载" : "视频生成任务"}
           </div>
           <p className="mt-1 t-caption text-muted-foreground">
             {placeholderReady
@@ -4117,9 +4121,11 @@ function FinalVideoDownloadPanel({
           <div className="flex items-center gap-2">
             <Film className="h-4 w-4 text-primary" />
             <span className="t-module">
-              {placeholderReady ? "演示视频文件已生成" : "演示视频文件"}
+              {placeholderReady ? "演示视频文件可下载" : "演示视频文件"}
             </span>
-            {placeholderReady && <ToneBadge tone="success">可下载</ToneBadge>}
+            <ToneBadge tone={placeholderReady ? "warning" : "neutral"}>
+              {placeholderReady ? "演示文件可下载" : "等待生成记录"}
+            </ToneBadge>
           </div>
           <p className="mt-1 t-caption text-muted-foreground">
             {placeholderReady
@@ -4434,6 +4440,8 @@ function getPrimaryActionLabel(
 }
 
 function formatUserFacingError(message: string): string {
+  const generationInput = formatGenerationInputError(message);
+  if (generationInput) return generationInput;
   const blocked = /UPSTREAM_NOT_APPROVED|dependency_gate_blocked|R010/i.test(message);
   if (blocked) return "请先确认上一阶段内容，再继续当前步骤。";
   const ruleViolation = /RULE_VIOLATION|hard_block/i.test(message);
@@ -4441,6 +4449,13 @@ function formatUserFacingError(message: string): string {
   const provider = /provider|API|token|OCTO|MINIMAX/i.test(message);
   if (provider) return "生成服务暂时不可用，请稍后重试或联系开发人员查看诊断。";
   return clipText(message, 120);
+}
+
+function formatGenerationInputError(message: string): string | null {
+  if (/GENERATION_INPUT_INVALID|Unsupported textbook type for MVP|No textbook uploaded/i.test(message)) {
+    return "教材内容没有正确关联，请回到新建项目重新选择教材和本课内容，或刷新后重试。";
+  }
+  return null;
 }
 
 function getUserEvidenceLabel(file: string): string {
@@ -4501,12 +4516,12 @@ function buildEditableNodeSummary(
     const summary = buildTextbookContentSummary("", stage, value);
     return {
       title: "教材解析与核验摘要",
-      desc: "核对课时、教材页码、知识点和解析状态。",
+      desc: "核对课时、教材页码、本课要点和解析状态。",
       badge: "教材内容",
       items: [
         { label: "课时标题", value: summary.title },
         { label: "教材页码", value: summary.pages },
-        { label: "知识点摘要", value: summary.knowledge.join("、") || "待确认" },
+        { label: "本课要点", value: summary.knowledge.join("、") || "待确认" },
         { label: "解析状态", value: summary.status },
         { label: "教材依据", value: summary.basis },
         { label: "页段预览", value: summary.sliceUrl ? "教材页段可预览" : "等待页段生成" },
@@ -4726,7 +4741,7 @@ function buildTextbookContentSummary(
     pages,
     knowledge: Array.from(new Set(coreKnowledge)).slice(0, 8),
     status,
-    basis: basisParts.join("；") || "来自教材库知识点资产包、页段 PDF 和教材内容。",
+    basis: basisParts.join("；") || "来自教材库课时资产包、页段 PDF 和教材内容。",
     markdown,
     sliceUrl: resolveTextbookSlicePreviewUrl(projectId, slicePath),
   };

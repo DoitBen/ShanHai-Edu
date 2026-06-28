@@ -712,6 +712,187 @@ export interface VideoModelOption {
   size: string;
   mode: VideoGenerationMode;
   fullRun: boolean;
+  durationSec: number;
+}
+
+export interface VideoWorkflowNode {
+  id: string;
+  type: string;
+  position: { x: number; y: number };
+  data?: Record<string, unknown>;
+}
+
+export interface VideoWorkflowEdge {
+  id: string;
+  source: string;
+  target: string;
+}
+
+export interface VideoWorkflowGraph {
+  nodes: VideoWorkflowNode[];
+  edges: VideoWorkflowEdge[];
+  selected_model: string;
+  mode: VideoGenerationMode;
+  duration_sec: number;
+  size: string;
+}
+
+export interface VideoReferenceAsset {
+  asset_id: string;
+  filename: string;
+  path: string;
+  mime_type: string;
+  created_at: string;
+}
+
+export interface VideoWorkflowRun {
+  run_id: string;
+  task_id: string;
+  project_id: string;
+  node_id: string;
+  task_type: string;
+  status: string;
+  prompt?: string;
+  model?: string;
+  mode?: VideoGenerationMode;
+  size?: string;
+  duration_sec?: number;
+  reference_asset_ids?: string[];
+  progress?: number;
+  download_path?: string | null;
+  video_url_present?: boolean;
+  error_message?: string | null;
+  payload?: Record<string, unknown>;
+  result?: Record<string, unknown>;
+}
+
+export interface VideoWorkflowRunRequest {
+  prompt: string;
+  model: string;
+  mode: VideoGenerationMode;
+  size: string;
+  duration_sec: number;
+  reference_asset_ids: string[];
+}
+
+export interface VideoWorkflowResponse {
+  project_id: string;
+  graph: VideoWorkflowGraph;
+  assets: VideoReferenceAsset[];
+  latest_run: VideoWorkflowRun | null;
+  capabilities: VideoCapabilitiesResponse;
+}
+
+export interface VideoWorkflowAssetsResponse {
+  assets: VideoReferenceAsset[];
+  max_reference_images: number;
+}
+
+export interface MediaAsset {
+  asset_id: string;
+  asset_type: "image" | "video";
+  source: "image_run" | "upload" | "video_run";
+  filename: string;
+  path: string;
+  mime_type: string;
+  prompt?: string | null;
+  run_id?: string | null;
+  provider_task_id?: string | null;
+  created_at: string;
+}
+
+export interface MediaWorkbenchCapabilities {
+  image: {
+    provider: string;
+    provider_ready: boolean;
+    default_model: string;
+    default_size: string;
+    default_quality: string;
+    models: Array<{
+      model: string;
+      sizes: string[];
+      qualities: string[];
+      max_count: number;
+    }>;
+  };
+  video: {
+    provider: string;
+    provider_ready: boolean;
+    default_model: string;
+    default_size: string;
+    default_duration_sec: number;
+    models: VideoCapability[];
+  };
+}
+
+export interface ImageWorkbenchRun {
+  run_id: string;
+  task_id: string;
+  project_id: string;
+  node_id: string;
+  task_type: string;
+  status: string;
+  prompt?: string;
+  model?: string;
+  size?: string;
+  quality?: string;
+  count?: number;
+  assets: MediaAsset[];
+  error_message?: string | null;
+  payload?: Record<string, unknown>;
+  result?: Record<string, unknown>;
+}
+
+export interface ImageWorkbenchRunRequest {
+  prompt: string;
+  model: string;
+  size: string;
+  quality: string;
+  count: number;
+}
+
+export interface VideoWorkbenchRun {
+  run_id: string;
+  task_id: string;
+  project_id: string;
+  node_id: string;
+  task_type: string;
+  status: string;
+  prompt?: string;
+  model?: string;
+  mode?: VideoGenerationMode;
+  size?: string;
+  duration_sec?: number;
+  reference_asset_ids?: string[];
+  progress?: number;
+  download_path?: string | null;
+  video_url_present?: boolean;
+  asset?: MediaAsset | null;
+  error_message?: string | null;
+  payload?: Record<string, unknown>;
+  result?: Record<string, unknown>;
+}
+
+export interface VideoWorkbenchRunRequest {
+  prompt: string;
+  model: string;
+  mode: VideoGenerationMode;
+  size: string;
+  duration_sec: number;
+  reference_asset_ids: string[];
+}
+
+export interface VideoReferenceBasket {
+  assets: MediaAsset[];
+  max_reference_images: number;
+}
+
+export interface MediaWorkbenchResponse {
+  capabilities: MediaWorkbenchCapabilities;
+  assets: MediaAsset[];
+  reference_basket: VideoReferenceBasket;
+  image_runs: ImageWorkbenchRun[];
+  video_runs: VideoWorkbenchRun[];
 }
 
 export type AdminRuleSeverity = "hard_block" | "warning" | "info";
@@ -799,7 +980,8 @@ export type ScreenKey =
   | "logs"
   | "scripts"
   | "admin-workflow"
-  | "admin-textbook-library";
+  | "admin-textbook-library"
+  | "admin-media-workbench";
 
 export interface AuthUser {
   username: string;

@@ -513,7 +513,7 @@ class ProjectStore:
 
     def connect(self, project_dir: Path) -> sqlite3.Connection:
         project_dir.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(project_dir / "project.db")
+        conn = sqlite3.connect(project_dir / "project.db", timeout=30)
         conn.row_factory = sqlite3.Row
         self.init_db(conn)
         return conn
@@ -556,6 +556,8 @@ class ProjectStore:
                 row = conn.execute("SELECT * FROM project_meta LIMIT 1").fetchone()
                 if row:
                     data = dict(row)
+                    if data.get("status") == "internal":
+                        continue
                     data["project_dir"] = str(db_path.parent)
                     projects.append(data)
         return sorted(projects, key=lambda p: p["created_at"], reverse=True)
@@ -1207,6 +1209,7 @@ class ProjectStore:
                 created_at,
             ),
         )
+        conn.commit()
         return {
             **self._decorate_task(
                 {
@@ -1258,6 +1261,7 @@ class ProjectStore:
             """,
             (status, json.dumps(result, ensure_ascii=False), error_message, updated_at, task_id),
         )
+        conn.commit()
         row = conn.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
         if row is None:
             raise KeyError(f"Unknown task: {task_id}")

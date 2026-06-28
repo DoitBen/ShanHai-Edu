@@ -12,6 +12,7 @@ import type { ScreenKey } from "@/lib/types";
  * - g n：新建项目
  * - g c：配置中心（管理员）
  * - g w：规则控制面（管理员）
+ * - g m：媒体生成工作台（管理员）
  * - g l：日志（管理员）
  * - g s：脚本（管理员）
  * - g p：当前项目（若有 activeProjectId）
@@ -96,6 +97,9 @@ export function useGlobalShortcuts() {
             break;
           case "w":
             if (isAdmin) target = "admin-workflow";
+            break;
+          case "m":
+            if (isAdmin) target = "admin-media-workbench";
             break;
           case "l":
             if (isAdmin) target = "logs";

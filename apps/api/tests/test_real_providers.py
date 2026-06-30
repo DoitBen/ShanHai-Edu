@@ -187,8 +187,8 @@ def test_octo_video_provider_uses_authorization_for_submit_and_query():
     assert submitted["provider_task_id"] == "task_remote_1"
     assert queried["status"] == "completed"
     assert queried["video_url"] == "https://cdn.example/test.mp4"
-    assert calls[0]["headers"]["Authorization"] == "Bearer test-token"
-    assert calls[1]["headers"]["Authorization"] == "Bearer test-token"
+    assert calls[0]["headers"]["Authorization"] == "Bearer fake"
+    assert calls[1]["headers"]["Authorization"] == "Bearer fake"
 
 
 def test_octo_video_provider_submits_local_reference_as_multipart(tmp_path: Path):
@@ -208,19 +208,75 @@ def test_octo_video_provider_submits_local_reference_as_multipart(tmp_path: Path
             "prompt": "课堂导入视频",
             "size": "1280x720",
             "images": ["https://cdn.example/asset_ref_01.png"],
-            "reference_image_paths": [str(image)],
+            "reference_images": [{"path": str(image), "mime_type": "image/png"}],
         }
     )
 
     assert submitted["provider_task_id"] == "task_remote_1"
-    assert calls[0]["headers"]["Authorization"] == "Bearer test-token"
-    assert calls[0]["headers"]["Content-Type"].startswith("multipart/form-data; boundary=")
+    assert calls[0]["headers"]["Authorization"] == "Bearer fake"
+    assert "Content-Type" not in calls[0]["headers"]
     assert "json" not in calls[0]
-    body = calls[0]["data"]
-    assert b'name="model"' in body
-    assert b"omni_flash-10s" in body
-    assert b'name="input_reference"; filename="asset_ref_01.png"' in body
-    assert b"https://cdn.example/asset_ref_01.png" not in body
+    assert calls[0]["data"] == {
+        "model": "omni_flash-10s",
+        "prompt": "课堂导入视频",
+        "size": "1280x720",
+    }
+    assert "images" not in calls[0]["data"]
+    assert [item[0] for item in calls[0]["files"]] == ["input_reference"]
+    assert calls[0]["files"][0][1][0] == "asset_ref_01.png"
+    assert calls[0]["files"][0][1][2] == "image/png"
+
+
+def test_octo_video_provider_keeps_reference_order_and_mime(tmp_path: Path):
+    png = tmp_path / "a.png"
+    jpg = tmp_path / "b.jpg"
+    png.write_bytes(b"png-bytes")
+    jpg.write_bytes(b"jpg-bytes")
+    calls: list[dict[str, Any]] = []
+
+    def transport(method: str, url: str, **kwargs: Any):
+        calls.append({"method": method, "url": url, **kwargs})
+        return {"id": "remote_1", "status": "queued"}
+
+    provider = OctoVideoProvider("secret", "https://provider.example", transport=transport)
+    provider.submit_video(
+        {
+            "model": "omni_flash-10s",
+            "prompt": "test",
+            "size": "1280x720",
+            "reference_images": [
+                {"path": str(png), "mime_type": "image/png"},
+                {"path": str(jpg), "mime_type": "image/jpeg"},
+            ],
+        }
+    )
+    files = calls[0]["files"]
+    assert [item[0] for item in files] == ["input_reference", "input_reference"]
+    assert [item[1][0] for item in files] == ["a.png", "b.jpg"]
+    assert [item[1][2] for item in files] == ["image/png", "image/jpeg"]
+    assert calls[0]["data"] == {
+        "model": "omni_flash-10s",
+        "prompt": "test",
+        "size": "1280x720",
+    }
+    assert "images" not in calls[0]["data"]
+
+
+def test_octo_video_provider_text_mode_uses_json_without_references():
+    calls: list[dict[str, Any]] = []
+
+    def transport(method: str, url: str, **kwargs: Any):
+        calls.append(kwargs)
+        return {"id": "remote_2", "status": "queued"}
+
+    provider = OctoVideoProvider("secret", "https://provider.example", transport=transport)
+    provider.submit_video({"model": "omni_flash-10s", "prompt": "test", "size": "1280x720"})
+    assert calls[0]["json"] == {
+        "model": "omni_flash-10s",
+        "prompt": "test",
+        "size": "1280x720",
+    }
+    assert "data" not in calls[0]
 
 
 @pytest.mark.parametrize(
@@ -381,7 +437,7 @@ def test_newapi_image_provider_normalizes_sync_url_shapes(raw: dict[str, Any], e
     assert result["status"] == "completed"
     assert captured["method"] == "POST"
     assert captured["url"] == "https://image.example/v1/images/generations"
-    assert captured["headers"]["Authorization"] == "Bearer test-token"
+    assert captured["headers"]["Authorization"] == "Bearer fake"
     assert captured["json"] == {
         "model": "gpt-image-2",
         "prompt": "小学数学参考图",
@@ -638,7 +694,7 @@ def test_deepseek_text_provider_sends_openai_compatible_payload_and_auth():
 
     assert result == {"lesson_plan_markdown": "# 教案：5以内数的认识"}
     assert captured["url"] == "https://api.deepseek.com/chat/completions"
-    assert captured["headers"]["Authorization"] == "Bearer deepseek-token"
+    assert captured["headers"]["Authorization"] == "Bearer fake"
     assert captured["payload"]["model"] == "deepseek-chat"
     assert captured["payload"]["response_format"] == {"type": "json_object"}
     assert captured["payload"]["messages"][0]["role"] == "system"
@@ -2781,27 +2837,130 @@ def test_octo_video_download_uses_browser_compatible_headers(monkeypatch, tmp_pa
     captured = {}
 
     class StubResponse:
+        headers = {"content-type": "video/mp4"}
+
         def __enter__(self):
             return self
 
         def __exit__(self, exc_type, exc, tb):
             return False
 
-        def read(self):
-            return b"fake mp4"
+        def raise_for_status(self):
+            return None
 
-    def fake_urlopen(request, timeout):
-        captured["headers"] = dict(request.header_items())
+        def iter_bytes(self, chunk_size):
+            captured["chunk_size"] = chunk_size
+            yield b"fake "
+            yield b"mp4"
+
+    def fake_stream(method, url, *, headers, timeout, follow_redirects):
+        captured["method"] = method
+        captured["url"] = url
+        captured["headers"] = headers
         captured["timeout"] = timeout
+        captured["follow_redirects"] = follow_redirects
         return StubResponse()
 
-    monkeypatch.setattr("app.providers.urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("app.providers.httpx.stream", fake_stream)
     provider = OctoVideoProvider(api_key="fake", base_url="https://otuapi.com")
     target = tmp_path / "clip.mp4"
 
     provider.download_video("https://cdn.example/clip.mp4", target)
 
     assert target.read_bytes() == b"fake mp4"
-    assert captured["headers"]["User-agent"].startswith("Mozilla/5.0")
+    assert captured["headers"]["User-Agent"].startswith("ShanHai-Edu/")
     assert "video/mp4" in captured["headers"]["Accept"]
-    assert "Referer" not in captured["headers"]
+    assert captured["method"] == "GET"
+    assert captured["follow_redirects"] is True
+
+
+def test_octo_video_download_rejects_non_video_content_type(monkeypatch, tmp_path: Path):
+    class StubResponse:
+        headers = {"content-type": "text/html"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def raise_for_status(self):
+            return None
+
+        def iter_bytes(self, chunk_size):
+            yield b"<html>not video</html>"
+
+    def fake_stream(method, url, *, headers, timeout, follow_redirects):
+        return StubResponse()
+
+    monkeypatch.setattr("app.providers.httpx.stream", fake_stream)
+    provider = OctoVideoProvider(api_key="fake", base_url="https://otuapi.com")
+    target = tmp_path / "clip.mp4"
+
+    with pytest.raises(ProviderError) as exc:
+        provider.download_video("https://cdn.example/clip.mp4", target)
+
+    assert exc.value.code == "VIDEO_DOWNLOAD_CONTENT_TYPE_INVALID"
+    assert not target.exists()
+
+
+def test_octo_video_download_rejects_oversized_stream(monkeypatch, tmp_path: Path):
+    class StubResponse:
+        headers = {"content-type": "video/mp4"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def raise_for_status(self):
+            return None
+
+        def iter_bytes(self, chunk_size):
+            yield b"12345"
+            yield b"67890"
+
+    def fake_stream(method, url, *, headers, timeout, follow_redirects):
+        return StubResponse()
+
+    monkeypatch.setattr("app.providers.MAX_VIDEO_DOWNLOAD_BYTES", 8)
+    monkeypatch.setattr("app.providers.httpx.stream", fake_stream)
+    provider = OctoVideoProvider(api_key="fake", base_url="https://otuapi.com")
+    target = tmp_path / "clip.mp4"
+
+    with pytest.raises(ProviderError) as exc:
+        provider.download_video("https://cdn.example/clip.mp4", target)
+
+    assert exc.value.code == "VIDEO_DOWNLOAD_TOO_LARGE"
+    assert not target.exists()
+
+
+def test_octo_video_download_rejects_invalid_content_length(monkeypatch, tmp_path: Path):
+    class StubResponse:
+        headers = {"content-type": "video/mp4", "content-length": "not-a-number"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def raise_for_status(self):
+            return None
+
+        def iter_bytes(self, chunk_size):
+            yield b"video"
+
+    def fake_stream(method, url, *, headers, timeout, follow_redirects):
+        return StubResponse()
+
+    monkeypatch.setattr("app.providers.httpx.stream", fake_stream)
+    provider = OctoVideoProvider(api_key="fake", base_url="https://otuapi.com")
+    target = tmp_path / "clip.mp4"
+
+    with pytest.raises(ProviderError) as exc:
+        provider.download_video("https://cdn.example/clip.mp4", target)
+
+    assert exc.value.code == "VIDEO_DOWNLOAD_CONTENT_LENGTH_INVALID"
+    assert not target.exists()

@@ -29,9 +29,13 @@ import type {
   VideoCapabilitiesResponse,
   VideoWorkflowAssetsResponse,
   VideoWorkflowGraph,
+  VideoWorkflowObservabilitySnapshot,
   VideoWorkflowResponse,
   VideoWorkflowRun,
   VideoWorkflowRunRequest,
+  VideoWorkflowRetryRequest,
+  VideoWorkflowStorageCleanupResponse,
+  VideoWorkflowStorageResponse,
   ImageWorkbenchRun,
   ImageWorkbenchRunRequest,
   MediaAsset,
@@ -54,19 +58,31 @@ export function resolveProjectFileUrl(projectId: string, relPath: string): strin
   return `${API_BASE}/projects/${encodeURIComponent(projectId)}/${cleanPath}`;
 }
 
-class ApiClientError extends Error {
+export class ApiClientError extends Error {
   code: string;
   status: number;
   retryable: boolean;
   details: unknown;
+  action: string | null;
+  traceId: string | null;
 
-  constructor(message: string, code: string, status: number, retryable = false, details: unknown = null) {
+  constructor(
+    message: string,
+    code: string,
+    status: number,
+    retryable = false,
+    details: unknown = null,
+    action: string | null = null,
+    traceId: string | null = null,
+  ) {
     super(message);
     this.name = "ApiClientError";
     this.code = code;
     this.status = status;
     this.retryable = retryable;
     this.details = details;
+    this.action = action;
+    this.traceId = traceId;
   }
 }
 
@@ -97,29 +113,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const payload = (await response.json()) as ApiEnvelope<T>;
   if (!response.ok || !payload.ok) {
     const error = payload.ok ? null : payload.error;
-    const message = formatApiErrorMessage(
-      error?.message || `请求失败：${response.status}`,
-      error?.details,
-    );
+    const message = error?.message || `请求失败：${response.status}`;
     const code = error?.code || "HTTP_ERROR";
     throw new ApiClientError(
-      code === "HTTP_ERROR" ? message : `${code}: ${message}`,
+      message,
       code,
       response.status,
       error?.retryable,
       error?.details,
+      error?.action ?? null,
+      error?.trace_id ?? null,
     );
   }
   return payload.data;
-}
-
-function formatApiErrorMessage(message: string, details: unknown): string {
-  if (typeof details === "undefined" || details === null) return message;
-  const detailsText =
-    typeof details === "string"
-      ? details
-      : JSON.stringify(details);
-  return detailsText ? `${message}；details: ${detailsText}` : message;
 }
 
 export async function fetchProjects(): Promise<ApiProject[]> {
@@ -438,6 +444,29 @@ export async function fetchVideoWorkflow(projectId: string): Promise<VideoWorkfl
   return request<VideoWorkflowResponse>(`/projects/${encodeURIComponent(projectId)}/video-workflow`);
 }
 
+export async function fetchVideoWorkflowObservability(
+  projectId: string,
+): Promise<VideoWorkflowObservabilitySnapshot> {
+  return request<VideoWorkflowObservabilitySnapshot>(
+    `/projects/${encodeURIComponent(projectId)}/video-workflow/observability`,
+  );
+}
+
+export async function fetchVideoWorkflowStorage(projectId: string): Promise<VideoWorkflowStorageResponse> {
+  return request<VideoWorkflowStorageResponse>(
+    `/projects/${encodeURIComponent(projectId)}/video-workflow/storage`,
+  );
+}
+
+export async function cleanupVideoWorkflowStorage(
+  projectId: string,
+): Promise<VideoWorkflowStorageCleanupResponse> {
+  return request<VideoWorkflowStorageCleanupResponse>(
+    `/projects/${encodeURIComponent(projectId)}/video-workflow/storage/cleanup`,
+    { method: "POST" },
+  );
+}
+
 export async function saveVideoWorkflow(
   projectId: string,
   graph: VideoWorkflowGraph,
@@ -463,6 +492,17 @@ export async function uploadVideoWorkflowAssets(
   });
 }
 
+export function videoWorkflowAssetContent(projectId: string, assetId: string): string {
+  return `${API_BASE}/projects/${encodeURIComponent(projectId)}/video-workflow/assets/${encodeURIComponent(assetId)}/content`;
+}
+
+export async function deleteVideoWorkflowAsset(projectId: string, assetId: string): Promise<{ asset_id: string; deleted: boolean }> {
+  return request<{ asset_id: string; deleted: boolean }>(
+    `/projects/${encodeURIComponent(projectId)}/video-workflow/assets/${encodeURIComponent(assetId)}`,
+    { method: "DELETE" },
+  );
+}
+
 export async function createVideoWorkflowRun(
   projectId: string,
   payload: VideoWorkflowRunRequest,
@@ -480,6 +520,12 @@ export async function fetchVideoWorkflowRun(projectId: string, runId: string): P
   );
 }
 
+export async function fetchVideoWorkflowRuns(projectId: string, limit = 50): Promise<VideoWorkflowRun[]> {
+  return request<VideoWorkflowRun[]>(
+    `/projects/${encodeURIComponent(projectId)}/video-workflow/runs?limit=${limit}`,
+  );
+}
+
 export async function syncVideoWorkflowRun(projectId: string, runId: string): Promise<VideoWorkflowRun> {
   return request<VideoWorkflowRun>(
     `/projects/${encodeURIComponent(projectId)}/video-workflow/runs/${encodeURIComponent(runId)}/sync`,
@@ -489,6 +535,25 @@ export async function syncVideoWorkflowRun(projectId: string, runId: string): Pr
       body: JSON.stringify({}),
     },
   );
+}
+
+export async function retryVideoWorkflowRun(
+  projectId: string,
+  runId: string,
+  payload: VideoWorkflowRetryRequest,
+): Promise<VideoWorkflowRun> {
+  return request<VideoWorkflowRun>(
+    `/projects/${encodeURIComponent(projectId)}/video-workflow/runs/${encodeURIComponent(runId)}/retry`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export function streamVideoWorkflowRun(projectId: string, runId: string): string {
+  return `${API_BASE}/projects/${encodeURIComponent(projectId)}/video-workflow/runs/${encodeURIComponent(runId)}/content`;
 }
 
 export function downloadVideoWorkflowRun(projectId: string, runId: string): string {

@@ -70,6 +70,9 @@
 
 ## 当前记忆
 
+- 2026-06-29：视频工作台 P2-1 素材 DB 元数据副本完成。项目 SQLite 新增 `video_workflow_assets` 表；参考图上传双写 DB 元数据，删除写 `deleted_at`，storage cleanup 写 `purged_at`。`assets.json` 仍是兼容读取来源，不做破坏性迁移。新增测试先红 `no such table` 后转绿；目标回归 `python -m pytest apps/api/tests/test_video_workflow_canvas.py apps/api/tests/test_api_contract_gate.py -q` 为 `50 passed, 2 xfailed`。后续完全 DB 化需另做读取路径迁移、历史回填和回滚策略。
+- 2026-06-29：视频工作台 P2-3 可观测性接口化完成。新增受保护项目级接口 `GET /projects/{project_id}/video-workflow/observability`，返回按项目过滤的 metrics/events/redaction 快照；后端契约覆盖 submit/query/download 指标、`project_id/run_id/trace_id` 事件字段，并验证不泄露 provider raw、签名 URL、临时 token 或授权头字段。前端补 `VideoWorkflowObservabilitySnapshot` 类型和 `fetchVideoWorkflowObservability()`。验证：`test_video_workflow_observability_endpoint_returns_redacted_project_snapshot` 先红 404 后转绿；目标回归 `python -m pytest apps/api/tests/test_video_workflow_canvas.py apps/api/tests/test_api_contract_gate.py -q` 为 `48 passed, 2 xfailed`。
+- 2026-06-29：视频工作台 P1-4 错误协议后端小收口已完成。`VideoWorkflowError` 增加可选 `action`，`main.py` 的视频工作流上传、创建、重试错误会把 action 透传到统一 API envelope；活动任务冲突 `VIDEO_ACTIVE_RUN_EXISTS` 返回 `action=wait_for_active_run`，下载产物缺失仍以 `retryable=true/action=retry` 表达可重试。新增 `test_video_workflow_errors_include_stable_next_actions` 覆盖稳定下一步动作、`trace_id` 和 retryable。验证：`python -m pytest apps/api/tests/test_api_contract_gate.py apps/api/tests/test_video_workflow_canvas.py -q` 为 `44 passed, 2 xfailed`。
 - 2026-06-20：角色已建立，尚未形成项目专属后端风险清单。
 - 2026-06-20：V0.2 要求后端角色使用后端审查模板交付，并在收尾时沉淀业务规则缺口、权限安全风险和测试回归点。
 - 2026-06-20：本地演示后端基线已收口：API 可从仓库根目录通过 `uvicorn apps.api.app.main:app --reload --port 8000` 启动；`PROVIDER_MODE=fake` 下创建项目、项目列表、manifest、节点详情、教材上传、`textbook_parse` 生成/确认、`lesson_plan` 生成/确认链路已通过 HTTP 冒烟。

@@ -11,6 +11,9 @@ def build_video_provider_readiness_report(
     env: Mapping[str, str | None],
     require_real: bool = False,
     provider_error_code: str | None = None,
+    api_alive: bool | None = None,
+    web_alive: bool | None = None,
+    live_smoke_executed: bool | None = None,
 ) -> dict[str, Any]:
     video_mode = (env.get("VIDEO_PROVIDER_MODE") or "placeholder").strip() or "placeholder"
     checks = {
@@ -41,6 +44,11 @@ def build_video_provider_readiness_report(
         "ok": not blocking_issues,
         "provider": "octo",
         "checks": checks,
+        "runtime": {
+            "api_alive": api_alive,
+            "web_alive": web_alive,
+            "live_smoke_executed": live_smoke_executed,
+        },
         "blocking_issues": blocking_issues,
         "next_action": next_action,
     }

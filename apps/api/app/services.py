@@ -501,6 +501,7 @@ class WorkflowService:
         tts_provider=None,
         video_model: str = "omni_flash-10s",
         capabilities_path: Path | None = None,
+        video_provider_readiness: dict[str, Any] | None = None,
     ):
         self.store = store
         self.provider = provider
@@ -533,6 +534,7 @@ class WorkflowService:
             store=self.store,
             capabilities_path=self.capabilities_path,
             video_provider=self.video_provider,
+            provider_readiness=video_provider_readiness,
         )
         self.media_workbench = MediaWorkbenchService(
             store=self.store,

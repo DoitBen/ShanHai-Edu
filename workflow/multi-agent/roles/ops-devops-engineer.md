@@ -76,6 +76,7 @@
 
 ## 当前记忆
 
+- 2026-06-29：视频工作台发布准入新增 staging smoke 和回滚演练基线。`apps/api/scripts/video_workbench_staging_smoke.py` 默认本地 fake/TestClient，不消耗真实额度；staging HTTP 模式要求 `--base-url` 指向 Next `/api/backend`；真实 Omni smoke 必须显式 `--run-real-provider`。新增 `docs/ops-video-workbench-staging-smoke-runbook.md` 和 `docs/ops-video-workbench-rollback-drill.md`，覆盖 Web/API 回滚、SQLite/storage 备份恢复、provider 故障降级和临时关闭入口。当前证据为 local-fake，通过不等于 staging/production 真实部署通过。
 - 2026-06-24：ShanHaiEdu 已真实上线到腾讯云 Lighthouse，公网入口 `http://124.221.149.145:3020/`。当前线上拓扑：nginx 监听 `3020` 并反代 Web 容器 `127.0.0.1:3021`；API 容器 `shanhaiedu-api-1` 映射 `127.0.0.1:8020->8000` 且状态 healthy；Web 容器 `shanhaiedu-web-1` 运行 Next standalone。最近一次 Web standalone 回滚备份为 `/opt/shanhaiedu/backups/web-standalone/standalone.20260624-213151`。
 - 2026-06-24：真实上线验收命令口径：公网 `GET /api/backend/health` 应返回 `ok=true/status=ok/workflow_version=1.0.0`；公网 `GET /api/backend/textbook-library` 应返回“人教版小学数学一年级上册”、`display_name=人教版 / 小学数学 / 一年级 / 上册`、`knowledge_point_count=9`、`status=indexed`；浏览器登录页不得出现“演示项目/工作流节点/视频方案/演示账号/demo mock/第一阶段演示版”，console error/warn 应为空。
 - 2026-06-24：后续用户要求“上线/部署/发布”时，运维默认按真实环境处理：备份当前线上包，部署到真实服务器，公网 URL、容器状态、nginx 配置、真实 API 和浏览器 DOM 都要复验；不得用本地 demo/mock 或本地真实 API 模式替代上线。

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import base64
 import http.client
@@ -8,9 +9,16 @@ import socket
 import urllib.error
 import urllib.parse
 import urllib.request
-import uuid
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
+
+import httpx
+
+MAX_VIDEO_DOWNLOAD_BYTES = int(os.getenv("VIDEO_WORKFLOW_MAX_VIDEO_DOWNLOAD_BYTES", str(512 * 1024 * 1024)))
+VIDEO_DOWNLOAD_TIMEOUT_SECONDS = float(os.getenv("VIDEO_WORKFLOW_DOWNLOAD_TIMEOUT_SECONDS", "180"))
+VIDEO_DOWNLOAD_CONNECT_TIMEOUT_SECONDS = float(os.getenv("VIDEO_WORKFLOW_DOWNLOAD_CONNECT_TIMEOUT_SECONDS", "20"))
+ALLOWED_VIDEO_DOWNLOAD_CONTENT_TYPES = {"video/mp4", "video/quicktime", "application/octet-stream"}
 
 
 class ProviderError(RuntimeError):
@@ -38,36 +46,6 @@ def sanitize_provider_excerpt(value: str, limit: int = 600) -> str:
     redacted = re.sub(r"\b(?:sk|octo|deepseek)-[A-Za-z0-9._-]{8,}\b", "<redacted>", redacted)
     redacted = redacted.replace("\r", " ").replace("\n", " ")
     return redacted[:limit]
-
-
-def _multipart_video_body(fields: dict[str, Any], reference_paths: list[Path]) -> tuple[bytes, str]:
-    boundary = f"----ShanHaiEdu{uuid.uuid4().hex}"
-    chunks: list[bytes] = []
-    for key, value in fields.items():
-        if value is None:
-            continue
-        chunks.extend(
-            [
-                f"--{boundary}\r\n".encode("utf-8"),
-                f'Content-Disposition: form-data; name="{key}"\r\n\r\n'.encode("utf-8"),
-                str(value).encode("utf-8"),
-                b"\r\n",
-            ]
-        )
-    for path in reference_paths:
-        if not path.is_file():
-            raise ProviderError("OCTO_REFERENCE_FILE_MISSING", f"参考图文件不存在：{path}", retryable=False)
-        chunks.extend(
-            [
-                f"--{boundary}\r\n".encode("utf-8"),
-                f'Content-Disposition: form-data; name="input_reference"; filename="{path.name}"\r\n'.encode("utf-8"),
-                b"Content-Type: image/png\r\n\r\n",
-                path.read_bytes(),
-                b"\r\n",
-            ]
-        )
-    chunks.append(f"--{boundary}--\r\n".encode("utf-8"))
-    return b"".join(chunks), boundary
 
 
 def strip_json_fence(text: str) -> str:
@@ -457,18 +435,44 @@ class OctoVideoProvider:
         self.transport = transport or self._http_transport
 
     def submit_video(self, payload: dict[str, Any]) -> dict[str, Any]:
-        reference_paths = payload.get("reference_image_paths") or []
-        if reference_paths:
-            request_payload = {key: value for key, value in payload.items() if key not in {"images", "reference_image_paths"}}
-            data, boundary = _multipart_video_body(request_payload, [Path(path) for path in reference_paths])
+        references = payload.get("reference_images") or []
+        if references:
+            request_payload = {
+                key: value
+                for key, value in payload.items()
+                if key not in {"images", "reference_images", "reference_image_paths"}
+            }
+            with ExitStack() as stack:
+                files: list[tuple[str, tuple[str, Any, str]]] = []
+                for item in references:
+                    path = Path(str(item["path"]))
+                    if not path.is_file():
+                        raise ProviderError(
+                            "OCTO_REFERENCE_FILE_MISSING",
+                            f"参考图文件不存在：{path.name}",
+                            retryable=False,
+                        )
+                    stream = stack.enter_context(path.open("rb"))
+                    files.append(("input_reference", (path.name, stream, str(item["mime_type"]))))
+                raw = self.transport(
+                    "POST",
+                    f"{self.base_url}/v1/videos",
+                    headers=self._auth_headers(),
+                    data=request_payload,
+                    files=files,
+                )
+        else:
+            request_payload = {
+                key: value
+                for key, value in payload.items()
+                if key not in {"images", "reference_images", "reference_image_paths"}
+            }
             raw = self.transport(
                 "POST",
                 f"{self.base_url}/v1/videos",
-                headers={**self._auth_headers(), "Content-Type": f"multipart/form-data; boundary={boundary}"},
-                data=data,
+                headers=self._json_headers(),
+                json=request_payload,
             )
-        else:
-            raw = self.transport("POST", f"{self.base_url}/v1/videos", headers=self._json_headers(), json=payload)
         task_id = raw.get("id") or raw.get("task_id") or raw.get("data", {}).get("id")
         if not task_id:
             raise ProviderError("OCTO_RESPONSE_INVALID", "章鱼哥提交视频未返回任务 ID", retryable=True)
@@ -497,26 +501,61 @@ class OctoVideoProvider:
             "raw": raw,
         }
 
-    def download_video(self, video_url: str, target_path) -> None:
-        request = urllib.request.Request(
-            video_url,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
-                ),
-                "Accept": "video/mp4,video/*;q=0.9,application/octet-stream,*/*;q=0.5",
-            },
-            method="GET",
-        )
+    def download_video(self, video_url: str, target_path: Path) -> None:
         try:
-            with urllib.request.urlopen(request, timeout=120) as response:
-                target_path.parent.mkdir(parents=True, exist_ok=True)
-                target_path.write_bytes(response.read())
-        except urllib.error.HTTPError as exc:
-            raise ProviderError("OCTO_DOWNLOAD_FAILED", f"视频下载失败：HTTP {exc.code}", retryable=True) from exc
-        except urllib.error.URLError as exc:
-            raise ProviderError("OCTO_DOWNLOAD_FAILED", f"视频下载失败：{exc.reason}", retryable=True) from exc
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            with httpx.stream(
+                "GET",
+                video_url,
+                headers={
+                    "User-Agent": "ShanHai-Edu/1.0",
+                    "Accept": "video/mp4,video/*;q=0.9,application/octet-stream",
+                },
+                timeout=httpx.Timeout(VIDEO_DOWNLOAD_TIMEOUT_SECONDS, connect=VIDEO_DOWNLOAD_CONNECT_TIMEOUT_SECONDS),
+                follow_redirects=True,
+            ) as response:
+                response.raise_for_status()
+                content_type = str(response.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
+                if content_type not in ALLOWED_VIDEO_DOWNLOAD_CONTENT_TYPES and not content_type.startswith("video/"):
+                    raise ProviderError(
+                        "VIDEO_DOWNLOAD_CONTENT_TYPE_INVALID",
+                        "视频下载返回的文件类型不受支持",
+                        retryable=True,
+                        response_excerpt=f"content-type={content_type or 'missing'}",
+                    )
+                content_length = response.headers.get("content-length")
+                if content_length:
+                    try:
+                        content_length_value = int(content_length)
+                    except ValueError as exc:
+                        raise ProviderError(
+                            "VIDEO_DOWNLOAD_CONTENT_LENGTH_INVALID",
+                            "视频下载返回的文件大小信息无效",
+                            retryable=True,
+                        ) from exc
+                    if content_length_value > MAX_VIDEO_DOWNLOAD_BYTES:
+                        raise ProviderError("VIDEO_DOWNLOAD_TOO_LARGE", "视频文件超过下载大小限制", retryable=False)
+                downloaded = 0
+                with target_path.open("wb") as output:
+                    for chunk in response.iter_bytes(1024 * 1024):
+                        downloaded += len(chunk)
+                        if downloaded > MAX_VIDEO_DOWNLOAD_BYTES:
+                            raise ProviderError("VIDEO_DOWNLOAD_TOO_LARGE", "视频文件超过下载大小限制", retryable=False)
+                        output.write(chunk)
+        except ProviderError:
+            target_path.unlink(missing_ok=True)
+            raise
+        except httpx.HTTPStatusError as exc:
+            target_path.unlink(missing_ok=True)
+            raise ProviderError(
+                "VIDEO_DOWNLOAD_FAILED",
+                f"视频下载失败：HTTP {exc.response.status_code}",
+                retryable=exc.response.status_code in {408, 429, 500, 502, 503, 504},
+                status_code=exc.response.status_code,
+            ) from exc
+        except httpx.RequestError as exc:
+            target_path.unlink(missing_ok=True)
+            raise ProviderError("VIDEO_DOWNLOAD_FAILED", str(exc), retryable=True) from exc
 
     def _auth_headers(self) -> dict[str, str]:
         if not self.api_key:
@@ -527,12 +566,41 @@ class OctoVideoProvider:
         return {**self._auth_headers(), "Content-Type": "application/json"}
 
     def _http_transport(self, method: str, url: str, **kwargs: Any) -> dict[str, Any]:
-        body = kwargs.get("json")
-        data = kwargs.get("data")
-        if data is None and body is not None:
-            data = json.dumps(body, ensure_ascii=False).encode("utf-8")
-        request = urllib.request.Request(url, data=data, headers=kwargs.get("headers") or {}, method=method)
-        return _request_json(request, "OCTO_REQUEST_FAILED")
+        try:
+            with httpx.Client(timeout=httpx.Timeout(120.0, connect=20.0)) as client:
+                response = client.request(
+                    method,
+                    url,
+                    headers=kwargs.get("headers") or {},
+                    json=kwargs.get("json"),
+                    data=kwargs.get("data"),
+                    files=kwargs.get("files"),
+                )
+            response.raise_for_status()
+            if not response.content:
+                raise ProviderError("OCTO_RESPONSE_INVALID", "上游服务返回空响应", retryable=True)
+            try:
+                return response.json()
+            except ValueError as exc:
+                raise ProviderError(
+                    "OCTO_RESPONSE_INVALID",
+                    "上游服务返回非 JSON 响应",
+                    retryable=True,
+                    response_excerpt=response.text,
+                ) from exc
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            raise ProviderError(
+                "OCTO_REQUEST_FAILED",
+                f"HTTP {status}",
+                retryable=status in {408, 429, 500, 502, 503, 504},
+                status_code=status,
+                response_excerpt=exc.response.text,
+            ) from exc
+        except httpx.TimeoutException as exc:
+            raise ProviderError("OCTO_REQUEST_FAILED", "视频服务请求超时", retryable=True) from exc
+        except httpx.RequestError as exc:
+            raise ProviderError("OCTO_REQUEST_FAILED", str(exc), retryable=True) from exc
 
     def _normalize_status(self, raw: dict[str, Any]) -> str:
         data = raw.get("data")

@@ -33,6 +33,8 @@ export interface ApiErrorPayload {
   code: string;
   message: string;
   retryable: boolean;
+  action: string;
+  trace_id: string;
   details?: unknown;
 }
 
@@ -737,57 +739,210 @@ export interface VideoWorkflowGraph {
   size: string;
 }
 
+export type VideoRunStatus =
+  | "submitting"
+  | "queued"
+  | "processing"
+  | "completed_pending_download"
+  | "completed"
+  | "failed"
+  | "submission_unknown";
+
+export type VideoDownloadStatus =
+  | "not_started"
+  | "pending_url"
+  | "downloading"
+  | "downloaded"
+  | "download_failed";
+
+export interface VideoStorageLifecyclePolicy {
+  project_reference_quota_bytes: number;
+  soft_delete_retention_days: number;
+  failed_run_retention_days: number;
+  temporary_file_retention_hours: number;
+  backup_recommendation: string;
+  soft_delete_behavior: string;
+}
+
+export interface VideoStorageUsage {
+  reference_asset_bytes: number;
+  deleted_reference_asset_bytes: number;
+  total_reference_asset_bytes: number;
+  active_reference_asset_count: number;
+  deleted_reference_asset_count: number;
+  reference_quota_bytes: number;
+  reference_quota_used_percent: number;
+}
+
+export interface VideoWorkflowStorageResponse {
+  policy: VideoStorageLifecyclePolicy;
+  usage: VideoStorageUsage;
+}
+
+export interface VideoWorkflowStorageCleanupResponse {
+  policy: VideoStorageLifecyclePolicy;
+  purged_reference_assets: string[];
+  purged_temporary_files: string[];
+  expired_failed_runs: string[];
+  storage_usage: VideoStorageUsage;
+}
+
+export interface VideoWorkflowObservabilityMetrics {
+  provider_submit_success_count: number;
+  provider_submit_failure_count: number;
+  provider_submit_latency_ms_total: number;
+  provider_submit_success_rate_percent: number;
+  provider_query_count: number;
+  provider_query_failure_count: number;
+  download_success_count: number;
+  download_failure_count: number;
+  downloaded_video_bytes: number;
+  duplicate_request_count: number;
+  duplicate_request_rate_percent: number;
+  queue_time_ms_total: number;
+  generation_time_ms_total: number;
+  download_time_ms_total: number;
+  retry_count: number;
+  retry_rate_percent: number;
+  sync_backoff_count: number;
+  provider_error_count: number;
+  storage_reference_bytes: number;
+  storage_reference_growth_bytes: number;
+}
+
+export interface VideoWorkflowObservabilityEvent {
+  event: string;
+  trace_id: string;
+  created_at: string;
+  project_id?: string;
+  run_id?: string;
+  status?: string;
+  provider_task_id?: string;
+  provider_status?: string;
+  progress?: number;
+  error_code?: string;
+  retryable?: boolean;
+  download_bytes?: number;
+}
+
+export interface VideoWorkflowObservabilitySnapshot {
+  metrics: VideoWorkflowObservabilityMetrics;
+  events: VideoWorkflowObservabilityEvent[];
+  event_retention: {
+    type: string;
+    max_events: number;
+  };
+  redaction: {
+    stores_provider_raw: boolean;
+    stores_signed_media_locator: boolean;
+    stores_authorization_header: boolean;
+  };
+}
+
+export interface VideoWorkflowConfig {
+  model: "omni_flash-10s";
+  size: "1280x720";
+  duration_sec: 10;
+  max_reference_images: 7;
+  max_project_assets: 50;
+  max_asset_bytes: number;
+  poll_interval_ms: number;
+  run_create_window_seconds: number;
+  run_create_project_window_limit: number;
+  run_create_global_window_limit: number;
+  provider_ready: boolean;
+  provider_reason_code: string;
+  provider_user_message: string;
+  storage_lifecycle: VideoStorageLifecyclePolicy;
+  runtime_concurrency?: {
+    lock_scope: "single_api_process";
+    supports_multi_worker: false;
+    deployment_warning: string;
+  };
+}
+
 export interface VideoReferenceAsset {
   asset_id: string;
   filename: string;
   path: string;
-  mime_type: string;
+  mime_type: "image/jpeg" | "image/png" | "image/webp";
+  byte_size: number;
+  width: number;
+  height: number;
   created_at: string;
+  deleted_at: string | null;
 }
 
 export interface VideoWorkflowRun {
   run_id: string;
-  task_id: string;
+  client_request_id: string;
+  retry_of_run_id: string | null;
   project_id: string;
-  node_id: string;
-  task_type: string;
-  status: string;
-  prompt?: string;
-  model?: string;
+  status: VideoRunStatus;
+  download_status: VideoDownloadStatus;
+  progress: number;
+  prompt: string;
+  model: "omni_flash-10s";
   mode?: VideoGenerationMode;
-  size?: string;
-  duration_sec?: number;
-  reference_asset_ids?: string[];
-  progress?: number;
+  size: "1280x720";
+  duration_sec: 10;
+  reference_asset_ids: string[];
+  reference_assets: Array<
+    Pick<
+      VideoReferenceAsset,
+      "asset_id" | "filename" | "mime_type" | "width" | "height"
+    >
+  >;
+  provider_task_id: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  retryable: boolean;
+  video_ready: boolean;
+  created_at: string;
+  updated_at: string;
   download_path?: string | null;
+  download_bytes?: number | null;
+  download_sha256?: string | null;
   video_url_present?: boolean;
-  error_message?: string | null;
   payload?: Record<string, unknown>;
   result?: Record<string, unknown>;
 }
 
 export interface VideoWorkflowRunRequest {
+  client_request_id: string;
   prompt: string;
-  model: string;
-  mode: VideoGenerationMode;
-  size: string;
-  duration_sec: number;
   reference_asset_ids: string[];
 }
 
-export interface VideoWorkflowResponse {
-  project_id: string;
-  graph: VideoWorkflowGraph;
-  assets: VideoReferenceAsset[];
-  latest_run: VideoWorkflowRun | null;
-  capabilities: VideoCapabilitiesResponse;
+export interface VideoWorkflowRetryRequest {
+  client_request_id: string;
+  confirm_possible_duplicate?: boolean;
+}
+
+export interface VideoWorkflowUploadError {
+  filename: string;
+  code: string;
+  message: string;
 }
 
 export interface VideoWorkflowAssetsResponse {
   assets: VideoReferenceAsset[];
+  uploaded: VideoReferenceAsset[];
+  errors: VideoWorkflowUploadError[];
   max_reference_images: number;
+  storage_usage: VideoStorageUsage;
 }
 
+export interface VideoWorkflowResponse {
+  project_id: string;
+  config: VideoWorkflowConfig;
+  storage_usage: VideoStorageUsage;
+  assets: VideoReferenceAsset[];
+  runs: VideoWorkflowRun[];
+  graph?: VideoWorkflowGraph;
+  latest_run?: VideoWorkflowRun | null;
+  capabilities?: VideoCapabilitiesResponse;
+}
 export interface MediaAsset {
   asset_id: string;
   asset_type: "image" | "video";

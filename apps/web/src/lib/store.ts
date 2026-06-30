@@ -15,6 +15,9 @@ import type {
   VideoWorkflowGraph,
   VideoWorkflowResponse,
   VideoWorkflowRun,
+  VideoWorkflowRunRequest,
+  VideoWorkflowRetryRequest,
+  VideoWorkflowUploadError,
   ScreenKey,
   NewProjectDraft,
   Role,
@@ -55,7 +58,9 @@ import {
   retryProjectTask as retryProjectTaskRequest,
   saveVideoWorkflow,
   createVideoWorkflowRun as createVideoWorkflowRunRequest,
-  syncVideoWorkflowRun,
+  deleteVideoWorkflowAsset,
+  retryVideoWorkflowRun as retryVideoWorkflowRunRequest,
+  syncVideoWorkflowRun as syncVideoWorkflowRunRequest,
   uploadVideoWorkflowAssets,
   createImageWorkbenchRun as createImageWorkbenchRunRequest,
   createVideoWorkbenchRun as createVideoWorkbenchRunRequest,
@@ -67,6 +72,8 @@ import {
   uploadTextbookToLibrary,
   isApiClientError,
 } from "./api-client";
+import { VIDEO_WORKFLOW_SYNC_CHANNEL, VIDEO_WORKFLOW_TAB_ID } from "./video-workflow-cross-tab";
+import { formatVideoWorkflowError } from "./video-workflow-errors";
 import {
   draftToCreateProjectPayload,
   mapApiManifest,
@@ -77,6 +84,62 @@ import {
 } from "./api-mappers";
 
 const AUTH_KEY = "shanhai_auth";
+const videoWorkflowCreateLocks = new Set<string>();
+
+function hasActiveVideoWorkflowRun(workflow?: VideoWorkflowResponse): boolean {
+  return Boolean(
+    workflow?.runs?.some(isActiveVideoWorkflowRun),
+  );
+}
+
+function isActiveVideoWorkflowRun(run: VideoWorkflowRun): boolean {
+  return (
+    run.status === "submitting" ||
+    run.status === "queued" ||
+    run.status === "processing" ||
+    run.status === "completed_pending_download"
+  );
+}
+
+function releaseVideoWorkflowCreateLockIfSettled(projectId: string, workflow?: VideoWorkflowResponse) {
+  if (!hasActiveVideoWorkflowRun(workflow)) videoWorkflowCreateLocks.delete(projectId);
+}
+
+function upsertVideoRun(
+  workflow: VideoWorkflowResponse,
+  run: VideoWorkflowRun,
+): VideoWorkflowResponse {
+  return {
+    ...workflow,
+    runs: [run, ...(workflow.runs || []).filter((item) => item.run_id !== run.run_id)]
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, 50),
+    latest_run: run,
+  };
+}
+
+function broadcastVideoWorkflowChange(projectId: string, reason: "asset" | "run" | "graph") {
+  if (typeof window === "undefined") return;
+  const message = JSON.stringify({
+    type: VIDEO_WORKFLOW_SYNC_CHANNEL,
+    projectId,
+    reason,
+    source: VIDEO_WORKFLOW_TAB_ID,
+    at: Date.now(),
+  });
+  try {
+    const channel = new BroadcastChannel(VIDEO_WORKFLOW_SYNC_CHANNEL);
+    channel.postMessage(message);
+    channel.close();
+  } catch {
+    // BroadcastChannel is not available in every embedded browser; storage keeps same-origin tabs in sync.
+  }
+  try {
+    window.localStorage.setItem(VIDEO_WORKFLOW_SYNC_CHANNEL, message);
+  } catch {
+    // Ignore private-mode or quota failures; the current tab already has the local mutation.
+  }
+}
 
 const DATA_MODE: DataMode = isDemoMode() ? "demo" : "api";
 const INITIAL_PROJECTS: ProjectMeta[] = DATA_MODE === "demo" ? MOCK_PROJECTS : [];
@@ -235,17 +298,29 @@ interface AppState {
   refreshProjectTask: (projectId: string, taskId: string) => Promise<{ ok: boolean; msg?: string }>;
   retryProjectTask: (projectId: string, taskId: string) => Promise<{ ok: boolean; msg?: string }>;
   loadVideoWorkflow: (projectId: string) => Promise<void>;
-  saveVideoWorkflowGraph: (projectId: string, graph: VideoWorkflowGraph) => Promise<{ ok: boolean; msg?: string }>;
-  uploadVideoWorkflowReferences: (projectId: string, files: File[]) => Promise<{ ok: boolean; msg?: string; assets?: VideoReferenceAsset[] }>;
-  createVideoWorkflowRun: (projectId: string, payload: {
-    prompt: string;
-    model: string;
-    mode: "text" | "reference" | "first_last_frame" | "extend";
-    size: string;
-    duration_sec: number;
-    reference_asset_ids: string[];
-  }) => Promise<{ ok: boolean; msg?: string; run?: VideoWorkflowRun }>;
-  syncVideoWorkflowRun: (projectId: string, runId: string) => Promise<{ ok: boolean; msg?: string; run?: VideoWorkflowRun }>;
+  saveVideoWorkflowGraph: (projectId: string, graph: VideoWorkflowGraph) => Promise<{ ok: boolean; msg?: string; error?: unknown }>;
+  uploadVideoWorkflowReferences: (
+    projectId: string,
+    files: File[],
+  ) => Promise<{
+    ok: boolean;
+    msg?: string;
+    error?: unknown;
+    assets?: VideoReferenceAsset[];
+    errors?: VideoWorkflowUploadError[];
+  }>;
+  createVideoWorkflowRun: (
+    projectId: string,
+    payload: VideoWorkflowRunRequest,
+  ) => Promise<{ ok: boolean; msg?: string; error?: unknown; run?: VideoWorkflowRun }>;
+  syncVideoWorkflowRun: (projectId: string, runId: string) => Promise<{ ok: boolean; msg?: string; error?: unknown; run?: VideoWorkflowRun }>;
+  removeVideoWorkflowAsset: (projectId: string, assetId: string) => Promise<{ ok: boolean; msg?: string; error?: unknown }>;
+  replaceVideoWorkflowRun: (projectId: string, run: VideoWorkflowRun) => void;
+  retryVideoWorkflowRun: (
+    projectId: string,
+    runId: string,
+    options?: { confirmPossibleDuplicate?: boolean },
+  ) => Promise<{ ok: boolean; msg?: string; error?: unknown; run?: VideoWorkflowRun }>;
   loadMediaWorkbench: () => Promise<void>;
   createImageWorkbenchRun: (payload: ImageWorkbenchRunRequest) => Promise<{ ok: boolean; msg?: string; run?: ImageWorkbenchRun }>;
   uploadMediaWorkbenchReferences: (files: File[]) => Promise<{ ok: boolean; msg?: string }>;
@@ -1172,7 +1247,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   loadVideoWorkflow: async (projectId) => {
-    if (get().dataMode === "demo") return;
     set({
       videoWorkflowStatusByProject: {
         ...get().videoWorkflowStatusByProject,
@@ -1185,6 +1259,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
     try {
       const workflow = await fetchVideoWorkflow(projectId);
+      releaseVideoWorkflowCreateLockIfSettled(projectId, workflow);
       set({
         videoWorkflowByProject: {
           ...get().videoWorkflowByProject,
@@ -1196,7 +1271,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         },
       });
     } catch (error) {
-      const msg = error instanceof Error ? error.message : "视频画布加载失败";
+      const msg = formatVideoWorkflowError(error, "视频画布加载失败").message;
       set({
         videoWorkflowStatusByProject: {
           ...get().videoWorkflowStatusByProject,
@@ -1223,9 +1298,10 @@ export const useAppStore = create<AppState>((set, get) => ({
           [projectId]: "ready",
         },
       });
+      broadcastVideoWorkflowChange(projectId, "graph");
       return { ok: true };
     } catch (error) {
-      const msg = error instanceof Error ? error.message : "视频画布保存失败";
+      const msg = formatVideoWorkflowError(error, "视频画布保存失败").message;
       set({
         videoWorkflowErrorByProject: {
           ...get().videoWorkflowErrorByProject,
@@ -1241,55 +1317,128 @@ export const useAppStore = create<AppState>((set, get) => ({
       const result = await uploadVideoWorkflowAssets(projectId, files);
       const current = get().videoWorkflowByProject[projectId];
       if (current) {
+        const nextWorkflow = { ...current, assets: result.assets };
+        releaseVideoWorkflowCreateLockIfSettled(projectId, nextWorkflow);
         set({
           videoWorkflowByProject: {
             ...get().videoWorkflowByProject,
-            [projectId]: { ...current, assets: result.assets },
+            [projectId]: nextWorkflow,
           },
         });
       }
-      return { ok: true, assets: result.assets };
+      broadcastVideoWorkflowChange(projectId, "asset");
+      return { ok: true, assets: result.assets, errors: result.errors };
     } catch (error) {
-      const msg = error instanceof Error ? error.message : "参考图上传失败";
-      return { ok: false, msg };
+      const msg = formatVideoWorkflowError(error, "参考图上传失败").message;
+      return { ok: false, msg, error };
     }
   },
 
   createVideoWorkflowRun: async (projectId, payload) => {
+    const existingWorkflow = get().videoWorkflowByProject[projectId];
+    releaseVideoWorkflowCreateLockIfSettled(projectId, existingWorkflow);
+    if (videoWorkflowCreateLocks.has(projectId) || hasActiveVideoWorkflowRun(existingWorkflow)) {
+      return { ok: false, msg: "当前项目已有视频任务正在生成，请等待完成后再创建新任务" };
+    }
+    videoWorkflowCreateLocks.add(projectId);
+    let keepCreateLocked = false;
     try {
       const run = await createVideoWorkflowRunRequest(projectId, payload);
       const current = get().videoWorkflowByProject[projectId];
+      keepCreateLocked = isActiveVideoWorkflowRun(run);
       if (current) {
+        const nextWorkflow = upsertVideoRun(current, run);
+        keepCreateLocked = hasActiveVideoWorkflowRun(nextWorkflow);
         set({
           videoWorkflowByProject: {
             ...get().videoWorkflowByProject,
-            [projectId]: { ...current, latest_run: run },
+            [projectId]: nextWorkflow,
           },
         });
       }
+      broadcastVideoWorkflowChange(projectId, "run");
       return { ok: true, run };
     } catch (error) {
-      const msg = error instanceof Error ? error.message : "视频画布任务创建失败";
-      return { ok: false, msg };
+      const msg = formatVideoWorkflowError(error, "视频任务创建失败").message;
+      return { ok: false, msg, error };
+    } finally {
+      if (!keepCreateLocked) videoWorkflowCreateLocks.delete(projectId);
     }
   },
 
   syncVideoWorkflowRun: async (projectId, runId) => {
     try {
-      const run = await syncVideoWorkflowRun(projectId, runId);
+      const run = await syncVideoWorkflowRunRequest(projectId, runId);
       const current = get().videoWorkflowByProject[projectId];
       if (current) {
+        const nextWorkflow = upsertVideoRun(current, run);
+        releaseVideoWorkflowCreateLockIfSettled(projectId, nextWorkflow);
         set({
           videoWorkflowByProject: {
             ...get().videoWorkflowByProject,
-            [projectId]: { ...current, latest_run: run },
+            [projectId]: nextWorkflow,
           },
         });
       }
+      broadcastVideoWorkflowChange(projectId, "run");
       return { ok: true, run };
     } catch (error) {
-      const msg = error instanceof Error ? error.message : "视频画布任务同步失败";
-      return { ok: false, msg };
+      const msg = formatVideoWorkflowError(error, "视频任务同步失败").message;
+      return { ok: false, msg, error };
+    }
+  },
+
+  removeVideoWorkflowAsset: async (projectId, assetId) => {
+    try {
+      await deleteVideoWorkflowAsset(projectId, assetId);
+      const current = get().videoWorkflowByProject[projectId];
+      if (current) {
+        const nextWorkflow = {
+          ...current,
+          assets: current.assets.filter((item) => item.asset_id !== assetId),
+        };
+        releaseVideoWorkflowCreateLockIfSettled(projectId, nextWorkflow);
+        set({
+          videoWorkflowByProject: {
+            ...get().videoWorkflowByProject,
+            [projectId]: nextWorkflow,
+          },
+        });
+      }
+      broadcastVideoWorkflowChange(projectId, "asset");
+      return { ok: true };
+    } catch (error) {
+      const msg = formatVideoWorkflowError(error, "参考图移除失败").message;
+      return { ok: false, msg, error };
+    }
+  },
+
+  replaceVideoWorkflowRun: (projectId, run) => {
+    const current = get().videoWorkflowByProject[projectId];
+    if (!current) return;
+    const nextWorkflow = upsertVideoRun(current, run);
+    releaseVideoWorkflowCreateLockIfSettled(projectId, nextWorkflow);
+    set({
+      videoWorkflowByProject: {
+        ...get().videoWorkflowByProject,
+        [projectId]: nextWorkflow,
+      },
+    });
+    broadcastVideoWorkflowChange(projectId, "run");
+  },
+
+  retryVideoWorkflowRun: async (projectId, runId, options) => {
+    try {
+      const payload: VideoWorkflowRetryRequest = {
+        client_request_id: crypto.randomUUID(),
+        confirm_possible_duplicate: options?.confirmPossibleDuplicate,
+      };
+      const run = await retryVideoWorkflowRunRequest(projectId, runId, payload);
+      get().replaceVideoWorkflowRun(projectId, run);
+      return { ok: true, run };
+    } catch (error) {
+      const msg = formatVideoWorkflowError(error, "视频任务重试失败").message;
+      return { ok: false, msg, error };
     }
   },
 

@@ -1,3 +1,391 @@
+# 【本轮】主 Codex — 视频工作台 Staging Smoke 与回滚演练交付门禁
+
+## 本轮目标
+
+按视频工作台下一阶段交付验证计划，把 PR/本地可用的项目级视频工作台推进到“可在 staging 复跑、可脱敏留证、可回滚演练”的发布准入形态。本轮不做图片会话、镜头式工作台或全量 DB 迁移。
+
+## 已完成事项
+
+- 新增 `apps\api\scripts\video_workbench_staging_smoke.py`：
+  - 本地默认使用 FastAPI TestClient + 内置 fake 视频 provider，不消耗真实额度。
+  - HTTP 模式支持 `--base-url .../api/backend`，用于 staging 验证所有请求必须经 Next 代理。
+  - 真实 provider smoke 必须显式传 `--run-real-provider`。
+  - 覆盖项目创建、读取视频工作流、上传/删除/再次上传参考图、Omni 文生视频、Omni 图生视频、sync、content、download、observability、storage、storage cleanup。
+  - 报告输出 JSON + Markdown，内置 `redact_sensitive`，不保存鉴权头、provider task id、签名 URL 或密钥形态字符串。
+- 新增脚本单测 `apps\api\tests\test_video_workbench_staging_smoke_script.py`：
+  - 验证默认不跑真实 provider。
+  - 验证敏感字段递归脱敏。
+  - 验证 Markdown 报告只包含允许的 run 摘要字段。
+- 新增前端交付契约 `apps\web\src\lib\video-workbench-staging-smoke-contract.test.ts`：
+  - 锁定 smoke 脚本、staging runbook、回滚演练文档和 CI 引用。
+- 更新 `.github\workflows\video-workbench-delivery.yml` 与 `video-workbench-ci-contract.test.ts`：
+  - CI 前端契约集合纳入 staging smoke delivery contract。
+- 新增运维文档：
+  - `docs\ops-video-workbench-staging-smoke-runbook.md`
+  - `docs\ops-video-workbench-rollback-drill.md`
+- 新增本地 fake smoke 脱敏证据：
+  - `docs\qa-audits\2026-06-29-145615-local-fake-video-workbench-staging-smoke.json`
+  - `docs\qa-audits\2026-06-29-145615-local-fake-video-workbench-staging-smoke.md`
+
+## 验证
+
+- 新增契约先红：缺少 `video_workbench_staging_smoke.py` 时失败。
+- `python -m pytest apps/api/tests/test_video_workbench_staging_smoke_script.py -q`：`3 passed`
+- `bun src/lib/video-workbench-ci-contract.test.ts && bun src/lib/video-workbench-staging-smoke-contract.test.ts && bun src/lib/video-workflow-contract.test.ts && bun src/lib/video-workflow-utils.test.ts && bun src/lib/video-workflow-polling-controller.test.ts`：通过
+- `python apps/api/scripts/video_workbench_staging_smoke.py --env-name local-fake`：通过，生成最新脱敏报告。
+- `python -m pytest apps/api/tests/test_video_workflow_canvas.py apps/api/tests/test_api_contract_gate.py -q`：`50 passed, 2 xfailed`
+- `bunx tsc --noEmit --incremental false`：通过
+- `bun run lint`：通过
+- `bun run build`：通过
+- `bun run scan:client-secrets`：通过
+- `git diff --check`：通过，仅 Windows 换行提示
+- `NEXT_PUBLIC_DEMO_MODE=true bun run test:e2e -- e2e/video-workbench.spec.ts --workers=1`：`3 passed`
+
+## 剩余风险
+
+- 本轮执行的是本地 fake smoke，不是 staging 真实环境 HTTP smoke。
+- 真实 Omni 文生视频/图生视频仍需在后端持有密钥的 staging 环境显式运行 `--run-real-provider`。
+- 当前视频参考图元数据仍是 SQLite 副本 + `assets.json` 兼容读取，不是完整 DB 主读迁移。
+- 外部 metrics/alerting 尚未接入，当前 observability 仍是 API 进程内快照。
+
+## 建议下一个接手角色
+
+测试工程师或运维/部署工程师在 staging 环境执行 `video_workbench_staging_smoke.py --base-url .../api/backend`；真实 provider 条件具备时再加 `--run-real-provider --max-sync-attempts 60` 并提交脱敏报告。
+
+---
+
+# 【本轮】主 Codex — 视频工作台 P2-1 素材 DB 元数据副本
+
+## 本轮目标
+
+按交付审计 P2-1，先把视频参考图元数据写入项目 SQLite，作为从 JSON manifest 迁移到数据库的第一步；保持 `assets.json` 作为兼容快照，不做破坏性迁移。
+
+## 已完成事项
+
+- 项目 DB 初始化新增 `video_workflow_assets` 表。
+- 参考图上传后双写 SQLite 元数据：`asset_id/project_id/filename/path/mime_type/byte_size/width/height/source/created_at/updated_at`。
+- 删除参考图时同步写入 DB `deleted_at`。
+- storage cleanup 清理软删除文件后同步写入 DB `purged_at`。
+- 新增后端测试覆盖上传、删除、清理三个路径的 DB 元数据可追溯。
+- `docs\ops-video-workflow-storage-lifecycle.md` 明确 SQLite 元数据副本和 JSON 兼容快照边界。
+
+## 验证
+
+- 新增测试先红：SQLite 查询 `video_workflow_assets` 报 `no such table`。
+- 修复后单测 `test_video_workflow_upload_delete_and_cleanup_persist_asset_metadata_to_sqlite`：`1 passed`。
+- `python -m pytest apps/api/tests/test_video_workflow_canvas.py apps/api/tests/test_api_contract_gate.py -q`：`50 passed, 2 xfailed`。
+- 前端契约集合 + `tsc --noEmit --incremental false`：通过。
+- `bun run lint`、`bun run build`、`bun run scan:client-secrets`：通过。
+
+## 剩余风险
+
+- 这不是完整 DB 化迁移；当前读取路径仍以 `assets.json` 为兼容来源。
+- 后续若要完全移除 JSON manifest，需要单独迁移读取、并发写、历史项目回填和回滚策略。
+
+---
+
+# 【本轮】主 Codex — 视频工作台 P2-2 存储生命周期运维入口
+
+## 本轮目标
+
+按交付审计 P2-2，把已有视频工作流存储生命周期策略和清理能力暴露为受保护 API，便于试运行和部署后手动排障。
+
+## 已完成事项
+
+- 新增 `GET /projects/{project_id}/video-workflow/storage`，返回 `policy` 和当前项目 `usage`。
+- 新增 `POST /projects/{project_id}/video-workflow/storage/cleanup`，调用既有 cleanup 逻辑清理过期软删除参考图、临时上传文件，并标记过期失败任务。
+- 新增后端契约测试，覆盖正式 API 查询用量、触发 cleanup、保留 manifest 历史元数据、物理文件清理和用量归零。
+- 前端补 `VideoWorkflowStorageResponse`、`VideoWorkflowStorageCleanupResponse`、`fetchVideoWorkflowStorage()`、`cleanupVideoWorkflowStorage()`。
+- `docs\ops-video-workflow-storage-lifecycle.md` 补充 storage/cleanup 运维入口。
+
+## 验证
+
+- 新增测试先红：`GET /projects/{project_id}/video-workflow/storage` 返回 404。
+- 修复后单测 `test_video_workflow_storage_endpoint_reports_usage_and_cleanup`：`1 passed`。
+- `python -m pytest apps/api/tests/test_video_workflow_canvas.py apps/api/tests/test_api_contract_gate.py -q`：`49 passed, 2 xfailed`。
+- 前端契约集合 + `tsc --noEmit --incremental false`：通过。
+- `bun run lint`、`bun run build`、`bun run scan:client-secrets`：通过。
+
+## 剩余风险
+
+- 本轮是手动运维入口，不是定时任务或外部对象存储生命周期策略。
+- P2-1 素材元数据 DB 化、外部监控告警、真实部署 E2E、回滚演练和 staging 连续真实 Omni 验证仍未完成。
+
+---
+
+# 【本轮】主 Codex — 视频工作台 P2-5 部署拓扑契约封板
+
+## 本轮目标
+
+按交付审计 P2-5，把“浏览器统一经 Next `/api/backend` 代理访问 FastAPI”的部署拓扑纳入可执行契约，并补齐新增观测接口的部署验收口径。
+
+## 已完成事项
+
+- 扩展 `apps\web\src\lib\video-workbench-ci-contract.test.ts`，要求 CI 自检读取 `docs\ops-video-workbench-deployment-topology.md`。
+- 契约锁定部署文档必须说明 `Browser -> Next.js /api/backend/* -> FastAPI`。
+- 契约锁定部署文档必须覆盖 `GET /projects/{project_id}/video-workflow/observability` 代理路径。
+- `docs\ops-video-workbench-deployment-topology.md` 补充观测接口、部署环境 E2E 最小验收口径和脱敏证据要求。
+
+## 验证
+
+- 新增契约先红：缺少 observability 代理路径时 `video-workbench-ci-contract.test.ts` 失败。
+- 修复后 `bun src/lib/video-workbench-ci-contract.test.ts`：通过。
+- `bun src/lib/video-workbench-ci-contract.test.ts && bun src/lib/video-workflow-contract.test.ts && bun src/lib/video-workflow-utils.test.ts && bun src/lib/video-workflow-polling-controller.test.ts && bun src/lib/api-proxy-contract.test.ts && bunx tsc --noEmit --incremental false`：通过。
+- `bun run lint`、`bun run build`、`bun run scan:client-secrets`、`git diff --check`：通过，仅 Windows 换行提示。
+
+## 剩余风险
+
+- 本轮是部署拓扑文档与契约封板，不是 staging/production 的真实部署 E2E 执行。
+- 仍需在真实部署环境按文档跑一次上传、删除、生成、播放、下载、观测接口和浏览器 Network 检查。
+
+---
+
+# 【本轮】主 Codex — 视频工作台 P2-3 可观测性接口化
+
+## 本轮目标
+
+按交付审计 P2-3，把已有进程内视频工作流观测快照抽象为正式受保护 API，支持试运行排障读取指标和脱敏事件。
+
+## 已完成事项
+
+- 新增 `GET /projects/{project_id}/video-workflow/observability`，复用现有 protected 鉴权并按项目过滤观测事件。
+- 新增后端契约测试，覆盖通过正式 API 读取观测快照、submit/query/download 指标、事件 `project_id/run_id/trace_id`，并确保不泄露上游 raw、签名 URL、临时 token、授权头字段。
+- 前端新增 `VideoWorkflowObservabilitySnapshot`、metrics/event 类型和 `fetchVideoWorkflowObservability()` API client，使该接口有明确类型边界。
+- `docs\ops-video-workflow-storage-lifecycle.md` 补充观测接口路径和脱敏边界。
+
+## 验证
+
+- 新增测试先红：`GET /projects/{project_id}/video-workflow/observability` 返回 404。
+- 修复后 `python -m pytest apps/api/tests/test_video_workflow_canvas.py::test_video_workflow_observability_endpoint_returns_redacted_project_snapshot -q`：`1 passed`
+- `python -m pytest apps/api/tests/test_video_workflow_canvas.py apps/api/tests/test_api_contract_gate.py -q`：`48 passed, 2 xfailed`
+- `bun src/lib/video-workbench-ci-contract.test.ts && bun src/lib/video-workflow-contract.test.ts && bun src/lib/video-workflow-utils.test.ts && bun src/lib/video-workflow-polling-controller.test.ts && bun src/lib/api-proxy-contract.test.ts && bunx tsc --noEmit --incremental false`：通过
+- `bun run lint`：通过
+- `bun run build`：通过
+- `bun run scan:client-secrets`：通过，脚本输出 `Client-visible secret scan passed.`
+- `git diff --check`：通过，仅 Windows 换行提示
+
+## 剩余风险
+
+- 本轮是可观测性接口化，不是外部监控系统接入；事件仍为 API 进程内 ring buffer。
+- 仍未完成 P2-1 素材 DB 化、完整存储生命周期执行器、部署拓扑 E2E、回滚演练和 staging 连续真实 Omni 验证。
+
+## 建议下一个接手角色
+
+主 Codex 继续做 P2 正式交付项；优先级建议：P2-5 部署拓扑文档/API 代理验收，或 P2-1 素材元数据 DB 化前的设计切片。
+
+---
+
+# 【本轮】主 Codex — 视频工作台正式入口浏览器验收补证
+
+## 本轮目标
+
+补审计要求中的正式入口浏览器证据，确认视频工作台不是只在代码/契约层通过，也不依赖“开发诊断”折叠区。
+
+## 已完成事项
+
+- 更新 `apps\web\e2e\video-workbench.spec.ts`，让现有正式入口 E2E 适配 P1-7 新增的生成前确认弹窗。
+- Playwright 覆盖范围：
+  - 从项目工作区正式“视频生成”入口进入，不打开开发诊断。
+  - 上传参考图并限制最多 7 张。
+  - 生成前确认弹窗包含“确认生成 10 秒视频”、`omni_flash-10s` 和参考图数量。
+  - 双击生成只创建 1 个任务。
+  - 参考图 ID 顺序按选择顺序传给 API。
+  - 完成后加载真实小 MP4，等待 `loadedmetadata` 并断言 `duration > 0`。
+  - 刷新后仍能看到历史视频并复用参数。
+  - 两个浏览器标签页打开同项目时，创建任务后另一个标签页自动刷新。
+  - 离线时轮询暂停，恢复后继续完成。
+- `.gitignore` 补充 `apps/web/test-results/` 和 `apps/web/playwright-report/`，防止测试产物误提交。
+- 清理本轮生成的 `apps\web\test-results\.last-run.json`；未发现残留 Playwright/Next 测试进程。
+
+## 验证
+
+- `bunx playwright test e2e/video-workbench.spec.ts --workers=1`：`3 passed`
+- `bun src/lib/video-workflow-contract.test.ts`：通过
+- `bunx tsc --noEmit --incremental false`：通过
+- `git diff --check`：通过，仅 Windows 换行提示
+
+## 剩余风险
+
+- 本轮是 mock API + 真实浏览器视频 fixture 验收，不消耗真实 Omni 额度。
+- 仍未覆盖真实 provider 付费生成、物理触屏设备拖拽手势、生产部署环境 E2E。
+- P2 正式交付项仍未完成：CI 分支保护、监控告警、素材 DB 化、存储治理、部署拓扑、回滚演练、staging 连续真实 Omni 验证。
+
+## 建议下一个接手角色
+
+主 Codex 继续做 P2/正式交付门禁拆解；若用户要求继续代码整改，优先 P2-4 CI 与分支保护，其次 P2-3 可观测性和 P2-1 素材 DB 化。
+
+---
+
+# 【本轮】主 Codex — 视频工作台 P1-7 草稿、项目切换与费用保护收口
+
+## 本轮目标
+
+按 `docs\qa-audits\2026-06-29-google-flow-video-workbench-delivery-review.md` 的 P1-7 要求，核对并补齐项目草稿隔离、项目切换、活动任务门禁和费用保护。
+
+## 已完成事项
+
+- 复核既有能力：
+  - 提示词和参考图选择已按 `video-workflow-draft:{projectId}` 保存。
+  - `VideoWorkflowWorkbench` 使用 `key={projectId}`，项目切换时 remount，避免旧项目临时状态串入新项目。
+  - 前端组件与 Zustand store 都有创建锁，防双击重复提交。
+  - 服务端已有单项目活动任务限制，活动任务存在时返回 `VIDEO_ACTIVE_RUN_EXISTS`。
+  - `submission_unknown` 重试已有重复费用确认。
+- 本轮新增后端费用保护：
+  - `VIDEO_WORKFLOW_RUN_CREATE_WINDOW_SECONDS`
+  - `VIDEO_WORKFLOW_PROJECT_CREATE_LIMIT`
+  - `VIDEO_WORKFLOW_GLOBAL_CREATE_LIMIT`
+  - 超过项目或全局创建窗口限制时返回 `429 / VIDEO_RATE_LIMITED / action=wait_and_retry / retryable=true`。
+  - 工作台 config 暴露限流参数，前端和接口契约能读取同一口径。
+- 本轮新增前端费用确认：
+  - 生成前弹窗确认“确认生成 10 秒视频”。
+  - 弹窗包含模型、尺寸、时长、参考图数量和项目频率限制。
+  - 用户取消时不创建真实视频任务。
+- `wait_and_retry` 已加入视频错误动作中文翻译。
+
+## 验证
+
+- `python -m pytest apps/api/tests/test_video_workflow_canvas.py -q`：`41 passed`
+- `bun src/lib/video-workflow-contract.test.ts`：通过
+- `bun src/lib/video-workflow-errors.test.ts`：通过
+- `bunx tsc --noEmit --incremental false`：通过
+- `bun run lint`：通过
+- `bun run build`：通过
+- `bun run scan:client-secrets`：通过，脚本输出 `Client-visible secret scan passed.`
+- `git diff --check`：通过，仅 Windows 换行提示
+
+## 剩余风险
+
+- P1-5/P1-6/P1-7 目前主要是代码级和契约级验收，仍缺真实浏览器专项证据：触屏上传、播放器 `loadedmetadata`、确认弹窗、项目切换 DOM。
+- P2 仍未完成：CI 分支保护、监控告警、素材 DB 化、存储生命周期演练、部署拓扑 E2E、回滚演练、staging 连续真实 Omni 验证。
+
+## 建议下一个接手角色
+
+主 Codex 继续做一次审计剩余项复核：标出 P0/P1 已关闭证据、未关闭浏览器证据和 P2 正式交付项，再决定是否先补 Playwright 浏览器验收或进入 P2。
+
+---
+
+# 【本轮】主 Codex — 视频工作台 P1-6 下载与播放器验证收口
+
+## 本轮目标
+
+按 `docs\qa-audits\2026-06-29-google-flow-video-workbench-delivery-review.md` 的 P1-6 要求，补齐视频下载安全校验、下载元数据持久化和播放器异常态入口。
+
+## 已完成事项
+
+- `OctoVideoProvider.download_video` 增加 HTTP 下载防护：
+  - Content-Type 白名单：允许 `video/*`、`video/mp4`、`video/quicktime`、`application/octet-stream`。
+  - Content-Length 无效时返回 `VIDEO_DOWNLOAD_CONTENT_LENGTH_INVALID`。
+  - Content-Length 或流式下载超过 `VIDEO_WORKFLOW_MAX_VIDEO_DOWNLOAD_BYTES` 时返回 `VIDEO_DOWNLOAD_TOO_LARGE`。
+  - 下载失败时清理目标临时文件，避免残缺文件留下。
+  - 下载超时参数改为可配置：`VIDEO_WORKFLOW_DOWNLOAD_TIMEOUT_SECONDS`、`VIDEO_WORKFLOW_DOWNLOAD_CONNECT_TIMEOUT_SECONDS`。
+- `VideoWorkflowService.sync_run` 增强落盘校验：
+  - 原子 `.mp4.part` 下载成功后校验 MP4 `ftyp`。
+  - 校验最大下载大小。
+  - 保存 `download_bytes` 和 `download_sha256`。
+  - 复用已下载文件时可补齐缺失的下载元数据。
+  - 工作流层校验失败时清理 `.part` 临时文件。
+- 前端 `VideoComposerPanel` 增加视频源文件下载入口：
+  - 视频加载成功后右下角显示“下载源文件”。
+  - 视频无法播放时遮罩提供“重新加载”和“下载源文件”。
+- 前端 `VideoWorkflowRun` 类型新增 `download_bytes/download_sha256`。
+
+## 验证
+
+- `python -m pytest apps/api/tests/test_video_workflow_canvas.py -q`：`40 passed`
+- `python -m pytest apps/api/tests/test_real_providers.py::test_octo_video_download_rejects_non_video_content_type apps/api/tests/test_real_providers.py::test_octo_video_download_rejects_oversized_stream apps/api/tests/test_real_providers.py::test_octo_video_download_rejects_invalid_content_length apps/api/tests/test_real_providers.py::test_octo_video_download_uses_browser_compatible_headers -q`：`4 passed`
+- `bun src/lib/video-workflow-contract.test.ts`：通过
+- `bun src/lib/video-workflow-errors.test.ts`：通过
+- `bun src/lib/video-workflow-polling-controller.test.ts`：通过
+- `bun src/lib/video-workflow-upload-queue.test.ts`：通过
+- `bunx tsc --noEmit --incremental false`：通过
+- `bun run lint`：通过
+- `bun run build`：通过
+- `bun run scan:client-secrets`：通过，脚本输出 `Client-visible secret scan passed.`
+- `git diff --check`：通过，仅 Windows 换行提示
+
+## 剩余风险
+
+- 本轮没有执行真实浏览器 `loadedmetadata`、解码失败、下载按钮点击 E2E；仍需 Playwright 小 MP4 验收。
+- P1-7 草稿、项目切换和费用保护仍未收口；P2 CI/监控/存储治理/部署回滚仍未完成。
+
+## 建议下一个接手角色
+
+主 Codex 继续按审计顺序推进 P1-7：项目草稿隔离、项目切换清理、单项目活动任务门禁、二次确认和服务端限流/配额。
+
+---
+
+# 【本轮】主 Codex — 视频工作台 P1-5 上传交互收口
+
+## 本轮目标
+
+按 `docs\qa-audits\2026-06-29-google-flow-video-workbench-delivery-review.md` 的 P1-5 要求，完善项目视频工作台参考图上传交互：每个文件有独立状态，批量上传允许部分成功，失败文件可以单独重试，触屏环境也能看到删除/重试操作。
+
+## 已完成事项
+
+- 新增 `apps\web\src\lib\video-workflow-upload-queue.ts`，将上传队列状态从组件中抽离为可测试纯逻辑。
+- 上传队列 ID 使用 `index:name:size:lastModified`，避免同名同大小文件按文件名串状态。
+- `VideoAssetPanel` 改为逐个文件调用现有上传接口，单文件显示等待、上传中、成功、失败。
+- 超大文件在前端立即标记失败；后端返回单文件错误时只标记对应文件失败。
+- 批量上传部分成功时，成功项显示“部分参考图已上传”。
+- 失败项保留原始 `File`，显示“重试”按钮；重试期间有 loading，上传函数抛异常时兜底为“网络失败，请重试”并恢复按钮状态。
+
+## 验证
+
+- `bun src/lib/video-workflow-upload-queue.test.ts`：通过
+- `bun src/lib/video-workflow-contract.test.ts`：通过
+- `bun src/lib/video-workflow-errors.test.ts`：通过
+- `bun src/lib/video-workflow-polling-controller.test.ts`：通过
+- `python -m pytest apps/api/tests/test_video_workflow_canvas.py::test_video_workflow_partial_upload_keeps_valid_files apps/api/tests/test_video_workflow_canvas.py::test_video_workflow_rejects_non_image_reference_upload -q`：`2 passed`
+- `bunx tsc --noEmit --incremental false`：通过
+- `bun run lint`：通过
+- `bun run build`：通过
+- `bun run scan:client-secrets`：通过，脚本输出 `Client-visible secret scan passed.`
+- `git diff --check`：通过，仅 Windows 换行提示
+
+## 剩余风险
+
+- 本轮是代码级和契约级收口，尚未补 Playwright/真实浏览器触屏上传证据。
+- P1-6 视频文件下载与播放器验证、P1-7 草稿/项目切换/费用保护，以及 P2 交付工程项仍未完成。
+
+## 建议下一个接手角色
+
+主 Codex 继续按审计顺序推进 P1-6：服务端视频下载 Content-Type/大小/超时/MP4 魔数/SHA-256 校验，以及播放器加载/失败/重新下载状态。
+
+---
+
+# 【本轮】主 Codex — 视频工作台 P1-4 错误提示分层收口
+
+## 本轮目标
+
+按 `docs\qa-audits\2026-06-29-google-flow-video-workbench-delivery-review.md` 的 P1-4 要求，收口视频工作台错误提示分层：API 错误必须有稳定 code/message/retryable/action/trace_id，前端普通 toast 不直接展示内部码或原始 details，轮询失败不得静默吞掉。
+
+## 已完成事项
+
+- 后端 `VideoWorkflowError` 增加可选 `action`，视频工作流上传、创建、重试错误通过统一 envelope 透传 action。
+- `VIDEO_ACTIVE_RUN_EXISTS` 返回 `action=wait_for_active_run`，下载输出缺失保持 `retryable=true/action=retry`。
+- 前端导出 `ApiClientError`，保留结构化 `details/action/traceId`，但不再把 raw `details:` 拼进用户可见 message。
+- 新增 `apps\web\src\lib\video-workflow-errors.ts`，统一生成中文错误说明、建议动作和追踪 ID。
+- `VideoWorkflowWorkbench` 的创建、参考图上传、删除、重试错误统一使用结构化 toast。
+- 轮询控制器识别 `{ok:false}` resolve 结果为失败，进入退避并展示“下次重试/立即重试”，避免同步失败被当成成功。
+
+## 验证
+
+- `python -m pytest apps/api/tests/test_api_contract_gate.py apps/api/tests/test_video_workflow_canvas.py -q`：`44 passed, 2 xfailed`
+- `bun src/lib/video-workflow-errors.test.ts && bun src/lib/video-workflow-contract.test.ts && bun src/lib/video-workflow-polling-controller.test.ts`：通过
+- `bun src/lib/api-proxy-contract.test.ts && bun src/lib/api-warning-override-contract.test.ts`：通过
+- `bunx tsc --noEmit --incremental false`：通过
+- `bun run lint`：通过
+- `bun run build`：通过
+- `bun run scan:client-secrets`：通过
+- `git diff --check`：通过，仅有 Windows 换行提示
+
+## 剩余风险
+
+- 本轮是 P1-4 代码级收口，未补浏览器错误态截图。
+- P1-5 上传单文件重试/独立进度/触屏验收、P1-6 视频下载安全增强、P1-7 限流配额，以及 P2 DB 化/监控/部署回滚仍未完成。
+
+---
+
 # 【本轮】主 Codex / 首席系统架构师 — ShanHaiEdu 真实环境上线收口
 
 ## 本轮目标

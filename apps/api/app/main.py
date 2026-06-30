@@ -62,6 +62,16 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         if settings.tts_provider_mode.lower() == "real"
         else None
     )
+    video_provider_readiness = build_video_provider_readiness_report(
+        env={
+            "VIDEO_PROVIDER_MODE": settings.video_provider_mode,
+            "OCTO_API_KEY": settings.octo_api_key,
+            "OCTO_BASE_URL": settings.octo_base_url,
+            "OCTO_VIDEO_PROVIDER": settings.octo_video_provider,
+            "VIDEO_MODEL": settings.video_model,
+        },
+        require_real=True,
+    )
     prompt_store = PromptStore(Path(settings.storage_root) / "prompt_registry.db")
     prompt_registry = PromptRegistry(prompt_store, Path(settings.workflow_root) / "prompts")
     prompt_registry.ensure_seeded(created_by="system")
@@ -79,6 +89,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         tts_provider=tts_provider,
         video_model=settings.video_model,
         capabilities_path=settings.capabilities_path,
+        video_provider_readiness=video_provider_readiness,
     )
 
     app = FastAPI(title="ShanHaiEdu Video MVP API")
@@ -522,6 +533,33 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except KeyError:
             return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
 
+    @app.get("/projects/{project_id}/video-workflow/observability", dependencies=protected)
+    def get_video_workflow_observability(project_id: str):
+        try:
+            store.get_project(project_id)
+            return ok(service.video_workflow.observability_snapshot(project_id))
+        except KeyError:
+            return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
+
+    @app.get("/projects/{project_id}/video-workflow/storage", dependencies=protected)
+    def get_video_workflow_storage(project_id: str):
+        try:
+            return ok(
+                {
+                    "policy": service.video_workflow.storage_lifecycle_policy(),
+                    "usage": service.video_workflow.storage_usage(project_id),
+                }
+            )
+        except KeyError:
+            return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
+
+    @app.post("/projects/{project_id}/video-workflow/storage/cleanup", dependencies=protected)
+    def cleanup_video_workflow_storage(project_id: str):
+        try:
+            return ok(service.video_workflow.cleanup_storage(project_id))
+        except KeyError:
+            return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
+
     @app.put("/projects/{project_id}/video-workflow", dependencies=protected)
     def save_video_workflow(project_id: str, payload: dict[str, Any]):
         try:
@@ -534,16 +572,35 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         try:
             return ok(service.video_workflow.upload_assets(project_id, files))
         except VideoWorkflowError as exc:
-            return fail(400, exc.code, str(exc), retryable=False)
+            return fail(exc.status_code, exc.code, str(exc), retryable=exc.retryable, details=exc.details, action=exc.action)
         except KeyError:
             return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
+
+    @app.get("/projects/{project_id}/video-workflow/assets/{asset_id}/content", dependencies=protected)
+    def get_video_workflow_asset(project_id: str, asset_id: str):
+        try:
+            asset = service.video_workflow.asset(project_id, asset_id, include_deleted=True)
+            project = store.get_project(project_id)
+            path = Path(project["project_dir"]) / asset["path"]
+            if not path.is_file():
+                raise KeyError(asset_id)
+            return FileResponse(path, media_type=asset["mime_type"], filename=asset["filename"])
+        except KeyError:
+            return fail(404, "VIDEO_REFERENCE_NOT_FOUND", "参考图不存在", retryable=False)
+
+    @app.delete("/projects/{project_id}/video-workflow/assets/{asset_id}", dependencies=protected)
+    def delete_video_workflow_asset(project_id: str, asset_id: str):
+        try:
+            return ok(service.video_workflow.delete_asset(project_id, asset_id))
+        except KeyError:
+            return fail(404, "VIDEO_REFERENCE_NOT_FOUND", "参考图不存在", retryable=False)
 
     @app.post("/projects/{project_id}/video-workflow/runs", dependencies=protected)
     def create_video_workflow_run(project_id: str, payload: dict[str, Any]):
         try:
             return ok(service.video_workflow.create_run(project_id, payload))
         except VideoWorkflowError as exc:
-            return fail(400, exc.code, str(exc), retryable=False)
+            return fail(exc.status_code, exc.code, str(exc), retryable=exc.retryable, details=exc.details, action=exc.action)
         except ProviderError as exc:
             details = {}
             if getattr(exc, "status_code", None) is not None:
@@ -551,6 +608,13 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
             if getattr(exc, "response_excerpt", ""):
                 details["response_excerpt"] = sanitize_provider_excerpt(exc.response_excerpt)
             return fail(502, exc.code, str(exc), retryable=exc.retryable, details=details or None)
+        except KeyError:
+            return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
+
+    @app.get("/projects/{project_id}/video-workflow/runs", dependencies=protected)
+    def list_video_workflow_runs(project_id: str, limit: int = 50):
+        try:
+            return ok(service.video_workflow.list_runs(project_id, limit=limit))
         except KeyError:
             return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
 
@@ -575,15 +639,39 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except KeyError:
             return fail(404, "VIDEO_WORKFLOW_RUN_NOT_FOUND", "视频画布任务不存在")
 
+    @app.post("/projects/{project_id}/video-workflow/runs/{run_id}/retry", dependencies=protected)
+    def retry_video_workflow_run(project_id: str, run_id: str, payload: dict[str, Any]):
+        try:
+            return ok(service.video_workflow.retry_run(project_id, run_id, payload))
+        except VideoWorkflowError as exc:
+            return fail(exc.status_code, exc.code, str(exc), retryable=exc.retryable, details=exc.details, action=exc.action)
+        except KeyError:
+            return fail(404, "VIDEO_WORKFLOW_RUN_NOT_FOUND", "视频任务不存在", retryable=False)
+
     @app.get("/projects/{project_id}/video-workflow/runs/{run_id}/download", dependencies=protected)
     def download_video_workflow_run(project_id: str, run_id: str):
         try:
             path = service.video_workflow.download_path(project_id, run_id)
         except KeyError:
-            return fail(404, "VIDEO_WORKFLOW_OUTPUT_NOT_FOUND", "视频画布输出不存在")
+            return fail(404, "VIDEO_OUTPUT_NOT_FOUND", "视频输出不存在", retryable=True)
         if not path.exists():
-            return fail(404, "VIDEO_WORKFLOW_OUTPUT_NOT_FOUND", "视频画布输出不存在")
+            return fail(404, "VIDEO_OUTPUT_NOT_FOUND", "视频输出不存在", retryable=True)
         return FileResponse(path, media_type="video/mp4", filename=path.name)
+
+    @app.get("/projects/{project_id}/video-workflow/runs/{run_id}/content", dependencies=protected)
+    def stream_video_workflow_run(project_id: str, run_id: str):
+        try:
+            path = service.video_workflow.download_path(project_id, run_id)
+            if not path.is_file():
+                raise KeyError(run_id)
+            return FileResponse(
+                path,
+                media_type="video/mp4",
+                filename=path.name,
+                content_disposition_type="inline",
+            )
+        except KeyError:
+            return fail(404, "VIDEO_OUTPUT_NOT_FOUND", "视频输出不存在", retryable=True)
 
     @app.get("/rules/coverage", dependencies=protected)
     def get_rule_coverage():

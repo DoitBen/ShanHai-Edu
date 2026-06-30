@@ -1,0 +1,141 @@
+{
+  "kind": "video-workbench-staging-smoke",
+  "started_at": "2026-06-29T14:56:07.815341+00:00",
+  "mode": "fake_provider",
+  "checks": [
+    {
+      "check": "proxy_path",
+      "status": "skipped",
+      "reason": "in_process_testclient"
+    },
+    {
+      "check": "workflow_defaults",
+      "status": "passed",
+      "model": "omni_flash-10s",
+      "size": "1280x720",
+      "duration_sec": 10,
+      "provider_ready": true,
+      "provider_reason_code": "VIDEO_PROVIDER_READY"
+    },
+    {
+      "check": "proxy_path",
+      "status": "skipped",
+      "reason": "in_process_testclient"
+    },
+    {
+      "check": "proxy_path",
+      "status": "skipped",
+      "reason": "in_process_testclient"
+    },
+    {
+      "check": "proxy_path",
+      "status": "skipped",
+      "reason": "in_process_testclient"
+    },
+    {
+      "check": "proxy_path",
+      "status": "skipped",
+      "reason": "in_process_testclient"
+    },
+    {
+      "check": "proxy_path",
+      "status": "skipped",
+      "reason": "in_process_testclient"
+    },
+    {
+      "check": "proxy_path",
+      "status": "skipped",
+      "reason": "in_process_testclient"
+    },
+    {
+      "check": "proxy_path",
+      "status": "skipped",
+      "reason": "in_process_testclient"
+    }
+  ],
+  "runs": [
+    {
+      "scenario": "OMNI_TEXT_TO_VIDEO",
+      "run_id": "task_16cf0026c8e9",
+      "model": "omni_flash-10s",
+      "size": "1280x720",
+      "duration_sec": 10,
+      "status": "completed",
+      "download_status": "downloaded",
+      "progress": 100,
+      "reference_count": 0,
+      "content": {
+        "byte_size": 32,
+        "content_type": "video/mp4"
+      },
+      "download": {
+        "byte_size": 32,
+        "content_type": "video/mp4"
+      }
+    },
+    {
+      "scenario": "OMNI_REFERENCE_TO_VIDEO",
+      "run_id": "task_8bd12cf25da8",
+      "model": "omni_flash-10s",
+      "size": "1280x720",
+      "duration_sec": 10,
+      "status": "completed",
+      "download_status": "downloaded",
+      "progress": 100,
+      "reference_count": 2,
+      "content": {
+        "byte_size": 32,
+        "content_type": "video/mp4"
+      },
+      "download": {
+        "byte_size": 32,
+        "content_type": "video/mp4"
+      }
+    }
+  ],
+  "observability": {
+    "metric_keys": [
+      "download_failure_count",
+      "download_success_count",
+      "download_time_ms_total",
+      "downloaded_video_bytes",
+      "duplicate_request_count",
+      "duplicate_request_rate_percent",
+      "generation_time_ms_total",
+      "provider_error_count",
+      "provider_query_count",
+      "provider_query_failure_count",
+      "provider_submit_failure_count",
+      "provider_submit_latency_ms_total",
+      "provider_submit_success_count",
+      "provider_submit_success_rate_percent",
+      "queue_time_ms_total",
+      "retry_count",
+      "retry_rate_percent",
+      "storage_reference_bytes",
+      "storage_reference_growth_bytes",
+      "sync_backoff_count"
+    ],
+    "event_count": 12
+  },
+  "storage": {
+    "usage_keys": [
+      "active_reference_asset_count",
+      "deleted_reference_asset_bytes",
+      "deleted_reference_asset_count",
+      "reference_asset_bytes",
+      "reference_quota_bytes",
+      "reference_quota_used_percent",
+      "total_reference_asset_bytes"
+    ],
+    "cleanup_keys": [
+      "expired_failed_runs",
+      "policy",
+      "purged_reference_assets",
+      "purged_temporary_files",
+      "storage_usage"
+    ]
+  },
+  "completed_at": "2026-06-29T14:56:15.009020+00:00",
+  "status": "passed"
+}

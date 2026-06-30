@@ -34,6 +34,9 @@ def unwrap_error(response, expected_status: int, expected_code: str):
     assert payload["error"]["code"] == expected_code
     assert isinstance(payload["error"]["message"], str)
     assert isinstance(payload["error"]["retryable"], bool)
+    assert isinstance(payload["error"]["action"], str)
+    assert isinstance(payload["error"]["trace_id"], str)
+    assert payload["error"]["trace_id"].startswith("trace_")
     return payload["error"]
 
 
@@ -178,6 +181,51 @@ def test_configured_auth_blocks_unauthorized_project_create(tmp_path: Path):
 
     error = unwrap_error(response, 401, "UNAUTHORIZED")
     assert error["message"] == "未授权访问"
+
+
+def test_video_workflow_errors_include_stable_next_actions(tmp_path: Path):
+    class RecordingVideoProvider:
+        def submit_video(self, payload: dict[str, Any]) -> dict[str, Any]:
+            return {
+                "provider_task_id": "provider_action_test",
+                "status": "queued",
+                "progress": 0,
+                "video_url": None,
+            }
+
+    client = make_client(tmp_path)
+    client.app.state.service.video_workflow.video_provider = RecordingVideoProvider()
+    project = create_project(client)
+    project_id = project["project_id"]
+
+    first = unwrap_ok(
+        client.post(
+            f"/projects/{project_id}/video-workflow/runs",
+            json={
+                "client_request_id": "11111111-1111-4111-8111-111111111111",
+                "prompt": "create a classroom intro animation",
+                "reference_asset_ids": [],
+            },
+        )
+    )
+    assert first["status"] in {"submitting", "queued", "processing"}
+
+    active_conflict = client.post(
+        f"/projects/{project_id}/video-workflow/runs",
+        json={
+            "client_request_id": "22222222-2222-4222-8222-222222222222",
+            "prompt": "duplicate active run should be blocked",
+            "reference_asset_ids": [],
+        },
+    )
+    conflict_error = unwrap_error(active_conflict, 409, "VIDEO_ACTIVE_RUN_EXISTS")
+    assert conflict_error["action"] == "wait_for_active_run"
+    assert conflict_error["retryable"] is False
+
+    missing_output = client.get(f"/projects/{project_id}/video-workflow/runs/{first['run_id']}/download")
+    output_error = unwrap_error(missing_output, 404, "VIDEO_OUTPUT_NOT_FOUND")
+    assert output_error["action"] == "retry"
+    assert output_error["retryable"] is True
 
 
 @pytest.mark.xfail(

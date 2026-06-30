@@ -279,6 +279,14 @@ def unwrap_ok(response):
     return payload["data"]
 
 
+def unwrap_error(response, status_code: int, code: str) -> dict[str, Any]:
+    assert response.status_code == status_code, response.text
+    payload = response.json()
+    assert payload["ok"] is False, payload
+    assert payload["error"]["code"] == code, payload
+    return payload["error"]
+
+
 def create_project(client: TestClient) -> dict[str, Any]:
     return unwrap_ok(
         client.post(
@@ -394,24 +402,13 @@ def test_real_text_placeholder_video_fullchain_exports_ppt_with_mp4(tmp_path: Pa
     assert downloaded_mp4.headers["content-type"].startswith("video/mp4")
     assert downloaded_mp4.content.startswith(b"\x00\x00\x00 ftyp")
 
-    final_delivery = unwrap_ok(client.post(f"/projects/{project_id}/nodes/final_delivery/generate", json={}))
-    assert final_delivery["status"] == "needs_review"
-    delivery_content = final_delivery["content"]
-    assert delivery_content["lesson_plan_path"] == "exports/final_delivery/lesson_plan.md"
-    assert delivery_content["pptx_final_path"].endswith(".pptx")
-    assert delivery_content["video_final_path"] == "exports/final_delivery/final_video.mp4"
-    assert delivery_content["gate_passed"] is True
+    delivery_error = unwrap_error(
+        client.post(f"/projects/{project_id}/nodes/final_delivery/generate", json={}),
+        400,
+        "GENERATION_INPUT_INVALID",
+    )
+    assert "FINAL_VIDEO_PLACEHOLDER" in delivery_error["message"]
 
-    delivery_manifest_path = Path(project["project_dir"]) / delivery_content["delivery_manifest_path"]
-    assert delivery_manifest_path.exists()
-    delivery_manifest = json.loads(delivery_manifest_path.read_text(encoding="utf-8"))
-    assert delivery_manifest["artifacts"]["lesson_plan"] == delivery_content["lesson_plan_path"]
-    assert delivery_manifest["artifacts"]["pptx"] == delivery_content["pptx_final_path"]
-    assert delivery_manifest["artifacts"]["video"] == delivery_content["video_final_path"]
-    assert (Path(project["project_dir"]) / delivery_content["pptx_final_path"]).exists()
-    assert (Path(project["project_dir"]) / delivery_content["video_final_path"]).exists()
-
-    unwrap_ok(client.post(f"/projects/{project_id}/nodes/final_delivery/approve", json={}))
     final_manifest = unwrap_ok(client.get(f"/projects/{project_id}/manifest"))
     final_states = {node["node_id"]: node["status"] for node in final_manifest["nodes"]}
     for node_id in [
@@ -423,6 +420,10 @@ def test_real_text_placeholder_video_fullchain_exports_ppt_with_mp4(tmp_path: Pa
         "intro_video_asset",
         "storyboard",
         "final_video",
-        "final_delivery",
     ]:
         assert final_states[node_id] == "approved"
+    assert final_states["final_delivery"] == "blocked"
+
+    final_delivery_node = unwrap_ok(client.get(f"/projects/{project_id}/nodes/final_delivery"))
+    assert final_delivery_node["status"] == "blocked"
+    assert final_delivery_node["artifact"]["error_code"] == "FINAL_VIDEO_PLACEHOLDER"

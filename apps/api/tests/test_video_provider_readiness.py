@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 
 from app.video_provider_readiness import build_video_provider_readiness_report
+from app.main import create_app
+from fastapi.testclient import TestClient
 
 
 def test_video_provider_readiness_report_redacts_secret_values():
@@ -52,3 +54,24 @@ def test_video_provider_readiness_report_notes_quota_error_as_ops_blocker():
     assert report["ok"] is False
     assert "VIDEO_QUOTA_EXHAUSTED" in report["blocking_issues"]
     assert report["next_action"] == "restore_video_provider_quota_or_switch_account_pool"
+
+
+def test_readiness_endpoint_returns_runtime_checks_without_secrets(tmp_path):
+    app = create_app(
+        {
+            "storage_root": str(tmp_path / "storage"),
+            "workflow_root": "workflow",
+            "provider_mode": "fake",
+            "video_provider_mode": "placeholder",
+            "image_provider_mode": "placeholder",
+            "tts_provider_mode": "placeholder",
+        }
+    )
+    payload = TestClient(app).get("/readiness")
+
+    assert payload.status_code == 200, payload.text
+    data = payload.json()["data"]
+    assert data["ok"] is True
+    assert data["runtime"]["api_alive"] is True
+    assert data["runtime"]["live_smoke_executed"] is False
+    assert data["checks"]["OCTO_API_KEY"]["value"] is None

@@ -81,6 +81,18 @@ powershell -ExecutionPolicy Bypass -File scripts\smoke-octo-real-video.ps1 `
 该 smoke 只提交 1 个固定镜头，证据写入 `docs\qa-audits\octo-real-video-smoke\`，输出会脱敏。
 真实视频默认模型为 `omni_flash-10s`，并走 OTU/NewAPI 的 task 路线：提交 `/v1/videos`，查询 `/v1/videos/{task_id}`，完成后下载返回的 `video_url` / `url` / `result_url`。不要用 MiniMax `file_id` 下载路径处理 NewAPI 任务。
 
+项目视频工作台真实 smoke 通过山海后端 API 调用，不直接请求第三方 provider；`OCTO_API_KEY` 仍只配置在服务端环境或 `apps\api\.env`。示例：
+
+```powershell
+$env:SHANHAI_API_BASE_URL="http://127.0.0.1:8000"
+$env:BACKEND_API_TOKEN="<redacted>"
+$env:VIDEO_SMOKE_PROJECT_ID="project_xxx"
+$env:VIDEO_SMOKE_IMAGES="D:\path\a.png;D:\path\b.png"
+python scripts\video_workbench_real_smoke.py
+```
+
+脚本只输出脱敏任务状态、进度和 `video_ready`，不打印上游密钥、完整 header 或第三方原始敏感响应。
+
 完整接口、节点契约、错误码和验证方式见 `docs\llm-provider-contract.md`。
 
 ## 配置文件

@@ -396,6 +396,21 @@ class ProjectStore:
               version_id TEXT,
               created_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS video_workflow_assets (
+              asset_id TEXT PRIMARY KEY,
+              project_id TEXT NOT NULL,
+              filename TEXT NOT NULL,
+              path TEXT NOT NULL,
+              mime_type TEXT NOT NULL,
+              byte_size INTEGER NOT NULL,
+              width INTEGER NOT NULL,
+              height INTEGER NOT NULL,
+              source TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              deleted_at TEXT,
+              purged_at TEXT
+            );
             CREATE TABLE IF NOT EXISTS tasks (
               task_id TEXT PRIMARY KEY,
               project_id TEXT NOT NULL,
@@ -498,7 +513,21 @@ class ProjectStore:
             );
             """
         )
+        self._ensure_task_columns(conn)
         self._ensure_project_meta_columns(conn)
+
+    def _ensure_task_columns(self, conn: sqlite3.Connection) -> None:
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)").fetchall()}
+        if "client_request_id" not in columns:
+            conn.execute("ALTER TABLE tasks ADD COLUMN client_request_id TEXT")
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_video_client_request
+            ON tasks(project_id, task_type, client_request_id)
+            WHERE client_request_id IS NOT NULL
+            """
+        )
+        conn.commit()
 
     def _ensure_project_meta_columns(self, conn: sqlite3.Connection) -> None:
         existing = {
@@ -510,6 +539,7 @@ class ProjectStore:
                 conn.execute(f"ALTER TABLE project_meta ADD COLUMN {column} TEXT")
         if "direct_lesson" not in existing:
             conn.execute("ALTER TABLE project_meta ADD COLUMN direct_lesson INTEGER DEFAULT 0")
+        conn.commit()
 
     def connect(self, project_dir: Path) -> sqlite3.Connection:
         project_dir.mkdir(parents=True, exist_ok=True)
@@ -1187,14 +1217,15 @@ class ProjectStore:
         status: str = "generated",
         result: dict[str, Any] | None = None,
         error_message: str | None = None,
+        client_request_id: str | None = None,
     ) -> dict[str, Any]:
         task_id = f"task_{uuid.uuid4().hex[:12]}"
         created_at = now_iso()
         conn.execute(
             """
             INSERT INTO tasks
-            (task_id, project_id, node_id, task_type, status, payload_json, result_json, error_message, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (task_id, project_id, node_id, task_type, status, payload_json, result_json, error_message, created_at, updated_at, client_request_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 task_id,
@@ -1207,6 +1238,7 @@ class ProjectStore:
                 error_message,
                 created_at,
                 created_at,
+                client_request_id,
             ),
         )
         conn.commit()
@@ -1223,6 +1255,7 @@ class ProjectStore:
                     "error_message": error_message,
                     "created_at": created_at,
                     "updated_at": created_at,
+                    "client_request_id": client_request_id,
                 }
             )
         }
@@ -1243,6 +1276,23 @@ class ProjectStore:
         if row is None:
             raise KeyError(f"Unknown task: {task_id}")
         return self._task_from_row(row)
+
+    def task_by_client_request_id(
+        self,
+        project_id: str,
+        task_type: str,
+        client_request_id: str,
+    ) -> dict[str, Any] | None:
+        project = self.get_project(project_id)
+        with self.connect(Path(project["project_dir"])) as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM tasks
+                WHERE project_id = ? AND task_type = ? AND client_request_id = ?
+                """,
+                (project_id, task_type, client_request_id),
+            ).fetchone()
+        return self._task_from_row(row) if row else None
 
     def update_task(
         self,

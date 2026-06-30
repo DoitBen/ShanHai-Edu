@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Component, useState, useEffect, type ErrorInfo, type ReactNode } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/lib/store";
@@ -34,7 +34,7 @@ import type {
 import { StatusBadge, ProjectStatusBadge } from "@/components/common/StatusBadge";
 import { ToneBadge } from "@/components/common/StatusBadge";
 import { EmptyState, LoadingState } from "@/components/common/StateViews";
-import { VideoWorkflowCanvas } from "@/components/video-workflow/VideoWorkflowCanvas";
+import { VideoWorkflowWorkbench } from "@/components/video-workflow/VideoWorkflowWorkbench";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -178,20 +178,20 @@ const USER_WORKSPACE_STEPS: UserWorkspaceStep[] = [
     basis: "基于教案中的导入设计候选和当前课程锚点。",
   },
   {
-    id: "ppt-draft",
-    label: "PPT 草稿",
-    stageKeys: ["ppt-plan", "ppt-script", "ppt-assets", "pptx-generation"],
-    goal: "形成公开课 PPT 的结构、逐页脚本、视觉素材和可下载草稿。",
-    todo: "检查每页要讲什么、学生做什么、数学内容是否可编辑可核对。",
-    basis: "基于教案、PPT 模板结构、视觉契约和角色设定。",
-  },
-  {
     id: "video-generation",
     label: "视频生成",
     stageKeys: ["video-script", "video-screenplay", "video-assets", "storyboard", "video-generation"],
     goal: "把已选导入方案推进为文稿、分场、素材、分镜和视频任务。",
     todo: "依次检查文稿、分场剧本、资产与首帧、分镜、clip/TTS/合成，不把本地演示文件当真实成片。",
     basis: "基于导入视频方案、课程锚点、素材清单和分镜脚本。",
+  },
+  {
+    id: "ppt-draft",
+    label: "PPT 草稿",
+    stageKeys: ["ppt-plan", "ppt-script", "ppt-assets", "pptx-generation"],
+    goal: "形成公开课 PPT 的结构、逐页脚本、视觉素材和可下载草稿。",
+    todo: "检查每页要讲什么、学生做什么、数学内容是否可编辑可核对。",
+    basis: "基于教案、PPT 模板结构、视觉契约和角色设定。",
   },
   {
     id: "final-delivery",
@@ -1504,6 +1504,71 @@ function WorkspaceTaskCard({
   if (!stepView || !stage) return null;
   const editable = stepView.state === "current" && canEdit;
   const shouldShowOrdinaryEvidence = stepView.step.id !== "final-delivery";
+  if (stepView.step.id === "video-generation") {
+    return (
+      <Card className="border-border bg-card p-0 shadow-soft">
+        <div className="border-b border-border px-4 py-4 sm:px-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="t-overline text-muted-foreground/70">{stepView.step.label}</div>
+              <h3 className="mt-1 t-module">{stage.title}</h3>
+              <p className="mt-1 t-body text-muted-foreground">{stepView.step.goal}</p>
+            </div>
+            <StatusBadge status={stage.status} />
+          </div>
+        </div>
+        <div className="space-y-5 p-4 sm:p-6">
+          <div className="grid gap-4 lg:grid-cols-3">
+            <InfoBlock title="这一步要做什么" text={stepView.step.goal} />
+            <InfoBlock
+              title="你现在需要做什么"
+              text={stepView.state === "completed" ? "这一步已完成，可以回看配置和内容；需要调整时先评估后续步骤是否要重新确认。" : stepView.step.todo}
+            />
+            <InfoBlock title="依据" text={stepView.step.basis} />
+            <UserActionNotice
+              nodeStatus={selectedNodeStatus}
+              nodeError={selectedNodeError}
+              actionStatus={selectedActionStatus}
+              actionError={selectedActionError}
+            />
+          </div>
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+            <StepStageList stages={stepStages} activeKey={stage.key} />
+            <div className="space-y-4">
+              <VideoGenerationSubStatusList stages={stepStages} subGates={workspaceStepSubGates} />
+              {shouldShowOrdinaryEvidence && stage.evidence.length > 0 && (
+                <div className="rounded-md border border-border bg-muted/20 p-3">
+                  <div className="t-caption font-medium text-foreground">可回看的依据材料</div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {stage.evidence.slice(0, 4).map((file) => (
+                      <Button key={file} type="button" size="sm" variant="outline" onClick={() => onPreview(file)}>
+                        查看{getUserEvidenceLabel(file)}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="min-w-0">
+            <VideoWorkbenchErrorBoundary key={projectId}>
+              <VideoWorkflowWorkbench projectId={projectId} />
+            </VideoWorkbenchErrorBoundary>
+          </div>
+          <div className="flex justify-end border-t border-border pt-4">
+            <Button className="gap-2" disabled={primaryActionDisabled} onClick={onPrimaryAction}>
+              {selectedActionStatus === "loading" || stage.status === "running" ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <ArrowRight className="h-4 w-4" />
+              )}
+              {primaryActionLabel}
+            </Button>
+          </div>
+        </div>
+      </Card>
+    );
+  }
   return (
     <Card className="border-border bg-card p-0 shadow-soft">
       <div className="border-b border-border px-4 py-4 sm:px-6">
@@ -1530,9 +1595,6 @@ function WorkspaceTaskCard({
           <StepStageList stages={stepStages} activeKey={stage.key} />
           {stepView.step.id === "ppt-draft" && (
             <PptDraftSubStatusList stages={stepStages} subGates={workspaceStepSubGates} />
-          )}
-          {stepView.step.id === "video-generation" && (
-            <VideoGenerationSubStatusList stages={stepStages} subGates={workspaceStepSubGates} />
           )}
           {shouldShowOrdinaryEvidence && stage.evidence.length > 0 && (
             <div className="rounded-md border border-border bg-muted/20 p-3">
@@ -1593,6 +1655,50 @@ function WorkspaceTaskCard({
       </div>
     </Card>
   );
+}
+
+class VideoWorkbenchErrorBoundary extends Component<
+  { children: ReactNode },
+  { error: boolean }
+> {
+  state = { error: false };
+
+  static getDerivedStateFromError() {
+    return { error: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("Video workbench render failed", {
+      message: error.message,
+      componentStack: info.componentStack,
+    });
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div className="rounded-md border border-destructive/25 bg-destructive/5 p-4">
+        <div className="flex items-start gap-3">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+          <div className="min-w-0">
+            <p className="t-body font-medium text-destructive">视频工作台暂时无法显示</p>
+            <p className="mt-1 t-caption text-destructive/90">
+              这不会影响项目其它步骤。请重新加载工作台，若仍失败再联系技术人员排查。
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="mt-3"
+              onClick={() => this.setState({ error: false })}
+            >
+              重新加载视频工作台
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 }
 
 function InfoBlock({ title, text }: { title: string; text: string }) {
@@ -1928,26 +2034,6 @@ function CurrentResultPanel({
         saving={saving}
         actionError={actionError}
         showAdvancedJson={false}
-      />
-    );
-  }
-  if (dataMode === "api" && stage.key === "video-generation") {
-    return (
-      <FinalVideoResult
-        projectId={projectId}
-        stage={stage}
-        tasks={projectTasks}
-        tasksStatus={projectTasksStatus}
-        tasksError={projectTasksError}
-        actionError={actionError}
-        showProviderDetails={false}
-        pptExportStatus={pptExportStatus}
-        pptExportError={pptExportError}
-        pptExportResult={pptExportResult}
-        onRefresh={onRefreshTasks}
-        onRefreshTask={onRefreshTask}
-        onRetryTask={onRetryTask}
-        onExportPpt={onExportPpt}
       />
     );
   }
@@ -2449,11 +2535,7 @@ function DeveloperDiagnostics({
             </TabsContent>
             <TabsContent value="run" className="mt-0">
               {dataMode === "api" && <><ApiNodeNotice status={selectedNodeStatus} error={selectedNodeError} /><ApiActionNotice status={selectedActionStatus} error={selectedActionError} /></>}
-              {stage?.key === "video-generation" ? (
-                <VideoGenerationRunTab projectId={projectId} stage={stage} capabilities={videoCapabilities} option={videoOption} onChange={onChangeVideoOption} onRegenerate={onRegenerate} />
-              ) : (
-                <RunTab stage={stage} onRegenerate={onRegenerate} />
-              )}
+              <RunTab stage={stage} onRegenerate={onRegenerate} />
             </TabsContent>
             <TabsContent value="result" className="mt-0">
               {dataMode === "api" && <><ApiNodeNotice status={selectedNodeStatus} error={selectedNodeError} /><ApiActionNotice status={selectedActionStatus} error={selectedActionError} /></>}
@@ -3022,148 +3104,6 @@ function RunTab({
           <Play className="h-4 w-4" />
           {stage.status === "not_started" ? "开始运行" : "重新生成"}
         </Button>
-      </div>
-    </div>
-  );
-}
-
-function VideoGenerationRunTab({
-  projectId,
-  stage,
-  capabilities,
-  option,
-  onChange,
-  onRegenerate,
-}: {
-  projectId: string;
-  stage?: WorkflowStage;
-  capabilities: VideoCapability[];
-  option: VideoModelOption;
-  onChange: (option: VideoModelOption) => void;
-  onRegenerate: () => void;
-}) {
-  if (!stage) return null;
-  const selectedCapability =
-    capabilities.find((item) => item.model === option.model) || capabilities[0];
-  const sizeOptions = selectedCapability?.resolution?.supported || ["1280x720"];
-  const canUseReference = !!selectedCapability?.reference_image_support;
-  const canUseFirstLast = !!selectedCapability?.first_last_frame;
-  const canUseExtend = !!selectedCapability?.extend;
-
-  return (
-    <div className="space-y-5">
-      <VideoWorkflowCanvas projectId={projectId} capabilities={capabilities} option={option} onChangeOption={onChange} />
-      <div className="rounded-md border border-border bg-muted/20 p-4">
-        <div className="mb-4 flex items-center gap-2">
-          <Film className="h-4 w-4 text-primary" />
-          <div>
-            <div className="t-module">视频模型选择</div>
-            <div className="t-caption text-muted-foreground">
-              本地演示默认创建 6 个镜头任务；真实成片专项可按需要切换生成范围。
-            </div>
-          </div>
-        </div>
-        <div className="grid gap-4 lg:grid-cols-4">
-          <div className="space-y-2">
-            <Label className="t-caption text-muted-foreground">模型</Label>
-            <Select
-              value={option.model}
-              onValueChange={(model) => {
-                const next = capabilities.find((item) => item.model === model);
-                onChange({
-                  ...option,
-                  model,
-                  size: next?.resolution?.supported[0] || option.size,
-                  mode: next?.first_last_frame ? "first_last_frame" : next?.extend ? "extend" : "text",
-                });
-              }}
-            >
-              <SelectTrigger className="h-10 bg-card">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {capabilities.map((item) => (
-                  <SelectItem key={item.model} value={item.model}>
-                    {item.model}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label className="t-caption text-muted-foreground">尺寸</Label>
-            <Select
-              value={option.size}
-              onValueChange={(size) => onChange({ ...option, size })}
-            >
-              <SelectTrigger className="h-10 bg-card">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {sizeOptions.map((size) => (
-                  <SelectItem key={size} value={size}>
-                    {size}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label className="t-caption text-muted-foreground">模式</Label>
-            <Select
-              value={option.mode}
-              onValueChange={(mode) =>
-                onChange({ ...option, mode: mode as VideoModelOption["mode"] })
-              }
-            >
-              <SelectTrigger className="h-10 bg-card">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="text">文生视频</SelectItem>
-                {canUseReference && <SelectItem value="reference">参考图</SelectItem>}
-                {canUseFirstLast && <SelectItem value="first_last_frame">首尾帧</SelectItem>}
-                {canUseExtend && <SelectItem value="extend">延长</SelectItem>}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label className="t-caption text-muted-foreground">生成范围</Label>
-            <div className="flex h-10 items-center justify-between rounded-md border border-border bg-card px-3">
-              <span className="t-body text-muted-foreground">
-                {option.fullRun ? "完整 6 段" : "1 段 smoke"}
-              </span>
-              <Switch
-                checked={option.fullRun}
-                onCheckedChange={(fullRun) => onChange({ ...option, fullRun })}
-              />
-            </div>
-          </div>
-        </div>
-        {selectedCapability && (
-          <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1.2fr]">
-            <div className="rounded-md border border-border bg-card p-3">
-              <div className="t-caption text-muted-foreground">能力限制</div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                <ToneBadge tone={selectedCapability.reference_image_support ? "success" : "neutral"}>
-                  {selectedCapability.reference_image_support
-                    ? `参考图最多 ${selectedCapability.max_reference_images} 张`
-                    : "无参考图"}
-                </ToneBadge>
-                {selectedCapability.first_last_frame && <ToneBadge tone="warning">首尾帧</ToneBadge>}
-                {selectedCapability.video_edit && <ToneBadge tone="warning">视频修改</ToneBadge>}
-                {selectedCapability.extend && <ToneBadge tone="warning">延长至 15s</ToneBadge>}
-                <ToneBadge tone="success">查询带 token</ToneBadge>
-              </div>
-            </div>
-            <div className="rounded-md border border-border bg-card p-3">
-              <div className="t-caption text-muted-foreground">推荐用途</div>
-              <p className="mt-1 t-body text-foreground/85">
-                {selectedCapability.recommended_use}
-              </p>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

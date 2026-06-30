@@ -5,6 +5,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from conftest import enable_project_creation_fallback
 from app.providers import MinimaxTTSProvider, ProviderError
 from app.video_outputs import FINAL_VIDEO_REL_PATH
 from app.video_outputs import compose_final_video_from_clips
@@ -28,7 +29,7 @@ def make_client(tmp_path: Path, overrides: dict[str, Any] | None = None) -> Test
             **(overrides or {}),
         }
     )
-    return TestClient(app)
+    return enable_project_creation_fallback(TestClient(app))
 
 
 def unwrap(response):

@@ -4,6 +4,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from conftest import enable_project_creation_fallback
 
 
 def make_client(tmp_path: Path) -> TestClient:
@@ -17,7 +18,7 @@ def make_client(tmp_path: Path) -> TestClient:
             "tts_provider_mode": "placeholder",
         }
     )
-    return TestClient(app)
+    return enable_project_creation_fallback(TestClient(app))
 
 
 def unwrap_ok(response):
@@ -416,6 +417,7 @@ def test_direct_lesson_source_payload_also_skips_textbook_content(tmp_path: Path
             "direct_lesson": True,
         },
         client.app.state.workflow,
+        owner_id=client.app.state.settings.project_creation_default_owner_user_id,
     )
 
     workspace = unwrap_ok(client.get(f"/projects/{project['project_id']}/workspace"))

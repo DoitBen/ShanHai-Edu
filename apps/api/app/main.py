@@ -2,10 +2,11 @@ from pathlib import Path
 from typing import Any
 import json
 
-from fastapi import Depends, FastAPI, Form, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, Form, Header, HTTPException, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from pydantic import ValidationError
 
 from .models import FeedbackRequest, NodeApproveRequest, NodeEditRequest, NodeGenerateRequest, ProjectCreateRequest, ProjectUpdateRequest, dump_model
 from .providers import DeepSeekTextProvider, FakeProvider, MinimaxTextProvider, MinimaxTTSProvider, NewApiImageProvider, OctoVideoProvider, ProviderError, sanitize_provider_excerpt
@@ -15,6 +16,7 @@ from .auth_store import AuthStore
 from .control_plane import ControlPlaneStore
 from .lesson_plan_library import LessonPlanLibraryStore
 from .prompt_registry import PromptRegistry, PromptStore
+from .project_ownership import reject_request_owner, resolve_project_owner, scan_project_ownership
 from .responses import fail, ok
 from .rule_executor import RuleHardBlockError, RuleWarningError
 from .security import require_api_token
@@ -157,32 +159,32 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
 
     @app.get("/readiness")
     def readiness():
-        return ok(
-            build_video_provider_readiness_report(
-                env={
-                    "PROVIDER_MODE": settings.provider_mode,
-                    "DEEPSEEK_API_KEY": settings.deepseek_api_key,
-                    "DEEPSEEK_BASE_URL": settings.deepseek_base_url,
-                    "DEEPSEEK_MODEL": settings.deepseek_model,
-                    "MINMAX_API_KEY": settings.minmax_api_key,
-                    "MINMAX_BASE_URL": settings.minmax_base_url,
-                    "MINMAX_TEXT_MODEL": settings.minmax_text_model,
-                    "VIDEO_PROVIDER_MODE": settings.video_provider_mode,
-                    "OCTO_API_KEY": settings.octo_api_key,
-                    "OCTO_BASE_URL": settings.octo_base_url,
-                    "OCTO_VIDEO_PROVIDER": settings.octo_video_provider,
-                    "VIDEO_MODEL": settings.video_model,
-                    "IMAGE_PROVIDER_MODE": settings.image_provider_mode,
-                    "IMAGEGEN_API_KEY": settings.imagegen_api_key,
-                    "IMAGEGEN_BASE_URL": settings.imagegen_base_url,
-                    "TTS_PROVIDER_MODE": settings.tts_provider_mode,
-                    "MINMAX_TTS_MODEL": settings.minmax_tts_model,
-                },
-                api_alive=True,
-                web_alive=None,
-                live_smoke_executed=False,
-            )
+        report = build_video_provider_readiness_report(
+            env={
+                "PROVIDER_MODE": settings.provider_mode,
+                "DEEPSEEK_API_KEY": settings.deepseek_api_key,
+                "DEEPSEEK_BASE_URL": settings.deepseek_base_url,
+                "DEEPSEEK_MODEL": settings.deepseek_model,
+                "MINMAX_API_KEY": settings.minmax_api_key,
+                "MINMAX_BASE_URL": settings.minmax_base_url,
+                "MINMAX_TEXT_MODEL": settings.minmax_text_model,
+                "VIDEO_PROVIDER_MODE": settings.video_provider_mode,
+                "OCTO_API_KEY": settings.octo_api_key,
+                "OCTO_BASE_URL": settings.octo_base_url,
+                "OCTO_VIDEO_PROVIDER": settings.octo_video_provider,
+                "VIDEO_MODEL": settings.video_model,
+                "IMAGE_PROVIDER_MODE": settings.image_provider_mode,
+                "IMAGEGEN_API_KEY": settings.imagegen_api_key,
+                "IMAGEGEN_BASE_URL": settings.imagegen_base_url,
+                "TTS_PROVIDER_MODE": settings.tts_provider_mode,
+                "MINMAX_TTS_MODEL": settings.minmax_tts_model,
+            },
+            api_alive=True,
+            web_alive=None,
+            live_smoke_executed=False,
         )
+        report["project_ownership"] = scan_project_ownership(store, auth_store).to_dict()
+        return ok(report)
 
     @app.get("/workflow")
     def get_workflow():
@@ -687,8 +689,23 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
     def get_rule_coverage():
         return ok(service.rule_executor.coverage())
 
-    @app.post("/projects", dependencies=protected)
-    def create_project(payload: ProjectCreateRequest):
+    @app.post("/projects")
+    async def create_project(request: Request):
+        raw_payload = await request.json()
+        if not isinstance(raw_payload, dict):
+            return fail(422, "REQUEST_VALIDATION_FAILED", "请求参数不符合接口契约", retryable=False)
+        reject_request_owner(raw_payload)
+        owner_id = resolve_project_owner(request, settings, auth_store)
+        try:
+            payload = ProjectCreateRequest(**raw_payload)
+        except ValidationError as exc:
+            return fail(
+                422,
+                "REQUEST_VALIDATION_FAILED",
+                "请求参数不符合接口契约",
+                retryable=False,
+                details=exc.errors(),
+            )
         project_payload = dump_model(payload)
         reference_lesson_plan_id = project_payload.get("reference_lesson_plan_id")
         if reference_lesson_plan_id:
@@ -696,7 +713,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
                 project_payload["_reference_lesson_plan"] = service.lesson_plan_library_item(reference_lesson_plan_id)
             except KeyError:
                 return fail(404, "LESSON_PLAN_NOT_FOUND", "引用教案不存在", retryable=False)
-        project = store.create_project(project_payload, workflow)
+        project = store.create_project(project_payload, workflow, owner_id=owner_id)
         control_plane.bind_project_to_active_rule_set(project["project_id"])
         return ok(project)
 

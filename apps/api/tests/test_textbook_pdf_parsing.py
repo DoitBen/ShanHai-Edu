@@ -3,6 +3,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from conftest import enable_project_creation_fallback
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -18,7 +19,7 @@ def make_client(tmp_path: Path) -> TestClient:
             "provider_mode": "fake",
         }
     )
-    return TestClient(app)
+    return enable_project_creation_fallback(TestClient(app))
 
 
 def unwrap(response):

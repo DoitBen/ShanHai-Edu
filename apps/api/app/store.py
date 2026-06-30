@@ -43,7 +43,15 @@ class ProjectStore:
         self.projects_root = storage_root / "projects"
         self.projects_root.mkdir(parents=True, exist_ok=True)
 
-    def create_project(self, payload: dict[str, Any], workflow: WorkflowConfig | None = None) -> dict[str, Any]:
+    def create_project(
+        self,
+        payload: dict[str, Any],
+        workflow: WorkflowConfig | None = None,
+        owner_id: str | None = None,
+    ) -> dict[str, Any]:
+        owner_id = _clean_text(owner_id)
+        if not owner_id:
+            raise ValueError("owner_id is required when creating a project")
         project_id = f"proj_{uuid.uuid4().hex[:12]}"
         name = payload["name"]
         project_dir = self.projects_root / f"{slugify(name)}_{project_id}"
@@ -61,9 +69,9 @@ class ProjectStore:
                   project_id, name, subject, grade, textbook_version, volume, lesson_type,
                   textbook_id, textbook_version_id, knowledge_point_id, reference_lesson_plan_id,
                   lesson_plan_source, direct_lesson,
-                  created_at, status, project_dir
+                  owner_id, created_at, status, project_dir
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     project_id,
@@ -79,6 +87,7 @@ class ProjectStore:
                     payload.get("reference_lesson_plan_id"),
                     self._lesson_plan_source(payload),
                     1 if self._is_direct_lesson_project(payload) else 0,
+                    owner_id,
                     created_at,
                     "active",
                     str(project_dir),
@@ -363,6 +372,7 @@ class ProjectStore:
               reference_lesson_plan_id TEXT,
               lesson_plan_source TEXT,
               direct_lesson INTEGER DEFAULT 0,
+              owner_id TEXT,
               created_at TEXT NOT NULL,
               status TEXT NOT NULL,
               project_dir TEXT NOT NULL
@@ -539,6 +549,8 @@ class ProjectStore:
                 conn.execute(f"ALTER TABLE project_meta ADD COLUMN {column} TEXT")
         if "direct_lesson" not in existing:
             conn.execute("ALTER TABLE project_meta ADD COLUMN direct_lesson INTEGER DEFAULT 0")
+        if "owner_id" not in existing:
+            conn.execute("ALTER TABLE project_meta ADD COLUMN owner_id TEXT")
         conn.commit()
 
     def connect(self, project_dir: Path) -> sqlite3.Connection:
@@ -582,7 +594,6 @@ class ProjectStore:
         for db_path in self.projects_root.glob("*/project.db"):
             with sqlite3.connect(db_path) as conn:
                 conn.row_factory = sqlite3.Row
-                self.init_db(conn)
                 row = conn.execute("SELECT * FROM project_meta LIMIT 1").fetchone()
                 if row:
                     data = dict(row)

@@ -13,6 +13,9 @@ if str(API_DIR) not in sys.path:
 from app.main import create_app
 
 
+PROJECT_CREATE_TOKEN = "ci-startup-smoke-token"
+
+
 def _unwrap(response):
     if response.status_code >= 400:
         raise AssertionError(response.text)
@@ -34,9 +37,18 @@ def main() -> None:
                 "video_provider_mode": "placeholder",
                 "image_provider_mode": "placeholder",
                 "tts_provider_mode": "placeholder",
+                "backend_api_token": PROJECT_CREATE_TOKEN,
             }
         )
         client = TestClient(app)
+        user = app.state.auth_service.create_user(
+            email="ci-startup-owner@example.com",
+            display_name="CI Startup Owner",
+            role="teacher",
+            password="CorrectHorse123!",
+        )
+        app.state.settings.project_creation_default_owner_user_id = user["user_id"]
+        auth_headers = {"Authorization": f"Bearer {PROJECT_CREATE_TOKEN}"}
 
         health = _unwrap(client.get("/health"))
         if health.get("status") != "ok":
@@ -49,6 +61,7 @@ def main() -> None:
         project = _unwrap(
             client.post(
                 "/projects",
+                headers=auth_headers,
                 json={
                     "name": "CI 视频工作台启动冒烟",
                     "subject": "math",
@@ -65,7 +78,7 @@ def main() -> None:
         if not (project_dir / "project.db").is_file():
             raise AssertionError("project db was not created")
 
-        workflow = _unwrap(client.get(f"/projects/{project['project_id']}/video-workflow"))
+        workflow = _unwrap(client.get(f"/projects/{project['project_id']}/video-workflow", headers=auth_headers))
         if workflow["config"]["model"] != "omni_flash-10s":
             raise AssertionError(workflow["config"])
 

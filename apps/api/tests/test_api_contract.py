@@ -4,6 +4,7 @@ import shutil
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from conftest import enable_project_creation_fallback
 from app.workflow_config import WorkflowConfig
 from app.settings import Settings
 from app.workflow_config import WorkflowConfig
@@ -18,7 +19,7 @@ def make_client(tmp_path: Path, overrides: dict | None = None) -> TestClient:
             **(overrides or {}),
         }
     )
-    return TestClient(app)
+    return enable_project_creation_fallback(TestClient(app))
 
 
 def unwrap(response):

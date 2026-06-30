@@ -24,6 +24,7 @@ def test_video_orchestrator_fake_run_creates_tasks_and_final_content(tmp_path: P
             "lesson_type": "public",
         },
         workflow,
+        owner_id="user_test_owner",
     )
     project_id = project["project_id"]
     project_dir = Path(project["project_dir"])

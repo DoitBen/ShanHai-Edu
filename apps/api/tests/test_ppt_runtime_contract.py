@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from pptx import Presentation
 
 from app.main import create_app
+from conftest import enable_project_creation_fallback
 from app.providers import FakeProvider
 
 
@@ -31,7 +32,7 @@ def make_client(tmp_path: Path) -> TestClient:
             "tts_provider_mode": "placeholder",
         }
     )
-    return TestClient(app)
+    return enable_project_creation_fallback(TestClient(app))
 
 
 def unwrap_ok(response):
@@ -546,7 +547,7 @@ def test_create_project_seeded_visual_and_character_content_is_used_by_downstrea
         }
     )
     app.state.service.provider = provider
-    client = TestClient(app)
+    client = enable_project_creation_fallback(TestClient(app))
     project = unwrap_ok(
         client.post(
             "/projects",

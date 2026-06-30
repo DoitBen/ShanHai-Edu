@@ -6,6 +6,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from conftest import enable_project_creation_fallback
 from app.store import ProjectStore
 from app.workflow_config import WorkflowConfig
 
@@ -24,7 +25,7 @@ def make_client(tmp_path: Path, token: str | None = "admin-token") -> TestClient
     }
     if token is not None:
         overrides["backend_api_token"] = token
-    return TestClient(create_app(overrides))
+    return enable_project_creation_fallback(TestClient(create_app(overrides)))
 
 
 def auth(token: str) -> dict[str, str]:
@@ -191,6 +192,7 @@ def test_startup_binds_existing_unbound_projects_before_rule_changes(tmp_path: P
             "lesson_type": "public",
         },
         workflow,
+        owner_id="user_test_owner",
     )
 
     client = make_client(tmp_path)

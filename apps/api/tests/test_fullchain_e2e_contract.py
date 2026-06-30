@@ -6,6 +6,7 @@ from zipfile import ZipFile
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from conftest import enable_project_creation_fallback
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -269,7 +270,7 @@ def make_client(tmp_path: Path, monkeypatch) -> TestClient:
             "octo_api_key": "must-not-be-used",
         }
     )
-    return TestClient(app)
+    return enable_project_creation_fallback(TestClient(app))
 
 
 def unwrap_ok(response):

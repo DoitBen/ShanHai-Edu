@@ -11,9 +11,11 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from app.main import create_app
+from conftest import enable_project_creation_fallback
 from app.providers import ProviderError
 
 MP4_BYTES = b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom"
+PROJECT_CREATE_TOKEN = "video-workflow-test-token"
 
 
 class RecordingVideoProvider:
@@ -39,6 +41,7 @@ def make_client(tmp_path: Path, overrides: dict[str, Any] | None = None) -> Test
             "video_provider_mode": "placeholder",
             "image_provider_mode": "placeholder",
             "tts_provider_mode": "placeholder",
+            "backend_api_token": PROJECT_CREATE_TOKEN,
             "capabilities_path": str(
                 Path(__file__).resolve().parents[3]
                 / "docs"
@@ -49,7 +52,9 @@ def make_client(tmp_path: Path, overrides: dict[str, Any] | None = None) -> Test
             **(overrides or {}),
         }
     )
-    return TestClient(app)
+    client = enable_project_creation_fallback(TestClient(app))
+    client.headers.update(project_create_headers(client))
+    return client
 
 
 def unwrap_ok(response):
@@ -71,6 +76,7 @@ def create_project(client: TestClient) -> dict[str, Any]:
     return unwrap_ok(
         client.post(
             "/projects",
+            headers=project_create_headers(client),
             json={
                 "name": "视频画布契约测试",
                 "subject": "math",
@@ -81,6 +87,11 @@ def create_project(client: TestClient) -> dict[str, Any]:
             },
         )
     )
+
+
+def project_create_headers(client: TestClient) -> dict[str, str]:
+    token = client.app.state.settings.backend_api_token
+    return {"Authorization": f"Bearer {token}"}
 
 
 def image_bytes(fmt: str = "PNG", size: tuple[int, int] = (64, 48)) -> bytes:

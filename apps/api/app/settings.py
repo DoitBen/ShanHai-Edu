@@ -30,6 +30,7 @@ class Settings(BaseModel):
     imagegen_base_url: str = Field(default="https://img.baofu.eu.cc/v1")
     imagegen_model: str = Field(default="gpt-image-2")
     backend_api_token: str | None = Field(default=None)
+    project_creation_default_owner_user_id: str | None = Field(default=None)
     cors_origins: str = Field(default="http://localhost:3000,http://127.0.0.1:3000")
     auth_cookie_name: str = Field(default="shanhai_session")
     auth_session_ttl_seconds: int = Field(default=43200)
@@ -103,6 +104,7 @@ class Settings(BaseModel):
                 or "gpt-image-2"
             ),
             "backend_api_token": _setting_value(env, "BACKEND_API_TOKEN"),
+            "project_creation_default_owner_user_id": _setting_value(env, "PROJECT_CREATION_DEFAULT_OWNER_USER_ID"),
             "cors_origins": _setting_value(
                 env,
                 "CORS_ORIGINS",

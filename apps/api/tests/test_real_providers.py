@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from conftest import enable_project_creation_fallback
 from app.providers import DeepSeekTextProvider, MinimaxTextProvider, NewApiImageProvider, OctoVideoProvider, ProviderError
 from app.services import normalize_node_content
 from app.settings import Settings
@@ -33,7 +34,7 @@ def make_client(tmp_path: Path, overrides: dict[str, Any] | None = None) -> Test
             **(overrides or {}),
         }
     )
-    return TestClient(app)
+    return enable_project_creation_fallback(TestClient(app))
 
 
 def unwrap(response):

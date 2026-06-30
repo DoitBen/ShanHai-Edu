@@ -5,6 +5,7 @@ import sqlite3
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from conftest import enable_project_creation_fallback
 
 
 def make_client(tmp_path: Path) -> TestClient:
@@ -18,7 +19,7 @@ def make_client(tmp_path: Path) -> TestClient:
             "tts_provider_mode": "placeholder",
         }
     )
-    return TestClient(app)
+    return enable_project_creation_fallback(TestClient(app))
 
 
 def unwrap_ok(response):

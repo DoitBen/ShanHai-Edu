@@ -5,7 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from conftest import enable_project_creation_fallback
+from conftest import create_auth_user, login_as
 
 
 PROJECT_CREATE_TOKEN = "api-contract-test-token"
@@ -21,8 +21,9 @@ def make_client(tmp_path: Path, overrides: dict[str, Any] | None = None) -> Test
             **(overrides or {}),
         }
     )
-    client = enable_project_creation_fallback(TestClient(app))
-    client.headers.update(project_create_headers(client))
+    client = TestClient(app)
+    create_auth_user(client, email="api-contract-owner@example.com")
+    login_as(client, email="api-contract-owner@example.com")
     return client
 
 
@@ -51,7 +52,6 @@ def create_project(client: TestClient, name: str = "联调门禁项目") -> dict
     return unwrap_ok(
         client.post(
             "/projects",
-            headers=project_create_headers(client),
             json={
                 "name": name,
                 "subject": "math",
@@ -163,7 +163,6 @@ def test_project_create_rejects_missing_required_fields(tmp_path: Path):
 
     response = client.post(
         "/projects",
-        headers=project_create_headers(client),
         json={
             "name": "缺字段项目",
             "subject": "math",
@@ -181,6 +180,7 @@ def test_project_create_rejects_missing_required_fields(tmp_path: Path):
 def test_configured_auth_blocks_unauthorized_project_create(tmp_path: Path):
     client = make_client(tmp_path, {"backend_api_token": "dev-token"})
     client.headers.clear()
+    client.cookies.clear()
 
     response = client.post(
         "/projects",
@@ -269,6 +269,7 @@ def test_provider_schema_validation_rejects_missing_required_fields(tmp_path: Pa
 def test_unauthorized_request_cannot_create_project(tmp_path: Path):
     client = make_client(tmp_path)
     client.headers.clear()
+    client.cookies.clear()
     root = Path(client.app.state.settings.storage_root) / "projects"
     before = sorted(root.glob("*")) if root.exists() else []
 

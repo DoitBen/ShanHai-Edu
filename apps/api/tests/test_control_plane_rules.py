@@ -6,7 +6,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from conftest import enable_project_creation_fallback
+from conftest import create_auth_user, enable_project_creation_fallback, login_as
 from app.store import ProjectStore
 from app.workflow_config import WorkflowConfig
 
@@ -196,6 +196,11 @@ def test_startup_binds_existing_unbound_projects_before_rule_changes(tmp_path: P
     )
 
     client = make_client(tmp_path)
+    with sqlite3.connect(Path(legacy_project["project_dir"]) / "project.db") as conn:
+        conn.execute(
+            "UPDATE project_meta SET owner_id = ? WHERE project_id = ?",
+            (client.app.state.settings.project_creation_default_owner_user_id, legacy_project["project_id"]),
+        )
     seed_approved_upstreams(client, legacy_project, "ppt_assembly_plan")
     write_current_version(
         client,
@@ -239,15 +244,32 @@ def test_startup_binds_existing_unbound_projects_before_rule_changes(tmp_path: P
     assert "PPT 总装方案必须至少包含 1 页板书小结" in rule_result_messages(legacy_project, "R023")
 
 
-def test_admin_rule_api_requires_configured_admin_token(tmp_path: Path):
-    client = make_client(tmp_path, token="fake")
+def test_admin_rule_api_requires_admin_session(tmp_path: Path):
+    app = create_app(
+        {
+            "storage_root": str(tmp_path / "storage"),
+            "workflow_root": str(ROOT / "workflow"),
+            "provider_mode": "fake",
+            "video_provider_mode": "placeholder",
+            "image_provider_mode": "placeholder",
+            "tts_provider_mode": "placeholder",
+            "backend_api_token": "fake",
+        }
+    )
+    create_auth_user(TestClient(app), email="teacher@example.com", role="teacher")
+    create_auth_user(TestClient(app), email="admin@example.com", role="admin")
 
-    no_token = client.get("/admin/rules")
-    wrong_token = client.get("/admin/rules", headers=auth("bad-token"))
-    ok = client.get("/admin/rules", headers=auth("fake"))
+    anonymous = TestClient(app)
+    token_only = TestClient(app)
+    teacher = TestClient(app)
+    login_as(teacher, email="teacher@example.com")
+    admin = TestClient(app)
+    login_as(admin, email="admin@example.com")
 
-    unwrap_error(no_token, 404, "NOT_FOUND")
-    unwrap_error(wrong_token, 404, "NOT_FOUND")
+    unwrap_error(anonymous.get("/admin/rules"), 401, "AUTH_REQUIRED")
+    unwrap_error(token_only.get("/admin/rules", headers=auth("fake")), 401, "AUTH_REQUIRED")
+    unwrap_error(teacher.get("/admin/rules"), 403, "FORBIDDEN")
+    ok = admin.get("/admin/rules")
     assert ok.status_code == 200
     assert ok.json()["ok"] is True
 

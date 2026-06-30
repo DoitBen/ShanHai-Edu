@@ -57,22 +57,26 @@ def test_cors_uses_configured_allowlist(tmp_path: Path):
     assert blocked.headers.get("access-control-allow-origin") is None
 
 
-def test_project_api_requires_token_when_configured(tmp_path: Path):
+def test_project_api_requires_session_even_when_token_is_configured(tmp_path: Path):
     client = make_client(tmp_path, {"backend_api_token": "dev-token"})
+    client.cookies.clear()
+    client.headers.clear()
 
     response = client.get("/projects")
 
     assert response.status_code == 401
-    assert response.json()["error"]["code"] == "UNAUTHORIZED"
+    assert response.json()["error"]["code"] == "AUTH_REQUIRED"
 
 
-def test_project_api_accepts_valid_token_when_configured(tmp_path: Path):
+def test_project_api_rejects_token_only_project_reads(tmp_path: Path):
     client = make_client(tmp_path, {"backend_api_token": "dev-token"})
+    client.cookies.clear()
+    client.headers.clear()
 
     response = client.get("/projects", headers={"Authorization": "Bearer dev-token"})
 
-    assert response.status_code == 200
-    assert response.json()["ok"] is True
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "AUTH_REQUIRED"
 
 
 def test_create_project_uses_pydantic_validation(tmp_path: Path):

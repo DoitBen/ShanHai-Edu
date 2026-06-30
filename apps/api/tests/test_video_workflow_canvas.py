@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from app.main import create_app
-from conftest import enable_project_creation_fallback
+from conftest import create_auth_user, login_as
 from app.providers import ProviderError
 
 MP4_BYTES = b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom"
@@ -52,8 +52,9 @@ def make_client(tmp_path: Path, overrides: dict[str, Any] | None = None) -> Test
             **(overrides or {}),
         }
     )
-    client = enable_project_creation_fallback(TestClient(app))
-    client.headers.update(project_create_headers(client))
+    client = TestClient(app)
+    create_auth_user(client, email="video-workflow-owner@example.com")
+    login_as(client, email="video-workflow-owner@example.com")
     return client
 
 
@@ -76,7 +77,6 @@ def create_project(client: TestClient) -> dict[str, Any]:
     return unwrap_ok(
         client.post(
             "/projects",
-            headers=project_create_headers(client),
             json={
                 "name": "视频画布契约测试",
                 "subject": "math",

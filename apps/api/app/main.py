@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Any
 import json
 
-from fastapi import Depends, FastAPI, Form, Header, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from .models import FeedbackRequest, NodeApproveRequest, NodeEditRequest, NodeGenerateRequest, ProjectCreateRequest, ProjectUpdateRequest, dump_model
 from .providers import DeepSeekTextProvider, FakeProvider, MinimaxTextProvider, MinimaxTTSProvider, NewApiImageProvider, OctoVideoProvider, ProviderError, sanitize_provider_excerpt
+from .auth_dependencies import filter_projects_for_user, require_current_user, require_project_access, require_role
 from .auth_routes import register_auth_routes
 from .auth_service import AuthService
 from .auth_store import AuthStore
@@ -19,7 +20,6 @@ from .prompt_registry import PromptRegistry, PromptStore
 from .project_ownership import reject_request_owner, resolve_project_owner, scan_project_ownership
 from .responses import fail, ok
 from .rule_executor import RuleHardBlockError, RuleWarningError
-from .security import require_api_token
 from .services import FeedbackPayloadError, FeedbackTypeError, NodeContentValidationError, WorkflowService
 from .settings import Settings
 from .state_engine import NodeSkippedError
@@ -119,16 +119,9 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
     app.state.prompt_registry = prompt_registry
     app.state.auth_store = auth_store
     app.state.auth_service = auth_service
-    protected = [Depends(require_api_token(settings))]
-
-    def require_admin(authorization: str | None = Header(default=None)) -> None:
-        if not settings.backend_api_token:
-            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "资源不存在"})
-        if not authorization or not authorization.startswith("Bearer "):
-            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "资源不存在"})
-        token = authorization.removeprefix("Bearer ").strip()
-        if token != settings.backend_api_token:
-            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "资源不存在"})
+    project_access = [Depends(require_project_access)]
+    global_read_access = [Depends(require_role("teacher", "admin"))]
+    admin_access = [Depends(require_role("admin"))]
 
     @app.exception_handler(RequestValidationError)
     def validation_exception_handler(_request, exc):
@@ -186,43 +179,43 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         report["project_ownership"] = scan_project_ownership(store, auth_store).to_dict()
         return ok(report)
 
-    @app.get("/workflow")
+    @app.get("/workflow", dependencies=global_read_access)
     def get_workflow():
         return ok({"version": workflow.version, "nodes": workflow.nodes})
 
-    @app.get("/textbook-library", dependencies=protected)
+    @app.get("/textbook-library", dependencies=global_read_access)
     def get_textbook_library():
         return ok(service.textbook_library())
 
-    @app.post("/textbook-library/uploads", dependencies=protected)
+    @app.post("/textbook-library/uploads", dependencies=admin_access)
     def upload_textbook_to_library(file: UploadFile):
         try:
             return ok(service.upload_textbook_to_library(file))
         except ValueError as exc:
             return fail(400, "TEXTBOOK_UPLOAD_INVALID", str(exc), retryable=False)
 
-    @app.get("/textbook-library/jobs/{job_id}", dependencies=protected)
+    @app.get("/textbook-library/jobs/{job_id}", dependencies=global_read_access)
     def get_textbook_library_job(job_id: str):
         try:
             return ok(service.textbook_library_job(job_id))
         except KeyError:
             return fail(404, "TEXTBOOK_JOB_NOT_FOUND", "教材解析任务不存在", retryable=False)
 
-    @app.get("/textbook-library/{textbook_id}/knowledge-points", dependencies=protected)
+    @app.get("/textbook-library/{textbook_id}/knowledge-points", dependencies=global_read_access)
     def get_textbook_knowledge_points(textbook_id: str):
         try:
             return ok(service.textbook_library_knowledge_points(textbook_id))
         except ValueError as exc:
             return fail(404, "TEXTBOOK_NOT_FOUND", str(exc), retryable=False)
 
-    @app.get("/textbook-library/{textbook_id}/knowledge-points/{knowledge_point_id}/assets", dependencies=protected)
+    @app.get("/textbook-library/{textbook_id}/knowledge-points/{knowledge_point_id}/assets", dependencies=global_read_access)
     def get_textbook_knowledge_point_assets(textbook_id: str, knowledge_point_id: str):
         try:
             return ok(service.textbook_library_asset_package(textbook_id, knowledge_point_id))
         except ValueError as exc:
             return fail(404, "TEXTBOOK_ASSET_NOT_FOUND", str(exc), retryable=False)
 
-    @app.post("/textbook-library/{textbook_id}/split", dependencies=protected)
+    @app.post("/textbook-library/{textbook_id}/split", dependencies=admin_access)
     def split_textbook_knowledge_point_assets(textbook_id: str, payload: dict[str, Any] | None = None):
         try:
             knowledge_point_ids = (payload or {}).get("knowledge_point_ids")
@@ -230,7 +223,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except ValueError as exc:
             return fail(404, "TEXTBOOK_ASSET_NOT_FOUND", str(exc), retryable=False)
 
-    @app.post("/textbook-library/{textbook_id}/assets/extract", dependencies=protected)
+    @app.post("/textbook-library/{textbook_id}/assets/extract", dependencies=admin_access)
     def extract_textbook_knowledge_point_assets_batch(textbook_id: str, payload: dict[str, Any] | None = None):
         try:
             knowledge_point_ids = (payload or {}).get("knowledge_point_ids")
@@ -238,7 +231,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except ValueError as exc:
             return fail(404, "TEXTBOOK_ASSET_NOT_FOUND", str(exc), retryable=False)
 
-    @app.post("/textbook-library/{textbook_id}/knowledge-points/{knowledge_point_id}/assets/extract", dependencies=protected)
+    @app.post("/textbook-library/{textbook_id}/knowledge-points/{knowledge_point_id}/assets/extract", dependencies=admin_access)
     def extract_textbook_knowledge_point_assets(textbook_id: str, knowledge_point_id: str):
         try:
             return ok(service.extract_textbook_asset(textbook_id, knowledge_point_id))
@@ -247,7 +240,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except ValueError as exc:
             return fail(404, "TEXTBOOK_ASSET_NOT_FOUND", str(exc), retryable=False)
 
-    @app.post("/textbook-library/assets/{asset_id}/confirm", dependencies=protected)
+    @app.post("/textbook-library/assets/{asset_id}/confirm", dependencies=admin_access)
     def confirm_textbook_asset(asset_id: str, payload: dict[str, Any] | None = None):
         try:
             return ok(service.confirm_textbook_asset(asset_id, reviewer=str((payload or {}).get("reviewer") or "")))
@@ -256,18 +249,18 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except TextbookAssetNotTrustedError as exc:
             return fail(409, "TEXTBOOK_ASSET_NOT_TRUSTED", str(exc), retryable=False, details=exc.asset)
 
-    @app.get("/lesson-plan-library", dependencies=protected)
+    @app.get("/lesson-plan-library", dependencies=global_read_access)
     def get_lesson_plan_library(textbook_id: str | None = None, knowledge_point_id: str | None = None):
         return ok(service.lesson_plan_library(textbook_id=textbook_id, knowledge_point_id=knowledge_point_id))
 
-    @app.get("/lesson-plan-library/{lesson_plan_id}", dependencies=protected)
+    @app.get("/lesson-plan-library/{lesson_plan_id}", dependencies=global_read_access)
     def get_lesson_plan_library_item(lesson_plan_id: str):
         try:
             return ok(service.lesson_plan_library_item(lesson_plan_id))
         except KeyError:
             return fail(404, "LESSON_PLAN_NOT_FOUND", "教案不存在", retryable=False)
 
-    @app.post("/lesson-plan-library/uploads", dependencies=protected)
+    @app.post("/lesson-plan-library/uploads", dependencies=admin_access)
     def upload_lesson_plan_to_library(
         file: UploadFile,
         textbook_id: str | None = Form(default=None),
@@ -288,7 +281,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except ValueError as exc:
             return fail(400, "LESSON_PLAN_UPLOAD_INVALID", str(exc), retryable=False)
 
-    @app.post("/lesson-plan-library/import/from-project", dependencies=protected)
+    @app.post("/lesson-plan-library/import/from-project", dependencies=admin_access)
     def import_lesson_plan_from_project(payload: dict[str, Any]):
         try:
             return ok(
@@ -302,26 +295,26 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except ValueError as exc:
             return fail(409, "LESSON_PLAN_NOT_READY", str(exc), retryable=False)
 
-    @app.get("/admin/prompts/templates", dependencies=[Depends(require_admin)])
+    @app.get("/admin/prompts/templates", dependencies=admin_access)
     def admin_prompt_templates():
         return ok(prompt_store.list_templates())
 
-    @app.get("/admin/rules", dependencies=[Depends(require_admin)])
+    @app.get("/admin/rules", dependencies=admin_access)
     def admin_rules():
         return ok(control_plane.list_rules())
 
-    @app.get("/admin/rules/audit", dependencies=[Depends(require_admin)])
+    @app.get("/admin/rules/audit", dependencies=admin_access)
     def admin_rules_audit():
         return ok(control_plane.audit_log())
 
-    @app.get("/admin/rules/{rule_id}", dependencies=[Depends(require_admin)])
+    @app.get("/admin/rules/{rule_id}", dependencies=admin_access)
     def admin_rule(rule_id: str):
         try:
             return ok(control_plane.get_rule(rule_id))
         except KeyError:
             return fail(404, "RULE_NOT_FOUND", "规则不存在", retryable=False)
 
-    @app.post("/admin/rules/{rule_id}/versions", dependencies=[Depends(require_admin)])
+    @app.post("/admin/rules/{rule_id}/versions", dependencies=admin_access)
     def admin_create_rule_version(rule_id: str, payload: dict[str, Any]):
         try:
             return ok(
@@ -340,7 +333,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except ValueError as exc:
             return fail(400, "RULE_VERSION_INVALID", str(exc), retryable=False)
 
-    @app.post("/admin/rules/{rule_id}/activate", dependencies=[Depends(require_admin)])
+    @app.post("/admin/rules/{rule_id}/activate", dependencies=admin_access)
     def admin_activate_rule_version(rule_id: str, payload: dict[str, Any]):
         try:
             return ok(
@@ -354,7 +347,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except KeyError:
             return fail(404, "RULE_VERSION_NOT_FOUND", "规则版本不存在", retryable=False)
 
-    @app.post("/admin/rules/{rule_id}/rollback", dependencies=[Depends(require_admin)])
+    @app.post("/admin/rules/{rule_id}/rollback", dependencies=admin_access)
     def admin_rollback_rule_version(rule_id: str, payload: dict[str, Any]):
         try:
             return ok(
@@ -368,7 +361,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except KeyError:
             return fail(404, "RULE_VERSION_NOT_FOUND", "规则版本不存在", retryable=False)
 
-    @app.get("/admin/workflow/graph", dependencies=[Depends(require_admin)])
+    @app.get("/admin/workflow/graph", dependencies=admin_access)
     def admin_workflow_graph():
         rules_by_node: dict[str, list[dict[str, Any]]] = {}
         for item in control_plane.list_rules():
@@ -410,19 +403,19 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
             details["response_excerpt"] = sanitize_provider_excerpt(exc.response_excerpt)
         return fail(502, exc.code, str(exc), retryable=exc.retryable, details=details or None)
 
-    @app.get("/admin/media-workbench", dependencies=[Depends(require_admin)])
+    @app.get("/admin/media-workbench", dependencies=admin_access)
     def admin_media_workbench():
         return ok(service.media_workbench.summary())
 
-    @app.get("/admin/media-workbench/capabilities", dependencies=[Depends(require_admin)])
+    @app.get("/admin/media-workbench/capabilities", dependencies=admin_access)
     def admin_media_workbench_capabilities():
         return ok(service.media_workbench.capabilities())
 
-    @app.get("/admin/media-workbench/assets", dependencies=[Depends(require_admin)])
+    @app.get("/admin/media-workbench/assets", dependencies=admin_access)
     def admin_media_workbench_assets(type: str | None = None, source: str | None = None):
         return ok(service.media_workbench.assets(type, source))
 
-    @app.get("/admin/media-workbench/assets/{asset_id}/download", dependencies=[Depends(require_admin)])
+    @app.get("/admin/media-workbench/assets/{asset_id}/download", dependencies=admin_access)
     def admin_media_workbench_download_asset(asset_id: str):
         try:
             path = service.media_workbench.asset_path(asset_id)
@@ -433,7 +426,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         media_type = "video/mp4" if path.suffix.lower() == ".mp4" else "image/png"
         return FileResponse(path, media_type=media_type, filename=path.name)
 
-    @app.post("/admin/media-workbench/images/runs", dependencies=[Depends(require_admin)])
+    @app.post("/admin/media-workbench/images/runs", dependencies=admin_access)
     def admin_media_workbench_create_image_run(payload: dict[str, Any]):
         try:
             return ok(service.media_workbench.create_image_run(payload))
@@ -442,21 +435,21 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except ProviderError as exc:
             return provider_error_response(exc)
 
-    @app.get("/admin/media-workbench/images/runs/{run_id}", dependencies=[Depends(require_admin)])
+    @app.get("/admin/media-workbench/images/runs/{run_id}", dependencies=admin_access)
     def admin_media_workbench_get_image_run(run_id: str):
         try:
             return ok(service.media_workbench.get_image_run(run_id))
         except KeyError:
             return fail(404, "IMAGE_WORKBENCH_RUN_NOT_FOUND", "图片生成任务不存在", retryable=False)
 
-    @app.post("/admin/media-workbench/videos/references", dependencies=[Depends(require_admin)])
+    @app.post("/admin/media-workbench/videos/references", dependencies=admin_access)
     def admin_media_workbench_upload_video_references(files: list[UploadFile]):
         try:
             return ok(service.media_workbench.upload_video_references(files))
         except MediaWorkbenchError as exc:
             return fail(400, exc.code, str(exc), retryable=False)
 
-    @app.post("/admin/media-workbench/videos/references/import", dependencies=[Depends(require_admin)])
+    @app.post("/admin/media-workbench/videos/references/import", dependencies=admin_access)
     def admin_media_workbench_import_video_references(payload: dict[str, Any]):
         try:
             asset_ids = payload.get("asset_ids") if isinstance(payload.get("asset_ids"), list) else []
@@ -464,7 +457,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except MediaWorkbenchError as exc:
             return fail(400, exc.code, str(exc), retryable=False)
 
-    @app.post("/admin/media-workbench/videos/runs", dependencies=[Depends(require_admin)])
+    @app.post("/admin/media-workbench/videos/runs", dependencies=admin_access)
     def admin_media_workbench_create_video_run(payload: dict[str, Any]):
         try:
             return ok(service.media_workbench.create_video_run(payload))
@@ -473,14 +466,14 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except ProviderError as exc:
             return provider_error_response(exc)
 
-    @app.get("/admin/media-workbench/videos/runs/{run_id}", dependencies=[Depends(require_admin)])
+    @app.get("/admin/media-workbench/videos/runs/{run_id}", dependencies=admin_access)
     def admin_media_workbench_get_video_run(run_id: str):
         try:
             return ok(service.media_workbench.get_video_run(run_id))
         except KeyError:
             return fail(404, "VIDEO_WORKBENCH_RUN_NOT_FOUND", "视频生成任务不存在", retryable=False)
 
-    @app.post("/admin/media-workbench/videos/runs/{run_id}/sync", dependencies=[Depends(require_admin)])
+    @app.post("/admin/media-workbench/videos/runs/{run_id}/sync", dependencies=admin_access)
     def admin_media_workbench_sync_video_run(run_id: str):
         try:
             return ok(service.media_workbench.sync_video_run(run_id))
@@ -489,7 +482,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except KeyError:
             return fail(404, "VIDEO_WORKBENCH_RUN_NOT_FOUND", "视频生成任务不存在", retryable=False)
 
-    @app.get("/admin/media-workbench/videos/runs/{run_id}/download", dependencies=[Depends(require_admin)])
+    @app.get("/admin/media-workbench/videos/runs/{run_id}/download", dependencies=admin_access)
     def admin_media_workbench_download_video_run(run_id: str):
         try:
             path = service.media_workbench.video_download_path(run_id)
@@ -499,11 +492,11 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
             return fail(404, "VIDEO_WORKBENCH_OUTPUT_NOT_FOUND", "视频输出不存在", retryable=False)
         return FileResponse(path, media_type="video/mp4", filename=path.name)
 
-    @app.get("/admin/prompts/templates/{template_id}", dependencies=[Depends(require_admin)])
+    @app.get("/admin/prompts/templates/{template_id}", dependencies=admin_access)
     def admin_prompt_template(template_id: str):
         return ok({"template_id": template_id, "versions": prompt_store.list_versions(template_id)})
 
-    @app.post("/admin/prompts/templates/{template_id}/versions", dependencies=[Depends(require_admin)])
+    @app.post("/admin/prompts/templates/{template_id}/versions", dependencies=admin_access)
     def admin_create_prompt_version(template_id: str, payload: dict[str, Any]):
         body = str(payload.get("body") or "")
         status = str(payload.get("status") or "draft")
@@ -522,7 +515,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         prompt_registry.invalidate()
         return ok(version)
 
-    @app.get("/video/capabilities")
+    @app.get("/video/capabilities", dependencies=global_read_access)
     def get_video_capabilities():
         try:
             data = json.loads(Path(settings.capabilities_path).read_text(encoding="utf-8"))
@@ -531,21 +524,21 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         models = data.get("capabilities", data.get("models", []))
         return ok({**data, "models": models})
 
-    @app.get("/schemas/{schema_name}", dependencies=protected)
+    @app.get("/schemas/{schema_name}", dependencies=global_read_access)
     def get_schema(schema_name: str):
         try:
             return ok(workflow.schema(schema_name))
         except FileNotFoundError:
             return fail(404, "SCHEMA_NOT_FOUND", f"未找到 schema：{schema_name}")
 
-    @app.get("/projects/{project_id}/video-workflow", dependencies=protected)
+    @app.get("/projects/{project_id}/video-workflow", dependencies=project_access)
     def get_video_workflow(project_id: str):
         try:
             return ok(service.video_workflow.get_workflow(project_id))
         except KeyError:
             return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
 
-    @app.get("/projects/{project_id}/video-workflow/observability", dependencies=protected)
+    @app.get("/projects/{project_id}/video-workflow/observability", dependencies=project_access)
     def get_video_workflow_observability(project_id: str):
         try:
             store.get_project(project_id)
@@ -553,7 +546,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except KeyError:
             return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
 
-    @app.get("/projects/{project_id}/video-workflow/storage", dependencies=protected)
+    @app.get("/projects/{project_id}/video-workflow/storage", dependencies=project_access)
     def get_video_workflow_storage(project_id: str):
         try:
             return ok(
@@ -565,21 +558,21 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except KeyError:
             return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
 
-    @app.post("/projects/{project_id}/video-workflow/storage/cleanup", dependencies=protected)
+    @app.post("/projects/{project_id}/video-workflow/storage/cleanup", dependencies=project_access)
     def cleanup_video_workflow_storage(project_id: str):
         try:
             return ok(service.video_workflow.cleanup_storage(project_id))
         except KeyError:
             return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
 
-    @app.put("/projects/{project_id}/video-workflow", dependencies=protected)
+    @app.put("/projects/{project_id}/video-workflow", dependencies=project_access)
     def save_video_workflow(project_id: str, payload: dict[str, Any]):
         try:
             return ok(service.video_workflow.save_workflow(project_id, payload))
         except KeyError:
             return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
 
-    @app.post("/projects/{project_id}/video-workflow/assets", dependencies=protected)
+    @app.post("/projects/{project_id}/video-workflow/assets", dependencies=project_access)
     def upload_video_workflow_assets(project_id: str, files: list[UploadFile]):
         try:
             return ok(service.video_workflow.upload_assets(project_id, files))
@@ -588,7 +581,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except KeyError:
             return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
 
-    @app.get("/projects/{project_id}/video-workflow/assets/{asset_id}/content", dependencies=protected)
+    @app.get("/projects/{project_id}/video-workflow/assets/{asset_id}/content", dependencies=project_access)
     def get_video_workflow_asset(project_id: str, asset_id: str):
         try:
             asset = service.video_workflow.asset(project_id, asset_id, include_deleted=True)
@@ -600,14 +593,14 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except KeyError:
             return fail(404, "VIDEO_REFERENCE_NOT_FOUND", "参考图不存在", retryable=False)
 
-    @app.delete("/projects/{project_id}/video-workflow/assets/{asset_id}", dependencies=protected)
+    @app.delete("/projects/{project_id}/video-workflow/assets/{asset_id}", dependencies=project_access)
     def delete_video_workflow_asset(project_id: str, asset_id: str):
         try:
             return ok(service.video_workflow.delete_asset(project_id, asset_id))
         except KeyError:
             return fail(404, "VIDEO_REFERENCE_NOT_FOUND", "参考图不存在", retryable=False)
 
-    @app.post("/projects/{project_id}/video-workflow/runs", dependencies=protected)
+    @app.post("/projects/{project_id}/video-workflow/runs", dependencies=project_access)
     def create_video_workflow_run(project_id: str, payload: dict[str, Any]):
         try:
             return ok(service.video_workflow.create_run(project_id, payload))
@@ -623,21 +616,21 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except KeyError:
             return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
 
-    @app.get("/projects/{project_id}/video-workflow/runs", dependencies=protected)
+    @app.get("/projects/{project_id}/video-workflow/runs", dependencies=project_access)
     def list_video_workflow_runs(project_id: str, limit: int = 50):
         try:
             return ok(service.video_workflow.list_runs(project_id, limit=limit))
         except KeyError:
             return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
 
-    @app.get("/projects/{project_id}/video-workflow/runs/{run_id}", dependencies=protected)
+    @app.get("/projects/{project_id}/video-workflow/runs/{run_id}", dependencies=project_access)
     def get_video_workflow_run(project_id: str, run_id: str):
         try:
             return ok(service.video_workflow.get_run(project_id, run_id))
         except KeyError:
             return fail(404, "VIDEO_WORKFLOW_RUN_NOT_FOUND", "视频画布任务不存在")
 
-    @app.post("/projects/{project_id}/video-workflow/runs/{run_id}/sync", dependencies=protected)
+    @app.post("/projects/{project_id}/video-workflow/runs/{run_id}/sync", dependencies=project_access)
     def sync_video_workflow_run(project_id: str, run_id: str):
         try:
             return ok(service.video_workflow.sync_run(project_id, run_id))
@@ -651,7 +644,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except KeyError:
             return fail(404, "VIDEO_WORKFLOW_RUN_NOT_FOUND", "视频画布任务不存在")
 
-    @app.post("/projects/{project_id}/video-workflow/runs/{run_id}/retry", dependencies=protected)
+    @app.post("/projects/{project_id}/video-workflow/runs/{run_id}/retry", dependencies=project_access)
     def retry_video_workflow_run(project_id: str, run_id: str, payload: dict[str, Any]):
         try:
             return ok(service.video_workflow.retry_run(project_id, run_id, payload))
@@ -660,7 +653,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except KeyError:
             return fail(404, "VIDEO_WORKFLOW_RUN_NOT_FOUND", "视频任务不存在", retryable=False)
 
-    @app.get("/projects/{project_id}/video-workflow/runs/{run_id}/download", dependencies=protected)
+    @app.get("/projects/{project_id}/video-workflow/runs/{run_id}/download", dependencies=project_access)
     def download_video_workflow_run(project_id: str, run_id: str):
         try:
             path = service.video_workflow.download_path(project_id, run_id)
@@ -670,7 +663,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
             return fail(404, "VIDEO_OUTPUT_NOT_FOUND", "视频输出不存在", retryable=True)
         return FileResponse(path, media_type="video/mp4", filename=path.name)
 
-    @app.get("/projects/{project_id}/video-workflow/runs/{run_id}/content", dependencies=protected)
+    @app.get("/projects/{project_id}/video-workflow/runs/{run_id}/content", dependencies=project_access)
     def stream_video_workflow_run(project_id: str, run_id: str):
         try:
             path = service.video_workflow.download_path(project_id, run_id)
@@ -685,7 +678,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except KeyError:
             return fail(404, "VIDEO_OUTPUT_NOT_FOUND", "视频输出不存在", retryable=True)
 
-    @app.get("/rules/coverage", dependencies=protected)
+    @app.get("/rules/coverage", dependencies=admin_access)
     def get_rule_coverage():
         return ok(service.rule_executor.coverage())
 
@@ -717,46 +710,46 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         control_plane.bind_project_to_active_rule_set(project["project_id"])
         return ok(project)
 
-    @app.get("/projects", dependencies=protected)
-    def list_projects():
-        return ok(store.list_projects())
+    @app.get("/projects")
+    def list_projects(current_user: dict[str, Any] = Depends(require_current_user)):
+        return ok(filter_projects_for_user(store.list_projects(), current_user, auth_store))
 
-    @app.get("/projects/{project_id}", dependencies=protected)
+    @app.get("/projects/{project_id}", dependencies=project_access)
     def get_project(project_id: str):
         try:
             return ok(store.get_project(project_id))
         except KeyError:
             return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
 
-    @app.patch("/projects/{project_id}", dependencies=protected)
+    @app.patch("/projects/{project_id}", dependencies=project_access)
     def update_project(project_id: str, payload: ProjectUpdateRequest):
         try:
             return ok(store.update_project(project_id, dump_model(payload, exclude_none=True)))
         except KeyError:
             return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
 
-    @app.get("/projects/{project_id}/manifest", dependencies=protected)
+    @app.get("/projects/{project_id}/manifest", dependencies=project_access)
     def get_manifest(project_id: str):
         try:
             return ok(store.manifest(project_id, workflow, service.rule_runtime_summary()))
         except KeyError:
             return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
 
-    @app.get("/projects/{project_id}/workspace", dependencies=protected)
+    @app.get("/projects/{project_id}/workspace", dependencies=project_access)
     def get_workspace_user_flow(project_id: str):
         try:
             return ok(service.workspace_user_flow(project_id))
         except KeyError:
             return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
 
-    @app.get("/projects/{project_id}/flywheel", dependencies=protected)
+    @app.get("/projects/{project_id}/flywheel", dependencies=project_access)
     def get_flywheel(project_id: str):
         try:
             return ok(service.flywheel_events(project_id))
         except KeyError:
             return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
 
-    @app.post("/projects/{project_id}/feedback", dependencies=protected)
+    @app.post("/projects/{project_id}/feedback", dependencies=project_access)
     def record_feedback(project_id: str, payload: FeedbackRequest):
         try:
             return ok(service.record_feedback(project_id, payload.feedback_type, payload.payload))
@@ -767,14 +760,14 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except KeyError:
             return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
 
-    @app.post("/projects/{project_id}/textbook", dependencies=protected)
+    @app.post("/projects/{project_id}/textbook", dependencies=project_access)
     def upload_textbook(project_id: str, file: UploadFile):
         try:
             return ok(store.upload_textbook(project_id, file))
         except KeyError:
             return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
 
-    @app.post("/projects/{project_id}/textbook/from-library/{textbook_id}", dependencies=protected)
+    @app.post("/projects/{project_id}/textbook/from-library/{textbook_id}", dependencies=project_access)
     def attach_textbook_from_library(project_id: str, textbook_id: str):
         try:
             source_pdf = textbook_library.source_pdf_path(textbook_id)
@@ -784,7 +777,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except KeyError:
             return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
 
-    @app.post("/projects/{project_id}/nodes/{node_id}/generate", dependencies=protected)
+    @app.post("/projects/{project_id}/nodes/{node_id}/generate", dependencies=project_access)
     def generate_node(project_id: str, node_id: str, payload: NodeGenerateRequest | None = None):
         try:
             return ok(service.generate_node(project_id, node_id, payload.to_options() if payload else {}))
@@ -804,7 +797,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except KeyError as exc:
             return fail(404, "NOT_FOUND", str(exc), retryable=False)
 
-    @app.post("/projects/{project_id}/nodes/{node_id}/edit", dependencies=protected)
+    @app.post("/projects/{project_id}/nodes/{node_id}/edit", dependencies=project_access)
     def edit_node(project_id: str, node_id: str, payload: NodeEditRequest):
         try:
             return ok(service.edit_node(project_id, node_id, payload.content))
@@ -819,7 +812,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except KeyError as exc:
             return fail(404, "NOT_FOUND", str(exc), retryable=False)
 
-    @app.post("/projects/{project_id}/nodes/{node_id}/approve", dependencies=protected)
+    @app.post("/projects/{project_id}/nodes/{node_id}/approve", dependencies=project_access)
     def approve_node(project_id: str, node_id: str, payload: NodeApproveRequest | None = None):
         try:
             return ok(service.approve_node(project_id, node_id, dump_model(payload, exclude_none=True) if payload else {}))
@@ -836,7 +829,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except KeyError as exc:
             return fail(404, "NOT_FOUND", str(exc), retryable=False)
 
-    @app.post("/projects/{project_id}/nodes/{node_id}/retry", dependencies=protected)
+    @app.post("/projects/{project_id}/nodes/{node_id}/retry", dependencies=project_access)
     def retry_node(project_id: str, node_id: str):
         try:
             return ok(service.retry_node(project_id, node_id))
@@ -856,28 +849,28 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except KeyError as exc:
             return fail(404, "NOT_FOUND", str(exc), retryable=False)
 
-    @app.get("/projects/{project_id}/nodes/{node_id}", dependencies=protected)
+    @app.get("/projects/{project_id}/nodes/{node_id}", dependencies=project_access)
     def get_node(project_id: str, node_id: str):
         try:
             return ok(store.node_detail(project_id, node_id, workflow, service.rule_runtime_summary()))
         except KeyError as exc:
             return fail(404, "NOT_FOUND", str(exc), retryable=False)
 
-    @app.get("/projects/{project_id}/nodes/{node_id}/versions", dependencies=protected)
+    @app.get("/projects/{project_id}/nodes/{node_id}/versions", dependencies=project_access)
     def get_versions(project_id: str, node_id: str):
         try:
             return ok(store.versions(project_id, node_id))
         except KeyError as exc:
             return fail(404, "NOT_FOUND", str(exc), retryable=False)
 
-    @app.get("/projects/{project_id}/tasks", dependencies=protected)
+    @app.get("/projects/{project_id}/tasks", dependencies=project_access)
     def get_tasks(project_id: str):
         try:
             return ok(store.tasks(project_id))
         except KeyError:
             return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
 
-    @app.get("/projects/{project_id}/tasks/{task_id}", dependencies=protected)
+    @app.get("/projects/{project_id}/tasks/{task_id}", dependencies=project_access)
     def get_task(project_id: str, task_id: str):
         try:
             return ok(service.sync_task(project_id, task_id))
@@ -891,7 +884,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except KeyError as exc:
             return fail(404, "NOT_FOUND", str(exc), retryable=False)
 
-    @app.post("/projects/{project_id}/export/ppt", dependencies=protected)
+    @app.post("/projects/{project_id}/export/ppt", dependencies=project_access)
     def export_ppt(project_id: str):
         try:
             return ok(service.export_ppt(project_id))
@@ -902,7 +895,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except KeyError:
             return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
 
-    @app.get("/projects/{project_id}/exports/{filename}", dependencies=protected)
+    @app.get("/projects/{project_id}/exports/{filename}", dependencies=project_access)
     def download_export(project_id: str, filename: str):
         try:
             project = store.get_project(project_id)
@@ -918,7 +911,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
             filename=safe_name,
         )
 
-    @app.get("/projects/{project_id}/outputs/final_video.mp4", dependencies=protected)
+    @app.get("/projects/{project_id}/outputs/final_video.mp4", dependencies=project_access)
     def download_final_video(project_id: str):
         try:
             project = store.get_project(project_id)
@@ -929,7 +922,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
             return fail(404, "OUTPUT_NOT_FOUND", "最终视频文件不存在")
         return FileResponse(path, media_type="video/mp4", filename="final_video.mp4")
 
-    @app.get("/projects/{project_id}/clips/{filename}", dependencies=protected)
+    @app.get("/projects/{project_id}/clips/{filename}", dependencies=project_access)
     def download_clip(project_id: str, filename: str):
         try:
             project = store.get_project(project_id)
@@ -941,7 +934,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
             return fail(404, "CLIP_NOT_FOUND", "视频片段不存在")
         return FileResponse(path, media_type="video/mp4", filename=safe_name)
 
-    @app.get("/projects/{project_id}/images/{filename}", dependencies=protected)
+    @app.get("/projects/{project_id}/images/{filename}", dependencies=project_access)
     def download_image(project_id: str, filename: str):
         try:
             project = store.get_project(project_id)
@@ -960,7 +953,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
             return fail(404, "IMAGE_NOT_FOUND", "图片文件不存在")
         return FileResponse(path, media_type=media_types[suffix], filename=safe_name)
 
-    @app.get("/projects/{project_id}/files/{asset_path:path}", dependencies=protected)
+    @app.get("/projects/{project_id}/files/{asset_path:path}", dependencies=project_access)
     def download_project_asset(project_id: str, asset_path: str):
         try:
             project = store.get_project(project_id)
@@ -985,7 +978,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         media_type = media_types.get(resolved.suffix.lower(), "application/octet-stream")
         return FileResponse(resolved, media_type=media_type, filename=resolved.name)
 
-    @app.post("/projects/{project_id}/tasks/{task_id}/retry", dependencies=protected)
+    @app.post("/projects/{project_id}/tasks/{task_id}/retry", dependencies=project_access)
     def retry_task(project_id: str, task_id: str):
         try:
             return ok(service.retry_task(project_id, task_id))
@@ -999,14 +992,14 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         except KeyError as exc:
             return fail(404, "NOT_FOUND", str(exc), retryable=False)
 
-    @app.get("/projects/{project_id}/assets", dependencies=protected)
+    @app.get("/projects/{project_id}/assets", dependencies=project_access)
     def get_assets(project_id: str):
         try:
             return ok(store.assets(project_id))
         except KeyError:
             return fail(404, "PROJECT_NOT_FOUND", "项目不存在")
 
-    @app.get("/projects/{project_id}/assets/{asset_id}", dependencies=protected)
+    @app.get("/projects/{project_id}/assets/{asset_id}", dependencies=project_access)
     def get_asset(project_id: str, asset_id: str):
         try:
             return ok(store.asset(project_id, asset_id))

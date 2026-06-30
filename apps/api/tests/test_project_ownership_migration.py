@@ -75,13 +75,15 @@ def create_user(
 
 
 def login(client: TestClient, *, email: str = "teacher@example.com", password: str = "CorrectHorse123!") -> dict[str, Any]:
-    return unwrap_ok(
+    data = unwrap_ok(
         client.post(
             "/auth/login",
             json={"email": email, "password": password},
             headers={"Origin": "http://localhost:3000"},
         )
     )
+    client.headers.update({"Origin": "http://localhost:3000", "X-CSRF-Token": data["csrf_token"]})
+    return data
 
 
 def project_db(project: dict[str, Any]) -> Path:

@@ -8,7 +8,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from conftest import enable_project_creation_fallback
+from conftest import create_auth_user, enable_project_creation_fallback, login_as
 from app.providers import ProviderError
 
 
@@ -76,12 +76,31 @@ def test_admin_media_workbench_capabilities_defaults_and_readiness(tmp_path: Pat
     assert omni["max_reference_images"] == 7
 
 
-def test_admin_media_workbench_requires_admin_token(tmp_path: Path):
-    client = make_client(tmp_path)
+def test_admin_media_workbench_requires_admin_session(tmp_path: Path):
+    app = create_app(
+        {
+            "storage_root": str(tmp_path / "storage"),
+            "workflow_root": str(Path(__file__).resolve().parents[3] / "workflow"),
+            "provider_mode": "fake",
+            "video_provider_mode": "placeholder",
+            "image_provider_mode": "placeholder",
+            "tts_provider_mode": "placeholder",
+            "backend_api_token": API_TOKEN,
+        }
+    )
+    create_auth_user(TestClient(app), email="teacher@example.com", role="teacher")
+    create_auth_user(TestClient(app), email="admin@example.com", role="admin")
 
-    error = unwrap_error(client.get("/admin/media-workbench"), 404, "NOT_FOUND")
+    anonymous = TestClient(app)
+    unwrap_error(anonymous.get("/admin/media-workbench"), 401, "AUTH_REQUIRED")
 
-    assert "资源不存在" in error["message"]
+    teacher = TestClient(app)
+    login_as(teacher, email="teacher@example.com")
+    unwrap_error(teacher.get("/admin/media-workbench"), 403, "FORBIDDEN")
+
+    admin = TestClient(app)
+    login_as(admin, email="admin@example.com")
+    assert admin.get("/admin/media-workbench").status_code == 200
 
 
 def test_admin_media_workbench_image_run_saves_b64_asset_and_payload(tmp_path: Path):

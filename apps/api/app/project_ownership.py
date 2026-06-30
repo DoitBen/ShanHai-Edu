@@ -9,6 +9,8 @@ import secrets
 from fastapi import HTTPException, Request
 
 from .auth_store import AuthStore, normalize_email
+from .auth_dependencies import SAFE_METHODS
+from .security import assert_request_origin_allowed, verify_csrf_token
 from .settings import Settings
 from .store import ProjectStore
 
@@ -96,6 +98,9 @@ def resolve_project_owner(request: Request, settings: Settings, auth_store: Auth
     session_token = request.cookies.get(settings.auth_cookie_name)
     session, user = auth_service.optional_session_from_token(session_token)
     if session and user:
+        if request.method.upper() not in SAFE_METHODS:
+            assert_request_origin_allowed(request.headers.get("origin"), settings.cors_origin_list)
+            verify_csrf_token(request.headers.get("x-csrf-token"), str(session["csrf_token_hash"]))
         return str(user["user_id"])
 
     _require_legacy_backend_token_for_fallback(request, settings)

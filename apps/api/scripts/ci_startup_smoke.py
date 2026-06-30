@@ -14,6 +14,7 @@ from app.main import create_app
 
 
 PROJECT_CREATE_TOKEN = "ci-startup-smoke-token"
+TEST_ORIGIN = "http://localhost:3000"
 
 
 def _unwrap(response):
@@ -23,6 +24,18 @@ def _unwrap(response):
     if payload.get("ok") is not True:
         raise AssertionError(payload)
     return payload["data"]
+
+
+def _login(client: TestClient, *, email: str, password: str) -> dict:
+    session = _unwrap(
+        client.post(
+            "/auth/login",
+            headers={"Origin": TEST_ORIGIN},
+            json={"email": email, "password": password},
+        )
+    )
+    client.headers.update({"Origin": TEST_ORIGIN, "X-CSRF-Token": session["csrf_token"]})
+    return session
 
 
 def main() -> None:
@@ -47,8 +60,7 @@ def main() -> None:
             role="teacher",
             password="CorrectHorse123!",
         )
-        app.state.settings.project_creation_default_owner_user_id = user["user_id"]
-        auth_headers = {"Authorization": f"Bearer {PROJECT_CREATE_TOKEN}"}
+        _login(client, email=user["email"], password="CorrectHorse123!")
 
         health = _unwrap(client.get("/health"))
         if health.get("status") != "ok":
@@ -61,7 +73,6 @@ def main() -> None:
         project = _unwrap(
             client.post(
                 "/projects",
-                headers=auth_headers,
                 json={
                     "name": "CI 视频工作台启动冒烟",
                     "subject": "math",
@@ -78,7 +89,7 @@ def main() -> None:
         if not (project_dir / "project.db").is_file():
             raise AssertionError("project db was not created")
 
-        workflow = _unwrap(client.get(f"/projects/{project['project_id']}/video-workflow", headers=auth_headers))
+        workflow = _unwrap(client.get(f"/projects/{project['project_id']}/video-workflow"))
         if workflow["config"]["model"] != "omni_flash-10s":
             raise AssertionError(workflow["config"])
 

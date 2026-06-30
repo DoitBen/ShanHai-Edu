@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const BACKEND_BASE_URL = process.env.BACKEND_API_BASE_URL || "http://localhost:8000";
-const BACKEND_API_TOKEN = process.env.BACKEND_API_TOKEN;
-const ENABLE_ADMIN_BACKEND_PROXY = process.env.ENABLE_ADMIN_BACKEND_PROXY === "true";
 
 type RouteContext = {
   params: Promise<{ path?: string[] }> | { path?: string[] };
@@ -12,29 +10,19 @@ async function proxyBackend(request: NextRequest, context: RouteContext) {
   const params = await context.params;
   const pathParts = params.path || [];
   const path = pathParts.map(encodeURIComponent).join("/");
-  if (isAdminBackendPath(pathParts) && !canProxyAdminBackend()) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: {
-          code: "NOT_FOUND",
-          message: "资源不存在",
-          retryable: false,
-        },
-      },
-      { status: 404 },
-    );
-  }
   const search = request.nextUrl.search || "";
   const backendUrl = `${BACKEND_BASE_URL.replace(/\/+$/, "")}/${path}${search}`;
-  const headers = new Headers(request.headers);
+  const headers = new Headers();
+  copyHeader(request.headers, headers, "accept");
+  copyHeader(request.headers, headers, "accept-language");
+  copyHeader(request.headers, headers, "content-type");
+  copyHeader(request.headers, headers, "cookie");
+  copyHeader(request.headers, headers, "origin");
+  copyHeader(request.headers, headers, "user-agent");
+  copyHeader(request.headers, headers, "x-csrf-token");
   headers.delete("host");
   headers.delete("expect");
-  if (BACKEND_API_TOKEN) {
-    headers.set("Authorization", `Bearer ${BACKEND_API_TOKEN}`);
-  } else {
-    headers.delete("Authorization");
-  }
+  headers.delete("authorization");
 
   const response = await fetch(backendUrl, {
     method: request.method,
@@ -51,12 +39,9 @@ async function proxyBackend(request: NextRequest, context: RouteContext) {
   });
 }
 
-function isAdminBackendPath(path: string[]) {
-  return path[0] === "admin";
-}
-
-function canProxyAdminBackend() {
-  return ENABLE_ADMIN_BACKEND_PROXY && Boolean(BACKEND_API_TOKEN);
+function copyHeader(source: Headers, target: Headers, name: string) {
+  const value = source.get(name);
+  if (value) target.set(name, value);
 }
 
 export async function GET(request: NextRequest, context: RouteContext) {

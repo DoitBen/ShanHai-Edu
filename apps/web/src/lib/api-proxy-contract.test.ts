@@ -41,12 +41,32 @@ assert(
   "api-client must not expose backend origin through public base URL env",
 );
 assert(
-  proxyRoute.includes("process.env.BACKEND_API_TOKEN"),
-  "backend proxy must read BACKEND_API_TOKEN on the server",
+  !proxyRoute.includes("BACKEND_API_TOKEN") && !proxyRoute.includes("Bearer"),
+  "backend proxy must not inject a global backend bearer token for browser requests",
 );
 assert(
-  proxyRoute.includes("Authorization") && proxyRoute.includes("Bearer"),
-  "backend proxy must forward Authorization bearer header to FastAPI",
+  proxyRoute.includes('headers.delete("authorization")'),
+  "backend proxy must drop client Authorization headers so they cannot bypass session auth",
+);
+for (const headerName of ["cookie", "origin", "x-csrf-token", "content-type"]) {
+  assert(
+    proxyRoute.includes(`copyHeader(request.headers, headers, "${headerName}")`),
+    `backend proxy must explicitly forward ${headerName}`,
+  );
+}
+assert(
+  apiClient.includes('credentials: "same-origin"'),
+  "api-client must send same-origin cookies through the Next backend proxy",
+);
+assert(
+  apiClient.includes('"X-CSRF-Token"') && apiClient.includes("setApiCsrfToken"),
+  "api-client must attach the in-memory CSRF token to unsafe methods",
+);
+assert(
+  apiClient.includes("loginWithPassword") &&
+    apiClient.includes("fetchCurrentSession") &&
+    apiClient.includes("logoutSession"),
+  "api-client must expose real auth login/me/logout helpers",
 );
 assert(
   proxyRoute.includes('headers.delete("expect")'),

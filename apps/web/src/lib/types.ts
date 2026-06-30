@@ -1139,10 +1139,27 @@ export type ScreenKey =
   | "admin-media-workbench";
 
 export interface AuthUser {
+  userId: string;
+  email: string;
   username: string;
   role: Role;
   displayName: string;
+  status: "active" | "disabled";
   loginAt: string;
+}
+
+export interface ApiAuthUser {
+  user_id: string;
+  email: string;
+  display_name: string;
+  role: Role;
+  status: "active" | "disabled";
+}
+
+export interface ApiAuthSession {
+  user: ApiAuthUser;
+  csrf_token: string;
+  expires_at: string;
 }
 
 export interface ActivityItem {

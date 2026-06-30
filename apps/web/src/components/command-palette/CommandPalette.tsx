@@ -179,7 +179,9 @@ export function CommandPalette() {
         label: "退出登录",
         icon: CornerDownLeft,
         group: "账户",
-        run: () => logout(),
+        run: () => {
+          void logout();
+        },
         keywords: "退出 登出 logout signout",
       },
     ];

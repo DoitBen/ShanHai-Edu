@@ -45,23 +45,24 @@ assert(
 );
 
 assert(
-  proxyRoute.includes("isAdminBackendPath"),
-  "backend proxy must detect admin backend paths",
+  !proxyRoute.includes("BACKEND_API_TOKEN") && !proxyRoute.includes("Bearer"),
+  "backend proxy must not inject a global backend bearer token for admin paths",
+);
+
+assert(
+  proxyRoute.includes('headers.delete("authorization")'),
+  "backend proxy must drop client Authorization headers for admin paths",
+);
+
+assert(
+  proxyRoute.includes('copyHeader(request.headers, headers, "cookie")') &&
+    proxyRoute.includes('copyHeader(request.headers, headers, "x-csrf-token")'),
+  "backend proxy must forward session Cookie and CSRF headers for FastAPI admin RBAC",
 );
 
 assert(
   !proxyRoute.includes("shanhai_auth") && !proxyRoute.includes("isLocalAdminRequest"),
   "backend proxy must not trust editable local auth cookies for admin paths",
-);
-
-assert(
-  proxyRoute.includes("ENABLE_ADMIN_BACKEND_PROXY") && proxyRoute.includes("canProxyAdminBackend"),
-  "backend proxy must only allow admin paths through an explicit server-side flag",
-);
-
-assert(
-  proxyRoute.includes("return NextResponse.json") && proxyRoute.includes("NOT_FOUND"),
-  "backend proxy must fail closed for admin backend paths without trusted server auth",
 );
 
 assert(

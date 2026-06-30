@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, type Route, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -7,6 +7,157 @@ const PNG = Buffer.from(
   "base64",
 );
 const MP4 = readFileSync(join(__dirname, "fixtures/video-workbench-valid.mp4"));
+const E2E_CSRF_TOKEN = "csrf-e2e-token";
+const E2E_DEMO_PASSWORD = "shanhai2026";
+const E2E_PROJECT_ID = "demo";
+const E2E_PROJECT_NAME = "古诗文诵读——静夜思";
+const EXPECT_VIDEO_WORKFLOW_CSRF = process.env.NEXT_PUBLIC_DEMO_MODE !== "true";
+
+const E2E_PROJECT = {
+  project_id: E2E_PROJECT_ID,
+  name: E2E_PROJECT_NAME,
+  subject: "chinese",
+  grade: "2",
+  textbook_version: "tongbian",
+  volume: "shang",
+  lesson_type: "reading",
+  textbook_id: null,
+  textbook_version_id: null,
+  knowledge_point_id: null,
+  reference_lesson_plan_id: null,
+  created_at: "2026-06-30T00:00:00Z",
+  status: "active",
+  project_dir: "storage/projects/demo",
+};
+
+const E2E_NODE_IDS = [
+  "project_meta",
+  "project_config",
+  "visual_contract",
+  "character_dict",
+  "textbook_parse",
+  "lesson_plan",
+  "intro_selection",
+  "ppt_assembly_plan",
+  "ppt_page_script",
+  "ppt_visual_asset",
+  "pptx_artifact",
+  "intro_video_script",
+  "intro_video_screenplay",
+  "intro_video_asset",
+  "storyboard",
+  "final_video",
+];
+
+function createMockManifest() {
+  const videoStart = E2E_NODE_IDS.indexOf("final_video");
+  return {
+    project: E2E_PROJECT,
+    nodes: E2E_NODE_IDS.map((nodeId, index) => ({
+      project_id: E2E_PROJECT_ID,
+      node_id: nodeId,
+      title: null,
+      step: index + 1,
+      branch: nodeId.includes("video") || nodeId === "storyboard" || nodeId === "final_video"
+        ? "intro_video"
+        : nodeId.startsWith("ppt")
+          ? "ppt"
+          : "shared",
+      depends_on: [],
+      schema: null,
+      status: index < videoStart ? "approved" : nodeId === "final_video" ? "input_required" : "approved",
+      current_version_id: index < videoStart ? `ver_${nodeId}` : null,
+      updated_at: "2026-06-30T00:00:00Z",
+      capabilities: {
+        can_generate: true,
+        can_edit: true,
+        can_approve: true,
+        can_redo: true,
+        can_skip: false,
+      },
+      artifact: null,
+      rule_summary: {
+        hard_block_count: 0,
+        warning_count: 0,
+        failed_rule_ids: [],
+        warning_rule_ids: [],
+      },
+      latest_transition: null,
+      review_reason: null,
+    })),
+  };
+}
+
+async function mockAuthenticatedApiSession(page: Page, role: "admin" | "teacher" = "admin") {
+  await page.route("**/api/backend/auth/me", async (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        data: {
+          user: {
+            user_id: `e2e-${role}`,
+            email: `${role}@example.test`,
+            display_name: role === "admin" ? "管理员" : "测试教师",
+            role,
+            status: "active",
+          },
+          csrf_token: E2E_CSRF_TOKEN,
+          expires_at: "2026-06-30T12:00:00Z",
+        },
+      }),
+    }),
+  );
+}
+
+async function mockProjectApi(page: Page) {
+  const manifest = createMockManifest();
+  const ok = (route: Route, data: unknown) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, data }),
+    });
+
+  await page.route("**/api/backend/projects", async (route) => ok(route, [E2E_PROJECT]));
+  await page.route("**/api/backend/projects/*/manifest", async (route) => ok(route, manifest));
+  await page.route("**/api/backend/projects/*/workspace", async (route) =>
+    ok(route, {
+      project_id: E2E_PROJECT_ID,
+      current_step_id: "video-generation",
+      steps: [],
+      developer_diagnostics: null,
+    }),
+  );
+  await page.route("**/api/backend/projects/*/nodes/*", async (route) => {
+    const nodeId = decodeURIComponent(new URL(route.request().url()).pathname.split("/").pop() || "final_video");
+    const node = manifest.nodes.find((item) => item.node_id === nodeId) || manifest.nodes.at(-1)!;
+    return ok(route, {
+      ...node,
+      content: nodeId === "final_video" ? { status: "ready_for_video_workbench" } : `节点内容：${nodeId}`,
+    });
+  });
+  await page.route("**/api/backend/projects/*/tasks**", async (route) => ok(route, []));
+}
+
+async function seedDemoAuth(page: Page) {
+  await page.addInitScript(() => {
+    const authKey = ["shanhai", "auth"].join("_");
+    window.localStorage.setItem(
+      authKey,
+      JSON.stringify({
+        userId: "demo-admin",
+        email: "admin@demo.local",
+        username: "admin",
+        role: "admin",
+        displayName: "管理员",
+        status: "active",
+        loginAt: new Date().toISOString(),
+      }),
+    );
+  });
+}
 
 function createMockVideoWorkflowState() {
   return {
@@ -50,6 +201,9 @@ async function mockVideoWorkflowApi(page: Page, state = createMockVideoWorkflowS
     const request = route.request();
     const url = new URL(request.url());
     const path = url.pathname;
+    if (EXPECT_VIDEO_WORKFLOW_CSRF && ["POST", "PUT", "PATCH", "DELETE"].includes(request.method())) {
+      expect(request.headers()["x-csrf-token"]).toBe(E2E_CSRF_TOKEN);
+    }
     const ok = (data: unknown) =>
       route.fulfill({
         status: 200,
@@ -162,21 +316,23 @@ async function mockVideoWorkflowApi(page: Page, state = createMockVideoWorkflowS
 }
 
 async function openAuthenticatedProject(page: Page) {
-  await page.addInitScript(() => {
-    window.localStorage.setItem(
-      "shanhai_auth",
-      JSON.stringify({
-        username: "admin",
-        role: "admin",
-        displayName: "管理员",
-        loginAt: new Date().toISOString(),
-      }),
-    );
-  });
+  await seedDemoAuth(page);
+  await mockAuthenticatedApiSession(page);
+  await mockProjectApi(page);
   await page.goto("/");
+  const loginButton = page.getByRole("button", { name: /^登录$/ });
+  if (await loginButton.isVisible({ timeout: 1_000 }).catch(() => false)) {
+    const accountInput = page.getByLabel(/用户名|邮箱/);
+    await page.getByRole("button", { name: /教师 业务流程/ }).click();
+    await expect(accountInput).toHaveValue("teacher");
+    await page.getByRole("button", { name: /管理员 全部功能/ }).click();
+    await expect(accountInput).toHaveValue("admin");
+    await page.getByLabel("密码").fill(E2E_DEMO_PASSWORD);
+    await loginButton.click();
+  }
   await expect(page.getByText("项目概览")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "古诗文诵读——静夜思" })).toBeVisible();
-  await page.getByRole("button", { name: /^进入$/ }).nth(2).click();
+  await expect(page.getByRole("heading", { name: E2E_PROJECT_NAME }).first()).toBeVisible();
+  await page.getByRole("button", { name: /进入工作区/ }).first().click();
 }
 
 async function openVideoWorkbench(page: Page) {
@@ -247,7 +403,7 @@ test("project video workbench completes the core flow", async ({ page }) => {
 
   await page.reload();
   await expect(page.getByText("项目概览")).toBeVisible();
-  await page.getByRole("button", { name: /^进入$/ }).nth(2).click();
+  await page.getByRole("button", { name: /进入工作区/ }).first().click();
   await openVideoWorkbench(page);
   await expect(page.locator("video:visible").first()).toBeVisible();
   await page.getByRole("button", { name: "复用参数" }).first().click();

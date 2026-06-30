@@ -1,5 +1,6 @@
 import type {
   ApiEnvelope,
+  ApiAuthSession,
   ApiManifest,
   ApiNodeDetail,
   ApiNodeMutationResult,
@@ -47,6 +48,21 @@ import type {
 } from "./types";
 
 const API_BASE = "/api/backend";
+const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+let apiCsrfToken: string | null = null;
+let authRequiredHandler: (() => void) | null = null;
+
+export function setApiCsrfToken(token: string | null) {
+  apiCsrfToken = token;
+}
+
+export function getApiCsrfToken(): string | null {
+  return apiCsrfToken;
+}
+
+export function setAuthRequiredHandler(handler: (() => void) | null) {
+  authRequiredHandler = handler;
+}
 
 export function resolveApiDownloadUrl(downloadUrl: string): string {
   if (/^https?:\/\//i.test(downloadUrl)) return downloadUrl;
@@ -96,23 +112,34 @@ export interface ApproveNodeOptions {
   override_reason?: string;
 }
 
-function headers(extra?: HeadersInit): HeadersInit {
-  return {
-    Accept: "application/json",
-    ...extra,
-  };
+function isUnsafeMethod(method: string) {
+  return UNSAFE_METHODS.has(method.toUpperCase());
+}
+
+function headers(extra?: HeadersInit, method = "GET"): HeadersInit {
+  const next = new Headers(extra);
+  if (!next.has("Accept")) next.set("Accept", "application/json");
+  if (isUnsafeMethod(method) && apiCsrfToken && !next.has("X-CSRF-Token")) {
+    next.set("X-CSRF-Token", apiCsrfToken);
+  }
+  return next;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = init?.method || "GET";
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
-    headers: headers(init?.headers),
+    credentials: "same-origin",
+    headers: headers(init?.headers, method),
     cache: "no-store",
   });
 
   const payload = (await response.json()) as ApiEnvelope<T>;
   if (!response.ok || !payload.ok) {
     const error = payload.ok ? null : payload.error;
+    if (response.status === 401 && error?.code === "AUTH_REQUIRED") {
+      authRequiredHandler?.();
+    }
     const message = error?.message || `请求失败：${response.status}`;
     const code = error?.code || "HTTP_ERROR";
     throw new ApiClientError(
@@ -126,6 +153,34 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     );
   }
   return payload.data;
+}
+
+export async function loginWithPassword(email: string, password: string): Promise<ApiAuthSession> {
+  const session = await request<ApiAuthSession>("/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  setApiCsrfToken(session.csrf_token);
+  return session;
+}
+
+export async function fetchCurrentSession(): Promise<ApiAuthSession> {
+  const session = await request<ApiAuthSession>("/auth/me");
+  setApiCsrfToken(session.csrf_token);
+  return session;
+}
+
+export async function logoutSession(): Promise<{ logged_out: boolean }> {
+  try {
+    return await request<{ logged_out: boolean }>("/auth/logout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+  } finally {
+    setApiCsrfToken(null);
+  }
 }
 
 export async function fetchProjects(): Promise<ApiProject[]> {

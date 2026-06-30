@@ -163,7 +163,7 @@ export function TopBar({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
             )}
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onClick={() => logout()}
+              onClick={() => void logout()}
               className="gap-2 text-destructive focus:text-destructive"
             >
               <LogOut className="h-4 w-4" />

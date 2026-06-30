@@ -31,16 +31,20 @@ export function LoginScreen() {
 
   const clearError = () => setError(null);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!demoMode && !username.trim()) {
-      setError("请输入用户名");
+      setError("请输入邮箱");
+      return;
+    }
+    if (!password) {
+      setError("请输入密码");
       return;
     }
     setLoading(true);
     setError(null);
-    setTimeout(() => {
-      const res = login(username.trim(), password);
+    try {
+      const res = await login(username.trim(), password);
       setLoading(false);
       if (!res.ok) {
         setError(res.msg || "登录失败");
@@ -48,7 +52,10 @@ export function LoginScreen() {
       }
       toast.success("欢迎回到山海教育工作台");
       go("dashboard");
-    }, 600);
+    } catch {
+      setLoading(false);
+      setError("登录失败");
+    }
   };
 
   const fillDemo = (role: "admin" | "teacher") => {
@@ -142,17 +149,18 @@ export function LoginScreen() {
             <form onSubmit={submit} className="space-y-5" noValidate>
               <div className="space-y-2">
                 <Label htmlFor="username" className="t-body font-medium text-slate-300">
-                  用户名
+                  {demoMode ? "用户名" : "邮箱"}
                 </Label>
                 <Input
                   id="username"
+                  type={demoMode ? "text" : "email"}
                   value={username}
                   onChange={(e) => {
                     setUsername(e.target.value);
                     clearError();
                   }}
-                  placeholder="请输入用户名"
-                  autoComplete="username"
+                  placeholder={demoMode ? "请输入用户名" : "请输入邮箱"}
+                  autoComplete={demoMode ? "username" : "email"}
                   autoFocus
                   className="h-12 rounded-lg border-white/[0.12] bg-white/[0.06] text-base text-white placeholder:text-slate-500 focus-visible:ring-amber-500/[0.30]"
                 />
@@ -182,7 +190,7 @@ export function LoginScreen() {
                       setPassword(e.target.value);
                       clearError();
                     }}
-                    placeholder={demoMode ? "请输入密码" : "真实 API 模式可留空"}
+                    placeholder="请输入密码"
                     autoComplete="current-password"
                     className="h-12 rounded-lg border-white/[0.12] bg-white/[0.06] pr-12 text-base text-white placeholder:text-slate-500 focus-visible:ring-amber-500/[0.30]"
                   />

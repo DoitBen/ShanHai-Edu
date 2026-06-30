@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import type {
   AuthUser,
+  ApiAuthSession,
   DataMode,
   LoadStatus,
   PendingRuleWarning,
@@ -71,6 +72,11 @@ import {
   updateProject,
   uploadTextbookToLibrary,
   isApiClientError,
+  fetchCurrentSession,
+  loginWithPassword,
+  logoutSession,
+  setApiCsrfToken,
+  setAuthRequiredHandler,
 } from "./api-client";
 import { VIDEO_WORKFLOW_SYNC_CHANNEL, VIDEO_WORKFLOW_TAB_ID } from "./video-workflow-cross-tab";
 import { formatVideoWorkflowError } from "./video-workflow-errors";
@@ -160,7 +166,7 @@ const INITIAL_VIDEO_PLANS_BY_PROJECT: Record<string, VideoIntroPlan[]> =
 
 /* ---------------- Auth ---------------- */
 
-function loadAuth(): AuthUser | null {
+function loadDemoAuth(): AuthUser | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(AUTH_KEY);
@@ -171,7 +177,7 @@ function loadAuth(): AuthUser | null {
   }
 }
 
-function saveAuth(user: AuthUser | null) {
+function saveDemoAuth(user: AuthUser | null) {
   if (typeof window === "undefined") return;
   if (user) {
     const encoded = encodeURIComponent(JSON.stringify(user));
@@ -181,6 +187,18 @@ function saveAuth(user: AuthUser | null) {
     window.localStorage.removeItem(AUTH_KEY);
     document.cookie = `${AUTH_KEY}=; Path=/; Max-Age=0; SameSite=Lax`;
   }
+}
+
+function mapAuthSession(session: ApiAuthSession): AuthUser {
+  return {
+    userId: session.user.user_id,
+    email: session.user.email,
+    username: session.user.email,
+    role: session.user.role,
+    displayName: session.user.display_name,
+    status: session.user.status,
+    loginAt: new Date().toISOString(),
+  };
 }
 
 function extractRuleWarnings(details: unknown): PendingRuleWarning["warnings"] {
@@ -254,8 +272,9 @@ interface AppState {
   // auth
   user: AuthUser | null;
   authReady: boolean;
-  login: (username: string, password: string) => { ok: boolean; msg?: string };
-  logout: () => void;
+  csrfToken: string | null;
+  login: (username: string, password: string) => Promise<{ ok: boolean; msg?: string }>;
+  logout: () => Promise<void>;
   switchRole: (role: Role) => void;
 
   // navigation
@@ -387,46 +406,81 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   user: null,
   authReady: false,
-  login: (username, password) => {
-    if (!isDemoMode()) {
-      saveAuth(null);
-      set({ user: null });
-      return { ok: false, msg: "真实 API 模式未接入后端登录，禁止使用本地账号进入工作台" };
-    }
+  csrfToken: null,
+  login: async (username, password) => {
     if (username === "admin" && password === DEMO_PASSWORD) {
+      if (!isDemoMode()) {
+        return { ok: false, msg: "邮箱或密码不正确" };
+      }
       const user: AuthUser = {
+        userId: "demo-admin",
+        email: "admin@demo.local",
         username,
         role: "admin",
         displayName: "管理员",
+        status: "active",
         loginAt: new Date().toISOString(),
       };
-      saveAuth(user);
-      set({ user });
+      saveDemoAuth(user);
+      set({ user, csrfToken: null, authReady: true });
       return { ok: true };
     }
     if (username === "teacher" && password === DEMO_PASSWORD) {
+      if (!isDemoMode()) {
+        return { ok: false, msg: "邮箱或密码不正确" };
+      }
       const user: AuthUser = {
+        userId: "demo-teacher",
+        email: "teacher@demo.local",
         username,
         role: "teacher",
         displayName: "演示教师",
+        status: "active",
         loginAt: new Date().toISOString(),
       };
-      saveAuth(user);
-      set({ user });
+      saveDemoAuth(user);
+      set({ user, csrfToken: null, authReady: true });
       return { ok: true };
     }
-    return { ok: false, msg: "账号或密码不正确" };
+    if (isDemoMode()) return { ok: false, msg: "账号或密码不正确" };
+    try {
+      const session = await loginWithPassword(username.trim(), password);
+      set({
+        user: mapAuthSession(session),
+        csrfToken: session.csrf_token,
+        authReady: true,
+      });
+      return { ok: true };
+    } catch (error) {
+      setApiCsrfToken(null);
+      set({ user: null, csrfToken: null, authReady: true });
+      return {
+        ok: false,
+        msg: error instanceof Error ? error.message : "登录失败",
+      };
+    }
   },
-  logout: () => {
-    saveAuth(null);
-    set({ user: null, screen: "dashboard", activeProjectId: null });
+  logout: async () => {
+    if (isDemoMode()) {
+      saveDemoAuth(null);
+      set({ user: null, csrfToken: null, screen: "dashboard", activeProjectId: null });
+      return;
+    }
+    try {
+      await logoutSession();
+    } catch {
+      // Treat logout as a local session clear even if the server session is already gone.
+    } finally {
+      setApiCsrfToken(null);
+      set({ user: null, csrfToken: null, screen: "dashboard", activeProjectId: null, authReady: true });
+    }
   },
   switchRole: (role) => {
     if (!isDemoMode()) return;
     const u = get().user;
     if (!u) return;
     const next: AuthUser = { ...u, role, displayName: role === "admin" ? "管理员" : "演示教师" };
-    saveAuth(next);
+    saveDemoAuth(next);
     set({ user: next });
   },
 
@@ -2129,8 +2183,36 @@ function apiNodeIdToStageKey(nodeId: string): string {
   return map[nodeId] || nodeId;
 }
 
-/** 客户端初始化：从 localStorage 恢复登录态 */
-export function initAuth() {
-  const user = loadAuth();
-  useAppStore.setState({ user, authReady: true });
+/** 客户端初始化：demo 模式读取本地演示身份；API 模式恢复后端 HttpOnly session。 */
+export async function initAuth() {
+  setAuthRequiredHandler(() => {
+    setApiCsrfToken(null);
+    useAppStore.setState({
+      user: null,
+      csrfToken: null,
+      authReady: true,
+      screen: "dashboard",
+      activeProjectId: null,
+    });
+  });
+
+  if (isDemoMode()) {
+    const user = loadDemoAuth();
+    setApiCsrfToken(null);
+    useAppStore.setState({ user, csrfToken: null, authReady: true });
+    return;
+  }
+
+  useAppStore.setState({ authReady: false });
+  try {
+    const session = await fetchCurrentSession();
+    useAppStore.setState({
+      user: mapAuthSession(session),
+      csrfToken: session.csrf_token,
+      authReady: true,
+    });
+  } catch {
+    setApiCsrfToken(null);
+    useAppStore.setState({ user: null, csrfToken: null, authReady: true });
+  }
 }

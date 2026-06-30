@@ -31,6 +31,11 @@ class Settings(BaseModel):
     imagegen_model: str = Field(default="gpt-image-2")
     backend_api_token: str | None = Field(default=None)
     cors_origins: str = Field(default="http://localhost:3000,http://127.0.0.1:3000")
+    auth_cookie_name: str = Field(default="shanhai_session")
+    auth_session_ttl_seconds: int = Field(default=43200)
+    auth_cookie_secure: bool = Field(default=False)
+    auth_login_rate_limit_max_failures: int = Field(default=5)
+    auth_login_rate_limit_window_seconds: int = Field(default=900)
 
     @property
     def cors_origin_list(self) -> list[str]:
@@ -103,6 +108,15 @@ class Settings(BaseModel):
                 "CORS_ORIGINS",
                 "http://localhost:3000,http://127.0.0.1:3000",
             ),
+            "auth_cookie_name": _setting_value(env, "AUTH_COOKIE_NAME", "shanhai_session"),
+            "auth_session_ttl_seconds": int(_setting_value(env, "AUTH_SESSION_TTL_SECONDS", "43200") or "43200"),
+            "auth_cookie_secure": _parse_bool(_setting_value(env, "AUTH_COOKIE_SECURE", "false")),
+            "auth_login_rate_limit_max_failures": int(
+                _setting_value(env, "AUTH_LOGIN_RATE_LIMIT_MAX_FAILURES", "5") or "5"
+            ),
+            "auth_login_rate_limit_window_seconds": int(
+                _setting_value(env, "AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS", "900") or "900"
+            ),
         }
         values.update(overrides or {})
         return cls(**values)
@@ -110,6 +124,10 @@ class Settings(BaseModel):
 
 def _setting_value(env: dict[str, str], key: str, default: str | None = None) -> str | None:
     return os.environ[key] if key in os.environ else env.get(key, default)
+
+
+def _parse_bool(value: str | None) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _load_env_files() -> dict[str, str]:

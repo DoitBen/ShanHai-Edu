@@ -9,6 +9,9 @@ from fastapi.responses import FileResponse
 
 from .models import FeedbackRequest, NodeApproveRequest, NodeEditRequest, NodeGenerateRequest, ProjectCreateRequest, ProjectUpdateRequest, dump_model
 from .providers import DeepSeekTextProvider, FakeProvider, MinimaxTextProvider, MinimaxTTSProvider, NewApiImageProvider, OctoVideoProvider, ProviderError, sanitize_provider_excerpt
+from .auth_routes import register_auth_routes
+from .auth_service import AuthService
+from .auth_store import AuthStore
 from .control_plane import ControlPlaneStore
 from .lesson_plan_library import LessonPlanLibraryStore
 from .prompt_registry import PromptRegistry, PromptStore
@@ -96,10 +99,12 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
-        allow_credentials=False,
+        allow_credentials=True,
         allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type"],
+        allow_headers=["Authorization", "Content-Type", "X-CSRF-Token"],
     )
+    auth_store = AuthStore(Path(settings.storage_root) / "auth.db")
+    auth_service = AuthService(auth_store, settings)
 
     app.state.settings = settings
     app.state.workflow = workflow
@@ -110,6 +115,8 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
     app.state.lesson_plan_library = lesson_plan_library
     app.state.prompt_store = prompt_store
     app.state.prompt_registry = prompt_registry
+    app.state.auth_store = auth_store
+    app.state.auth_service = auth_service
     protected = [Depends(require_api_token(settings))]
 
     def require_admin(authorization: str | None = Header(default=None)) -> None:
@@ -139,11 +146,14 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
             str(detail.get("code") or "HTTP_ERROR"),
             str(detail.get("message") or "请求失败"),
             retryable=False,
+            details=detail.get("details"),
         )
 
     @app.get("/health")
     def health():
         return ok({"status": "ok", "workflow_version": workflow.version})
+
+    register_auth_routes(app, auth_service, settings)
 
     @app.get("/readiness")
     def readiness():

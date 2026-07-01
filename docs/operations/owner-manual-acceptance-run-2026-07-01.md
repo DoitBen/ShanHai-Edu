@@ -222,3 +222,36 @@
 - 未记录完整 provider URL、签名 URL。
 - 未记录完整上游原始响应。
 - 未记录未脱敏截图、日志或真实用户数据。
+
+## 12. PR #39 合并后最终收口结论
+
+记录时间：`2026-07-01`
+
+| 项目 | 结论 |
+| --- | --- |
+| PR #39 | 已合并 |
+| 合并方式 | Squash Merge |
+| main 最新 SHA | `b794218157e95411583ceb019aecdf71206ff6a1` |
+| PR #38 | CLOSED，废弃，不再合并 |
+| 远端分支 `codex/media-workbench-provider-minimal` | 已删除 |
+| 本地真实 provider 验收环境 | 已停止 |
+| 生产环境 | 未启动 |
+| Phase F | 未启动 |
+
+本轮通过范围：
+
+- 生图 provider 配置读取修复。
+- 图片 provider 网络/超时错误中文化。
+- 参考篮有图时视频按 reference mode 提交。
+- PR #39 分支最小真实 smoke 已通过：生图、文生视频、参考图视频。
+
+本轮不代表：
+
+- 不代表生产上线通过。
+- 不代表 HTTPS Cookie Secure 通过。
+- 不代表生产备份、回滚、监控通过。
+- 不代表多浏览器通过。
+- 不代表压测通过。
+- 不代表 #38 中 auth/session/admin proxy/RBAC 改动通过。
+
+下一步只能是 Owner 审阅 `docs/operations/pre-prod-deployment-readiness-2026-07-01.md` 与 `docs/operations/production-deployment-runbook.md`。没有 Owner 明确批准，不得直接上线；没有 Owner 明确批准，不得调用真实 provider。

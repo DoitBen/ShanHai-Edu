@@ -5,10 +5,13 @@ Use this checklist for human acceptance after CI is green. Record the environmen
 ## Preflight
 
 - [ ] The deployed commit matches the target SHA.
+- [ ] Owner has reviewed the production deployment runbook before any production start.
+- [ ] Owner has explicitly approved any real provider smoke that may incur cost.
 - [ ] `NEXT_PUBLIC_DEMO_MODE=false` for real acceptance.
 - [ ] FastAPI `STORAGE_ROOT` points to the intended environment.
 - [ ] `AUTH_COOKIE_SECURE=true` when served over HTTPS.
 - [ ] Origin allowlist contains only the expected frontend origins.
+- [ ] Production backup paths and rollback package paths are recorded before smoke.
 - [ ] At least one active admin and one active teacher exist.
 - [ ] `verify-project-ownership` reports no missing or orphaned owner projects.
 
@@ -87,6 +90,8 @@ Use this checklist for human acceptance after CI is green. Record the environmen
 
 - [ ] `/health` returns ok.
 - [ ] `/readiness` returns expected provider and ownership status.
+- [ ] Web `/api/backend/health` returns ok through the production frontend origin.
+- [ ] Logs do not contain provider key, backend token, cookie, CSRF token, complete provider URL, signed URL, or full upstream response.
 - [ ] Storage cleanup reports policy and usage structure.
 - [ ] Storage cleanup is verified against the current authorized project only.
 - [ ] Pending URL timeout/retry behavior is recorded if provider URL delivery is delayed.

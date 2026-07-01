@@ -87,6 +87,15 @@ ShanHai-Edu/
 
 2026-06-19 — 完成 v1 规范层 + 产品决策 + 技术路线 + 历程档案全部交付，进入开发阶段。
 
+## Current Acceptance Docs
+
+- [Audit Index](docs/audits/README.md)
+- [Final Auth/RBAC/Video Workbench Audit](docs/audits/2026-07-01-final-auth-rbac-video-workbench-audit.md)
+- [Release Readiness Checklist](docs/operations/release-readiness-auth-rbac.md)
+- [Manual Acceptance Checklist](docs/operations/manual-acceptance-checklist.md)
+- [Testing Guide](docs/operations/testing-guide.md)
+- [Codex Delivery Rules](docs/operations/codex-delivery-rules.md)
+
 ## 视频闭环 MVP 后端
 
 后端 MVP 位于 `apps/api`，先打通“教材上传 → 节点生成/确认 → 视频任务记录”的本地闭环。当前默认使用 fake provider 跑通状态机和 SQLite 落盘；真实 MinMax 调用只允许放在服务端环境变量中配置。

@@ -76,7 +76,9 @@ class Settings(BaseModel):
             "octo_base_url": _setting_value(env, "OCTO_BASE_URL", "https://otuapi.com"),
             "octo_video_provider": _setting_value(env, "OCTO_VIDEO_PROVIDER", "octo"),
             "imagegen_api_key": (
-                _setting_value(env, "IMAGEGEN_MYSELF_PRIMARY_API_KEY")
+                _setting_value(env, "IMAGEGEN_FREE_PRIMARY_API_KEY")
+                or _setting_value(env, "IMAGEGEN_FREE_API_KEY")
+                or _setting_value(env, "IMAGEGEN_MYSELF_PRIMARY_API_KEY")
                 or _setting_value(env, "IMAGEGEN_MYSELF_API_KEY")
                 or _setting_value(env, "NEWAPI_PRIMARY_API_KEY")
                 or _setting_value(env, "IMAGEGEN_API_KEY")
@@ -88,7 +90,9 @@ class Settings(BaseModel):
                 or _setting_value(env, "OPENAI_API_KEY")
             ),
             "imagegen_base_url": (
-                _setting_value(env, "IMAGEGEN_MYSELF_PRIMARY_BASE_URL")
+                _setting_value(env, "IMAGEGEN_FREE_PRIMARY_BASE_URL")
+                or _setting_value(env, "IMAGEGEN_FREE_BASE_URL")
+                or _setting_value(env, "IMAGEGEN_MYSELF_PRIMARY_BASE_URL")
                 or _setting_value(env, "IMAGEGEN_MYSELF_BASE_URL")
                 or _setting_value(env, "NEWAPI_PRIMARY_BASE_URL")
                 or _setting_value(env, "IMAGEGEN_BASE_URL")
@@ -98,7 +102,8 @@ class Settings(BaseModel):
                 or "https://img.baofu.eu.cc/v1"
             ),
             "imagegen_model": (
-                _setting_value(env, "IMAGEGEN_MYSELF_MODEL")
+                _setting_value(env, "IMAGEGEN_FREE_MODEL")
+                or _setting_value(env, "IMAGEGEN_MYSELF_MODEL")
                 or _setting_value(env, "IMAGEGEN_MODEL")
                 or _setting_value(env, "NEWAPI_IMAGE_MODEL")
                 or "gpt-image-2"

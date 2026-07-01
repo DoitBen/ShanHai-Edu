@@ -58,3 +58,9 @@ assert(screen.includes("omni_flash-10s"), "video workbench default model must be
 assert(screen.includes("1280x720"), "video workbench default size must be 1280x720");
 assert(screen.includes("最多 7 张"), "video workbench must show Omni reference limit");
 assert(screen.includes("加入视频参考篮"), "image results must support sending selected images to video basket");
+assert(
+  screen.includes('const effectiveVideoMode: VideoGenerationMode = basketCount > 0 ? "reference" : videoMode') &&
+    screen.includes("mode: effectiveVideoMode") &&
+    screen.includes("reference_asset_ids: referenceAssetIds"),
+  "video workbench must submit reference mode with selected basket assets",
+);

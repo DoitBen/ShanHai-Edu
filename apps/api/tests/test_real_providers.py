@@ -141,6 +141,30 @@ def test_settings_uses_imagegen_skill_primary_credentials_first(monkeypatch, tmp
     assert settings.imagegen_api_key == "primary-key"
 
 
+def test_settings_prefers_imagegen_free_credentials(monkeypatch, tmp_path: Path):
+    monkeypatch.chdir(tmp_path)
+    skill_env = tmp_path / "skills" / "imagegen-myself" / ".env.local"
+    skill_env.parent.mkdir(parents=True)
+    skill_env.write_text(
+        "\n".join(
+            [
+                "IMAGEGEN_MYSELF_PRIMARY_BASE_URL=https://legacy-primary.example",
+                "IMAGEGEN_MYSELF_PRIMARY_API_KEY=legacy-primary-key",
+                "IMAGEGEN_FREE_BASE_URL=https://free.example",
+                "IMAGEGEN_FREE_API_KEY=free-key",
+                "IMAGEGEN_FREE_MODEL=free-image-model",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    settings = Settings.from_overrides({})
+
+    assert settings.imagegen_base_url == "https://free.example"
+    assert settings.imagegen_api_key == "free-key"
+    assert settings.imagegen_model == "free-image-model"
+
+
 def test_settings_video_model_prefers_video_model_then_legacy_defaults(monkeypatch, tmp_path: Path):
     monkeypatch.chdir(tmp_path)
     env_file = tmp_path / ".env"
@@ -402,7 +426,7 @@ def test_newapi_image_provider_wraps_remote_disconnect(monkeypatch):
 
     assert exc_info.value.code == "IMAGE_REQUEST_FAILED"
     assert exc_info.value.retryable is True
-    assert "closed connection" in str(exc_info.value)
+    assert "图片服务请求超时或连接中断" in str(exc_info.value)
 
 
 @pytest.mark.parametrize(

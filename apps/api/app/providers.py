@@ -917,8 +917,12 @@ def _request_json(request: urllib.request.Request, error_code: str) -> dict[str,
             response_excerpt=body,
         ) from exc
     except urllib.error.URLError as exc:
+        if error_code == "IMAGE_REQUEST_FAILED":
+            raise ProviderError("IMAGE_REQUEST_FAILED", "图片服务连接失败，请检查图片 provider 地址、网络代理和 API key 配置", retryable=True) from exc
         raise ProviderError(error_code, str(exc.reason), retryable=True) from exc
     except (http.client.RemoteDisconnected, TimeoutError, socket.timeout) as exc:
+        if error_code == "IMAGE_REQUEST_FAILED":
+            raise ProviderError("IMAGE_REQUEST_FAILED", "图片服务请求超时或连接中断，请稍后重试并检查 provider 网络配置", retryable=True) from exc
         raise ProviderError(error_code, str(exc), retryable=True) from exc
 
 

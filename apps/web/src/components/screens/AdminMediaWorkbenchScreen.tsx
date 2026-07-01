@@ -97,12 +97,13 @@ export function AdminMediaWorkbenchScreen() {
   const videoProviderUnavailable = workbenchLoaded && !providerReady.video;
   const selectedCount = selectedImageIds.length;
   const basketCount = basket?.assets.length || 0;
+  const effectiveVideoMode: VideoGenerationMode = basketCount > 0 ? "reference" : videoMode;
   const videoSubmitDisabled =
     videoBusy ||
     !workbenchLoaded ||
     videoProviderUnavailable ||
     !videoPrompt.trim() ||
-    (videoMode === "reference" && basketCount < 1) ||
+    (effectiveVideoMode === "reference" && basketCount < 1) ||
     basketCount > maxReferenceImages;
 
   async function submitImageRun() {
@@ -155,17 +156,18 @@ export function AdminMediaWorkbenchScreen() {
 
   async function submitVideoRun() {
     if (videoSubmitDisabled) {
-      toast.warning(videoMode === "reference" ? "请填写提示词并确认参考图数量" : "请填写视频提示词");
+      toast.warning(effectiveVideoMode === "reference" ? "请填写提示词并确认参考图数量" : "请填写视频提示词");
       return;
     }
+    const referenceAssetIds = effectiveVideoMode === "reference" ? (basket?.assets || []).map((asset) => asset.asset_id) : [];
     setVideoBusy(true);
     const result = await createVideoWorkbenchRun({
       prompt: videoPrompt.trim(),
       model: videoModel,
-      mode: videoMode,
+      mode: effectiveVideoMode,
       size: videoSize,
       duration_sec: DEFAULT_VIDEO_DURATION,
-      reference_asset_ids: videoMode === "reference" ? (basket?.assets || []).map((asset) => asset.asset_id) : [],
+      reference_asset_ids: referenceAssetIds,
     });
     setVideoBusy(false);
     if (result.ok) toast.success("视频任务已创建");
@@ -331,7 +333,7 @@ export function AdminMediaWorkbenchScreen() {
                 <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div className="flex flex-wrap gap-2">
                     <PillSelect icon={<span className="text-sm font-semibold">O</span>} value={videoModel} onValueChange={setVideoModel} values={[DEFAULT_VIDEO_MODEL]} />
-                    <PillSelect icon={<Film className="h-4 w-4" />} value={videoMode} onValueChange={(value) => setVideoMode(value as VideoGenerationMode)} values={["text", "reference"]} />
+                    <PillSelect icon={<Film className="h-4 w-4" />} value={effectiveVideoMode} onValueChange={(value) => setVideoMode(value as VideoGenerationMode)} values={["text", "reference"]} />
                     <PillSelect icon={<Monitor className="h-4 w-4" />} value={videoSize} onValueChange={setVideoSize} values={["1280x720"]} />
                     <ReadonlyPill icon={<Smartphone className="h-4 w-4" />} value={`${DEFAULT_VIDEO_DURATION} 秒`} />
                   </div>

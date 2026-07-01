@@ -198,3 +198,27 @@
 备注：
 
 - TBD
+
+## 11. PR #39 最小真实 provider smoke 脱敏归档
+
+记录时间：`2026-07-01 21:04:17 +08:00`
+
+| 项目 | 结果 |
+| --- | --- |
+| 分支 | `codex/media-workbench-provider-minimal` |
+| Commit SHA | `fca7cb05cb0122f2b0214e2277373e09584e84c2` |
+| 验收环境 | 本地 API-mode，非生产环境 |
+| 后端健康检查 | PASS，`/health` 返回 200 |
+| Next 代理健康检查 | PASS，`/api/backend/health` 返回 200 |
+| Provider 类型 | real |
+| 生图 smoke | PASS，Owner 确认 completed，可预览/下载 |
+| 文生视频 smoke | PASS，Owner 确认 completed，可播放/下载 |
+| 参考图视频 smoke | PASS，Owner 确认参考篮有图时按 reference mode 提交，completed，可播放/下载 |
+| 是否产生真实 provider 成本 | 是，真实 provider smoke 调用可能产生费用 |
+
+脱敏约束：
+
+- 未记录 provider key、cookie、session、CSRF token。
+- 未记录完整 provider URL、签名 URL。
+- 未记录完整上游原始响应。
+- 未记录未脱敏截图、日志或真实用户数据。

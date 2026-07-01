@@ -2,10 +2,12 @@ import base64
 import sqlite3
 import threading
 import time
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from app.main import create_app
 from conftest import create_auth_user, enable_project_creation_fallback, login_as
@@ -56,6 +58,12 @@ def unwrap_error(response, expected_status: int, expected_code: str):
     assert payload["ok"] is False, payload
     assert payload["error"]["code"] == expected_code
     return payload["error"]
+
+
+def image_bytes(fmt: str = "PNG", size: tuple[int, int] = (64, 48)) -> bytes:
+    stream = BytesIO()
+    Image.new("RGB", size, (24, 110, 180)).save(stream, format=fmt)
+    return stream.getvalue()
 
 
 def test_admin_media_workbench_capabilities_defaults_and_readiness(tmp_path: Path):
@@ -272,7 +280,7 @@ def test_admin_media_workbench_imports_image_assets_to_video_basket(tmp_path: Pa
 def test_admin_media_workbench_rejects_reference_upload_over_omni_limit(tmp_path: Path):
     client = make_client(tmp_path)
     files = [
-        ("files", (f"ref_{index}.png", b"\x89PNG\r\n\x1a\nfake", "image/png"))
+        ("files", (f"ref_{index}.png", image_bytes("PNG"), "image/png"))
         for index in range(8)
     ]
 
@@ -283,6 +291,57 @@ def test_admin_media_workbench_rejects_reference_upload_over_omni_limit(tmp_path
     )
 
     assert "最多 7 张" in error["message"]
+
+
+def test_admin_media_workbench_accepts_valid_png_and_jpeg_references(tmp_path: Path):
+    client = make_client(tmp_path)
+
+    basket = unwrap_ok(
+        client.post(
+            "/admin/media-workbench/videos/references",
+            headers=auth_headers(),
+            files=[
+                ("files", ("ref.png", image_bytes("PNG"), "image/png")),
+                ("files", ("ref.jpg", image_bytes("JPEG"), "image/jpeg")),
+            ],
+        )
+    )
+
+    assert [item["mime_type"] for item in basket["assets"]] == ["image/png", "image/jpeg"]
+
+
+def test_admin_media_workbench_rejects_spoofed_png_reference_bytes(tmp_path: Path):
+    client = make_client(tmp_path)
+
+    error = unwrap_error(
+        client.post(
+            "/admin/media-workbench/videos/references",
+            headers=auth_headers(),
+            files=[("files", ("spoof.png", b"not-a-real-image", "image/png"))],
+        ),
+        400,
+        "VIDEO_REFERENCE_INVALID",
+    )
+
+    assert "有效图片" in error["message"]
+    assert unwrap_ok(client.get("/admin/media-workbench", headers=auth_headers()))["reference_basket"]["assets"] == []
+
+
+def test_admin_media_workbench_rejects_invalid_png_extension_without_basket_side_effect(tmp_path: Path):
+    client = make_client(tmp_path)
+
+    error = unwrap_error(
+        client.post(
+            "/admin/media-workbench/videos/references",
+            headers=auth_headers(),
+            files=[("files", ("bad.png", b"plain text bytes", "application/octet-stream"))],
+        ),
+        400,
+        "VIDEO_REFERENCE_INVALID",
+    )
+
+    assert "有效图片" in error["message"]
+    assert unwrap_ok(client.get("/admin/media-workbench", headers=auth_headers()))["reference_basket"]["assets"] == []
 
 
 def test_admin_media_workbench_video_text_run_does_not_send_reference_fields(tmp_path: Path):
@@ -349,7 +408,7 @@ def test_admin_media_workbench_video_reference_run_uses_local_asset_paths(tmp_pa
         client.post(
             "/admin/media-workbench/videos/references",
             headers=auth_headers(),
-            files=[("files", ("ref.png", b"\x89PNG\r\n\x1a\nfake", "image/png"))],
+            files=[("files", ("ref.png", image_bytes("PNG"), "image/png"))],
         )
     )
 

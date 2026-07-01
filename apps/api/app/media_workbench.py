@@ -6,11 +6,13 @@ import urllib.request
 import urllib.error
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from io import BytesIO
 import sqlite3
 from pathlib import Path
 from typing import Any
 
 from fastapi import UploadFile
+from PIL import Image, UnidentifiedImageError
 
 from .providers import ProviderError
 from .store import ProjectStore, now_iso
@@ -24,6 +26,11 @@ DEFAULT_IMAGE_QUALITY = "high"
 DEFAULT_VIDEO_MODEL = "omni_flash-10s"
 DEFAULT_VIDEO_SIZE = "1280x720"
 DEFAULT_VIDEO_DURATION_SEC = 10
+ALLOWED_REFERENCE_IMAGE_FORMATS = {
+    "JPEG": "image/jpeg",
+    "PNG": "image/png",
+    "WEBP": "image/webp",
+}
 
 
 class MediaWorkbenchError(ValueError):
@@ -174,6 +181,7 @@ class MediaWorkbenchService:
             content = file.file.read()
             if not content:
                 raise MediaWorkbenchError("VIDEO_REFERENCE_INVALID", "参考图文件为空")
+            mime_type = self._validate_reference_image(content)
             asset_id = f"mref_{uuid.uuid4().hex[:12]}"
             safe_name = self._safe_filename(file.filename or "reference.png")
             rel_path = f"media_workbench/assets/references/{asset_id}_{safe_name}"
@@ -186,7 +194,7 @@ class MediaWorkbenchService:
                 "source": "upload",
                 "filename": file.filename or safe_name,
                 "path": rel_path.replace("\\", "/"),
-                "mime_type": content_type or "image/png",
+                "mime_type": mime_type,
                 "created_at": now_iso(),
             }
             assets.append(item)
@@ -449,6 +457,25 @@ class MediaWorkbenchService:
                 raise MediaWorkbenchError("MEDIA_ASSET_NOT_FOUND", "素材不存在")
             paths.append(self._storage_root() / str(asset["path"]))
         return paths
+
+    def _validate_reference_image(self, content: bytes) -> str:
+        try:
+            with Image.open(BytesIO(content)) as image:
+                image.verify()
+            with Image.open(BytesIO(content)) as image:
+                image_format = str(image.format or "").upper()
+                width, height = image.size
+        except Image.DecompressionBombError as exc:
+            raise MediaWorkbenchError("VIDEO_REFERENCE_INVALID", "参考图像素过大，请压缩后重新上传") from exc
+        except Image.DecompressionBombWarning as exc:
+            raise MediaWorkbenchError("VIDEO_REFERENCE_INVALID", "参考图像素过大，请压缩后重新上传") from exc
+        except (UnidentifiedImageError, OSError, ValueError) as exc:
+            raise MediaWorkbenchError("VIDEO_REFERENCE_INVALID", "文件不是有效图片，请上传 PNG、JPG 或 WebP 图片") from exc
+        if image_format not in ALLOWED_REFERENCE_IMAGE_FORMATS:
+            raise MediaWorkbenchError("VIDEO_REFERENCE_INVALID", "仅支持 PNG、JPG、WebP 图片")
+        if width <= 0 or height <= 0:
+            raise MediaWorkbenchError("VIDEO_REFERENCE_INVALID", "参考图宽高无效")
+        return ALLOWED_REFERENCE_IMAGE_FORMATS[image_format]
 
     def _tasks(self, task_type: str) -> list[dict[str, Any]]:
         return [task for task in self.store.tasks(ADMIN_MEDIA_PROJECT_ID) if task["task_type"] == task_type]

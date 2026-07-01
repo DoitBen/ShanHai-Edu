@@ -22,8 +22,10 @@ git rev-parse HEAD
 期望 SHA：由 Owner 在部署窗口确认。当前准备基线为：
 
 ```text
-b794218157e95411583ceb019aecdf71206ff6a1
+cefb1d6f5d59f81727bebb46196130ec2898690e
 ```
+
+生产 dry-run 参数、隔离端口和禁止项见 `docs/operations/production-dry-run-plan-2026-07-01.md`。dry-run 不是正式上线，不切公网流量，不调用真实 provider。
 
 ## 3. 配置核验
 

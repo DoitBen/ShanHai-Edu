@@ -8,12 +8,13 @@
 | --- | --- |
 | PR #39 | 已合并 |
 | 合并方式 | Squash Merge |
-| main 最新 SHA | `b794218157e95411583ceb019aecdf71206ff6a1` |
+| main 最新 SHA | `cefb1d6f5d59f81727bebb46196130ec2898690e` |
 | PR #39 原分支 | `codex/media-workbench-provider-minimal` 已删除 |
 | PR #38 | CLOSED，废弃，不再作为合并对象 |
 | 本地真实 provider 验收环境 | 已停止 |
 | Phase F | 未启动 |
 | 生产环境 | 未启动 |
+| PR #40 | 已合并，生产上线前 runbook 已归档 |
 
 ## 2. 本轮已通过范围
 
@@ -117,4 +118,4 @@
 
 ## 7. 下一步
 
-下一步只能是 Owner 审阅 runbook 与本清单，确认生产部署准备口径。没有 Owner 明确批准，不得启动生产环境；没有 Owner 明确批准，不得调用真实 provider。
+下一步只能是 Owner 审阅 production dry-run 方案并确认 dry-run 参数。没有 Owner 明确批准，不得连接服务器；没有 Owner 明确批准，不得启动隔离服务；没有 Owner 明确批准，不得调用真实 provider。

@@ -254,4 +254,19 @@
 - 不代表压测通过。
 - 不代表 #38 中 auth/session/admin proxy/RBAC 改动通过。
 
-下一步只能是 Owner 审阅 `docs/operations/pre-prod-deployment-readiness-2026-07-01.md` 与 `docs/operations/production-deployment-runbook.md`。没有 Owner 明确批准，不得直接上线；没有 Owner 明确批准，不得调用真实 provider。
+下一步只能是 Owner 审阅 `docs/operations/production-dry-run-plan-2026-07-01.md` 并确认 dry-run 参数。没有 Owner 明确批准，不得连接服务器；没有 Owner 明确批准，不得启动隔离 API/Web；没有 Owner 明确批准，不得调用真实 provider。
+
+## 13. PR #40 合并后 dry-run 准备入口
+
+记录时间：`2026-07-01`
+
+| 项目 | 结论 |
+| --- | --- |
+| PR #40 | 已合并 |
+| main 最新 SHA | `cefb1d6f5d59f81727bebb46196130ec2898690e` |
+| production dry-run | 仅进入方案准备，不是正式上线 |
+| 生产环境 | 未启动 |
+| provider | 未调用 |
+| Phase F | 未启动 |
+
+下一步只允许 Owner 审阅 production dry-run 方案，并确认服务器访问、备份路径、回滚路径、隔离端口、是否允许启动隔离 API/Web 服务。默认不允许真实 provider smoke。

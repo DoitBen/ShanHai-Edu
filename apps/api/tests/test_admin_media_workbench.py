@@ -691,7 +691,7 @@ def test_admin_media_workbench_provider_errors_are_sanitized(tmp_path: Path):
                 "IMAGE_REQUEST_FAILED",
                 "HTTP 500",
                 retryable=True,
-                response_excerpt='{"Authorization":"Bearer secret-token","message":"bad"}',
+                response_excerpt='{"private_header":"hidden-sentinel","message":"bad"}',
             )
 
     client = make_client(tmp_path, {"image_provider_mode": "real"})
@@ -709,4 +709,4 @@ def test_admin_media_workbench_provider_errors_are_sanitized(tmp_path: Path):
     assert "图片生成请求失败" in failed["error_message"]
     assert "HTTP 500" in failed["error_message"]
     assert failed["result"]["error_code"] == "IMAGE_REQUEST_FAILED"
-    assert "secret-token" not in str(failed)
+    assert "hidden-sentinel" not in str(failed)

@@ -162,7 +162,7 @@ export function LoginScreen() {
                   placeholder={demoMode ? "请输入用户名" : "请输入邮箱"}
                   autoComplete={demoMode ? "username" : "email"}
                   autoFocus
-                  className="h-12 rounded-lg border-white/[0.12] bg-white/[0.06] text-base text-white placeholder:text-slate-500 focus-visible:ring-amber-500/[0.30]"
+                  className="input-pro h-12 rounded-lg border-white/[0.12] bg-white/[0.06] text-base text-white placeholder:text-slate-500 focus-visible:bg-white/[0.08]!"
                 />
               </div>
 
@@ -192,7 +192,7 @@ export function LoginScreen() {
                     }}
                     placeholder="请输入密码"
                     autoComplete="current-password"
-                    className="h-12 rounded-lg border-white/[0.12] bg-white/[0.06] pr-12 text-base text-white placeholder:text-slate-500 focus-visible:ring-amber-500/[0.30]"
+                    className="input-pro h-12 rounded-lg border-white/[0.12] bg-white/[0.06] pr-12 text-base text-white placeholder:text-slate-500 focus-visible:bg-white/[0.08]!"
                   />
                   <button
                     type="button"
@@ -215,7 +215,7 @@ export function LoginScreen() {
                 type="submit"
                 size="lg"
                 disabled={loading}
-                className="h-12 w-full gap-2 rounded-lg border-0 bg-[linear-gradient(90deg,#d97706,#f59e0b_52%,#eab308)] text-base font-semibold text-white shadow-[0_14px_32px_-18px_rgba(245,158,11,.75)] transition-transform hover:scale-[1.01] hover:bg-[linear-gradient(90deg,#d97706,#f59e0b_52%,#eab308)] active:scale-[0.99]"
+                className="btn-cta-primary h-12 w-full gap-2 rounded-lg border-0 bg-[linear-gradient(90deg,#d97706,#f59e0b_52%,#eab308)]! text-white! text-base font-semibold shadow-[0_14px_32px_-18px_rgba(245,158,11,.75)]!"
               >
                 {loading ? (
                   <>
@@ -232,7 +232,7 @@ export function LoginScreen() {
             </form>
 
             {demoMode && (
-              <div className="mt-8 rounded-lg border border-white/[0.10] bg-white/[0.045] p-4 backdrop-blur-sm">
+              <div className="mt-8 rounded-lg border border-white/[0.10] bg-white/[0.045] p-4 backdrop-blur-sm shadow-apple-sm">
                 <div className="mb-3 t-caption font-medium text-slate-400">
                   演示账号
                 </div>
@@ -287,7 +287,7 @@ function DemoAccountButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex min-h-12 w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition-colors focus-ring",
+        "flex min-h-12 w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left hover-lift shadow-apple-sm focus-ring",
         active
           ? "border-amber-400/45 bg-amber-400/10"
           : "border-white/[0.08] bg-white/[0.035] hover:bg-white/[0.06]"

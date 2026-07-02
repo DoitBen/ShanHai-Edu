@@ -29,7 +29,7 @@ export function ThemeToggle({ className }: { className?: string }) {
           type="button"
           aria-label="切换主题"
           className={cn(
-            "inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-ring",
+            "inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-all duration-300 ease-apple hover:-translate-y-0.5 hover:bg-muted hover:text-foreground focus-ring",
             className
           )}
         >

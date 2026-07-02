@@ -1,6 +1,5 @@
 "use client";
 
-import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/lib/store";
 import type { ProjectMeta } from "@/lib/types";
@@ -28,14 +27,10 @@ export function ProjectCard({
   const stageTitle = project.currentStageTitle || stage?.title || project.currentStage;
 
   return (
-    <motion.div
-      whileHover={{ y: -3 }}
-      transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-      className="h-full"
-    >
+    <div className="h-full">
     <Card
       className={cn(
-        "group relative h-full overflow-hidden border-border bg-card p-5 transition-shadow hover:shadow-lift focus-within:shadow-lift",
+        "group card-pro card-pro-radius relative h-full overflow-hidden border-border bg-card p-5 shadow-apple-sm",
         variant === "compact" && "p-4"
       )}
     >
@@ -101,7 +96,7 @@ export function ProjectCard({
         </Button>
       </div>
     </Card>
-    </motion.div>
+    </div>
   );
 }
 
@@ -113,7 +108,7 @@ export function ProjectCardMinimal({ project }: { project: ProjectMeta }) {
     <button
       type="button"
       onClick={() => openProject(project.id)}
-      className="flex w-full items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left transition-colors hover:bg-muted/60 focus-ring"
+      className="flex w-full items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left shadow-apple-sm transition-all duration-300 ease-apple hover:bg-muted/60 hover:-translate-y-0.5 focus-ring"
     >
       <BookOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1">

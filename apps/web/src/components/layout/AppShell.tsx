@@ -134,7 +134,10 @@ export function AppShell() {
   if (!authReady) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="t-body text-muted-foreground">正在加载工作台…</div>
+        <div className="t-body flex items-center gap-2 text-muted-foreground">
+          <span className="loading-dot" />
+          正在加载工作台…
+        </div>
       </div>
     );
   }
@@ -203,10 +206,10 @@ export function AppShell() {
 function ScreenLoading({ label }: { label: string }) {
   return (
     <div className="mx-auto w-full max-w-[1440px] px-4 py-6 lg:px-8 lg:py-8">
-      <div className="rounded-lg border border-border bg-card p-6 shadow-soft">
+      <div className="rounded-lg border border-border bg-card p-6 shadow-apple-sm transition-all duration-300 ease-apple">
         <div className="t-body text-muted-foreground">{label}</div>
         <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-muted">
-          <div className="h-full w-1/3 rounded-full bg-primary/50" />
+          <div className="h-full w-1/3 rounded-full bg-gradient-to-r from-primary to-bronze anim-pulse-soft" />
         </div>
       </div>
     </div>

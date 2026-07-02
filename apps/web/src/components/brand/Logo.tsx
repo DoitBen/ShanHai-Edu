@@ -19,7 +19,7 @@ export function LogoMark({ size = 40, className, withBg = true }: LogoMarkProps)
       viewBox="0 0 64 64"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      className={cn("shrink-0", className)}
+      className={cn("shrink-0", withBg && "shadow-apple-sm rounded-[22%]", className)}
       role="img"
       aria-label="山海教育"
     >

@@ -15,15 +15,13 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        "flex flex-col items-center justify-center gap-3 py-12 text-center",
+        "empty-state-pro",
         className
       )}
     >
-      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-        {icon || <Inbox className="h-5 w-5" />}
-      </div>
-      <div className="t-module text-foreground/80">{title}</div>
-      {desc && <p className="t-body max-w-sm text-muted-foreground">{desc}</p>}
+      <div className="icon-wrap">{icon || <Inbox className="h-5 w-5" />}</div>
+      <div className="title">{title}</div>
+      {desc && <p className="desc">{desc}</p>}
     </div>
   );
 }
@@ -60,15 +58,15 @@ export function ErrorState({
   return (
     <div
       className={cn(
-        "flex flex-col items-center justify-center gap-3 py-10 text-center",
+        "empty-state-pro",
         className
       )}
     >
-      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+      <div className="icon-wrap bg-destructive/10! text-destructive!">
         <AlertTriangle className="h-5 w-5" />
       </div>
-      <div className="t-module text-foreground/80">{title}</div>
-      {desc && <p className="t-body max-w-sm text-muted-foreground">{desc}</p>}
+      <div className="title">{title}</div>
+      {desc && <p className="desc">{desc}</p>}
     </div>
   );
 }

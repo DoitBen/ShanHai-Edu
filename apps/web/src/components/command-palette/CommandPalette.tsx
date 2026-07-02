@@ -223,7 +223,7 @@ export function CommandPalette() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="overflow-hidden p-0 shadow-lift max-w-[640px] gap-0" aria-describedby={undefined}>
+      <DialogContent className="overflow-hidden p-0 shadow-apple max-w-[640px] gap-0" aria-describedby={undefined}>
         <DialogTitle className="sr-only">命令面板</DialogTitle>
         <DialogDescription className="sr-only">
           输入关键词搜索导航、项目、外观与账户操作。
@@ -233,7 +233,7 @@ export function CommandPalette() {
             <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
             <CommandInput
               placeholder="搜索项目、页面或操作…"
-              className="h-12 border-0 focus:ring-0 placeholder:text-muted-foreground/70"
+              className="input-pro h-12 border-0 focus:ring-0 placeholder:text-muted-foreground/70"
             />
             <kbd className="hidden sm:inline-flex h-5 select-none items-center gap-1 rounded border border-border bg-muted px-1.5 font-mono text-[10px] text-muted-foreground">
               ESC
@@ -241,11 +241,10 @@ export function CommandPalette() {
           </div>
           <CommandList className="max-h-[420px] scroll-fine">
             <CommandEmpty>
-              <div className="py-8 text-center">
-                <div className="t-body text-muted-foreground">未找到匹配项</div>
-                <div className="t-caption mt-1 text-muted-foreground/70">
-                  试试输入“项目”“首页”“深色”
-                </div>
+              <div className="empty-state-pro py-8">
+                <div className="icon-wrap"><Search className="h-5 w-5" /></div>
+                <div className="title">未找到匹配项</div>
+                <div className="desc">试试输入“项目”“首页”“深色”</div>
               </div>
             </CommandEmpty>
             <CommandGroup heading="导航">
@@ -341,7 +340,7 @@ function CommandRow({
       value={`${item.label} ${item.desc || ""} ${item.keywords || ""}`}
       onSelect={onSelect}
       className={cn(
-        "group flex cursor-pointer items-center gap-3 px-3 py-2.5 aria-selected:bg-accent aria-selected:text-accent-foreground"
+        "nav-item-pro group flex cursor-pointer items-center gap-3 px-3 py-2.5 aria-selected:bg-accent aria-selected:text-accent-foreground"
       )}
     >
       <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground group-aria-selected:bg-primary/10 group-aria-selected:text-primary">

@@ -52,7 +52,7 @@ export function TopBar({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
       <button
         type="button"
         onClick={onOpenMobileNav}
-        className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted lg:hidden focus-ring"
+        className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-all duration-300 ease-apple hover:-translate-y-0.5 hover:bg-muted lg:hidden focus-ring"
         aria-label="打开导航"
       >
         <Menu className="h-5 w-5" />
@@ -86,7 +86,7 @@ export function TopBar({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
         <button
           type="button"
           onClick={() => useAppStore.getState().setCommandOpen(true)}
-          className="hidden h-9 items-center gap-2 rounded-md border border-border bg-card pl-2.5 pr-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-ring md:inline-flex"
+          className="input-pro hidden h-9 items-center gap-2 border border-border bg-card pl-2.5 pr-1.5 text-muted-foreground transition-all duration-300 ease-apple hover:bg-muted hover:text-foreground focus-ring md:inline-flex"
           aria-label="打开命令面板"
         >
           <Search className="h-[18px] w-[18px]" />
@@ -98,7 +98,7 @@ export function TopBar({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
         <Button
           variant="ghost"
           size="sm"
-          className="h-9 w-9 p-0 text-muted-foreground md:hidden"
+          className="h-9 w-9 p-0 text-muted-foreground transition-all duration-300 ease-apple hover:-translate-y-0.5 md:hidden"
           aria-label="搜索"
           onClick={() => useAppStore.getState().setCommandOpen(true)}
         >
@@ -108,7 +108,7 @@ export function TopBar({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
         <Button
           variant="ghost"
           size="sm"
-          className="relative h-9 w-9 p-0 text-muted-foreground"
+          className="relative h-9 w-9 p-0 text-muted-foreground transition-all duration-300 ease-apple hover:-translate-y-0.5"
           aria-label="通知"
         >
           <Bell className="h-[18px] w-[18px]" />
@@ -119,7 +119,7 @@ export function TopBar({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="ml-1 flex h-9 items-center gap-2 rounded-full border border-border bg-card pl-1 pr-3 text-left transition-colors hover:bg-muted focus-ring"
+              className="ml-1 flex h-9 items-center gap-2 rounded-full border border-border bg-card pl-1 pr-3 text-left transition-all duration-300 ease-apple hover:bg-muted hover:-translate-y-0.5 focus-ring"
             >
               <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-[0.7rem] font-semibold text-primary-foreground">
                 {user?.displayName?.slice(0, 1) || "U"}

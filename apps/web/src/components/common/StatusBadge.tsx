@@ -40,7 +40,7 @@ export function StatusBadge({
     <Badge
       variant="outline"
       className={cn(
-        "rounded-full px-2.5 py-0.5 text-[0.7rem] font-medium tracking-wide",
+        "rounded-full px-2.5 py-0.5 text-[0.7rem] font-medium tracking-wide transition-all duration-300 ease-apple",
         TONE_CLASS[tone],
         className
       )}
@@ -89,7 +89,7 @@ export function ProjectStatusBadge({
     <Badge
       variant="outline"
       className={cn(
-        "rounded-full px-2.5 py-0.5 text-[0.7rem] font-medium tracking-wide",
+        "rounded-full px-2.5 py-0.5 text-[0.7rem] font-medium tracking-wide transition-all duration-300 ease-apple",
         TONE_CLASS[tone],
         className
       )}
@@ -119,7 +119,7 @@ export function ToneBadge({
     <Badge
       variant="outline"
       className={cn(
-        "rounded-full px-2.5 py-0.5 text-[0.7rem] font-medium tracking-wide",
+        "rounded-full px-2.5 py-0.5 text-[0.7rem] font-medium tracking-wide transition-all duration-300 ease-apple",
         TONE_CLASS[tone],
         className
       )}

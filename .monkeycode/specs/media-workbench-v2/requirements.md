@@ -54,6 +54,25 @@
 - 图片、视频、素材三个 Tab 逻辑没有拆分
 - 后续加批量、并发、缩略图等功能会继续膨胀
 
+### 10. 视觉一致性问题 (DS 组件迁移不完整)
+
+当前分支已引入统一设计系统组件 (`ds.tsx`: DSButton / DSCard / DSSectionTitle / DSBadge / DSPill / DSEmptyState / DSProgress / DSStatusDot)，但 AdminMediaWorkbenchScreen 中存在大量**新旧组件混用**，导致视觉风格不统一：
+
+| 位置 | 问题 | 应改为 |
+|------|------|--------|
+| StatusTile (第 490 行) | 使用旧 `Card` + `stat-card` / `card-pro-radius` / `shadow-apple-sm` 类 | DSCard |
+| RunList 进度条 (第 646 行) | 使用旧 CSS 类 `progress-pro` / `progress-pro-bar` | DSProgress |
+| RunList 空状态 (第 609 行) | 手动 div 拼装空状态 UI | DSEmptyState |
+| RunList 状态圆点 (第 631 行) | 手动 CSS `anim-pulse-soft` | DSStatusDot |
+| AssetGrid 空状态 (第 549 行) | 手动 div + `empty-state-pro` 类 | DSEmptyState |
+| AssetList 空状态 (第 677 行) | 同上 | DSEmptyState |
+| HistoryList 空状态 (第 711 行) | 同上 | DSEmptyState |
+| 下载链接按钮 (第 76-80 行) | 手动内联 `<a>` 样式字符串 `DS_ANCHOR_PRIMARY_SM` / `DS_ANCHOR_SECONDARY_SM` | DSButton 包 `<a>` (asChild) |
+| 视频 CTA 按钮 (第 447 行) | 使用旧 `btn-cta-primary` 类 | DSButton variant="primary" size="lg" |
+| 素材/历史 Tab 卡片 (第 465/469 行) | 使用旧 `Card` + `card-pro` / `card-pro-radius` / `shadow-apple-sm` | DSCard |
+| 全局 CSS 残留 | `card-pro`、`btn-cta-*`、`stat-card`、`empty-state-pro`、`alert-warning-pro`、`alert-error-pro`、`progress-pro`、`shadow-apple-sm` 等旧类仍在使用 | 迁移完成后清理 |
+| Tab 触发按钮 (第 293 行) | 间隙 `gap-2`（文字 6px）与规范 `gap-3`（12px）不一致 | gap-3 |
+
 ---
 
 ## 二、布局改造要求
@@ -208,6 +227,22 @@ src/components/screens/
     AssetBasketPanel.tsx               素材篮/历史面板
     StatusCards.tsx                    状态卡片
 ```
+
+### F10: 视觉一致性 -- DS 组件全量迁移
+
+将 AdminMediaWorkbenchScreen 中所有残留的旧式 CSS 类和手动 UI 替换为统一设计系统组件,消除新旧混用：
+
+- StatusTile 改用 DSCard
+- 所有空状态改用 DSEmptyState
+- 所有进度条改用 DSProgress
+- 所有状态圆点改用 DSStatusDot
+- 所有下载链接改用 DSButton(asChild 包裹 `<a>`)
+- 所有 Section 标题改用 DSSectionTitle
+- 素材篮/历史 Tab 卡片改用 DSCard
+- 全局清理旧的 CSS 工具类(card-pro / btn-cta-* / stat-card / empty-state-pro / progress-pro / alert-warning-pro / alert-error-pro / shadow-apple-sm)
+- Tab 触发按钮间距统一为 gap-3(12px)
+
+**接受标准**: AdminMediaWorkbenchScreen 中不再出现 `card-pro`、`btn-cta`、`stat-card`、`empty-state-pro`、`progress-pro`、`shadow-apple-sm` 等旧类。所有视觉元素来自 DS 组件或规范的全局 CSS 变量。
 
 ---
 

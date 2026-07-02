@@ -993,6 +993,7 @@ export interface ImageWorkbenchRun {
   quality?: string;
   count?: number;
   assets: MediaAsset[];
+  progress?: number;
   error_message?: string | null;
   payload?: Record<string, unknown>;
   result?: Record<string, unknown>;
@@ -1019,6 +1020,7 @@ export interface VideoWorkbenchRun {
   size?: string;
   duration_sec?: number;
   reference_asset_ids?: string[];
+  reference_count?: number;
   progress?: number;
   download_path?: string | null;
   video_url_present?: boolean;

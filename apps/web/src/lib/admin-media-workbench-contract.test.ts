@@ -33,6 +33,7 @@ assert(types.includes('"admin-media-workbench"'), "ScreenKey must include admin-
 assert(apiClient.includes("fetchMediaWorkbench"), "api client must expose fetchMediaWorkbench");
 assert(apiClient.includes("fetchMediaWorkbenchCapabilities"), "api client must expose capabilities fetch");
 assert(apiClient.includes("createImageWorkbenchRun"), "api client must create image runs");
+assert(apiClient.includes("fetchImageWorkbenchRun"), "api client must fetch image runs for async polling");
 assert(apiClient.includes("uploadMediaWorkbenchVideoReferences"), "api client must upload video references");
 assert(apiClient.includes("importMediaWorkbenchVideoReferences"), "api client must import references from assets");
 assert(apiClient.includes("createVideoWorkbenchRun"), "api client must create video runs");
@@ -44,6 +45,7 @@ assert(store.includes("mediaWorkbench"), "store must cache media workbench state
 assert(store.includes("loadMediaWorkbench"), "store must load media workbench");
 assert(!store.includes('loadMediaWorkbench: async () => {\n    if (get().dataMode === "demo") return;'), "media workbench must load real admin backend even when the UI shell is demo-login enabled");
 assert(store.includes("createImageWorkbenchRun"), "store must create image runs");
+assert(store.includes("syncImageWorkbenchRun"), "store must sync async image runs");
 assert(store.includes("importImagesToVideoReferences"), "store must import images to video references");
 assert(store.includes("createVideoWorkbenchRun"), "store must create video runs");
 
@@ -58,6 +60,10 @@ assert(screen.includes("omni_flash-10s"), "video workbench default model must be
 assert(screen.includes("1280x720"), "video workbench default size must be 1280x720");
 assert(screen.includes("最多 7 张"), "video workbench must show Omni reference limit");
 assert(screen.includes("加入视频参考篮"), "image results must support sending selected images to video basket");
+assert(screen.includes("setInterval") && screen.includes("30000"), "media workbench must auto-sync active runs every 30 seconds");
+assert(screen.includes("syncImageWorkbenchRun"), "media workbench screen must poll async image runs");
+assert(screen.includes("<video"), "completed video runs must render an inline preview player");
+assert(screen.includes("参考图数量"), "video submit UI must make reference image count explicit");
 assert(
   screen.includes('const effectiveVideoMode: VideoGenerationMode = basketCount > 0 ? "reference" : videoMode') &&
     screen.includes("mode: effectiveVideoMode") &&

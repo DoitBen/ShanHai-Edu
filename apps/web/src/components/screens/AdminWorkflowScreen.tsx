@@ -190,7 +190,7 @@ export function AdminWorkflowScreen() {
         <div>
           <div className="t-overline text-muted-foreground/70">控制面</div>
           <h1 className="mt-2 t-title">工作流规则控制面</h1>
-          <p className="mt-2 max-w-3xl t-body text-muted-foreground">
+          <p className="mt-3 max-w-3xl h-page-subtitle">
             一期只允许管理员治理质量门禁规则。DAG、节点依赖、schema 和状态机保持只读，新规则发布后只影响新项目。
           </p>
         </div>
@@ -209,7 +209,7 @@ export function AdminWorkflowScreen() {
       <div className="mt-8 grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
         <section>
           <SectionHeader icon={<GitBranch className="h-4 w-4" />} title="只读 DAG" desc={graph?.edit_scope || "rules_and_prompts_only"} />
-          <Card className="border-border bg-card p-0 shadow-soft">
+          <Card className="border-border bg-card p-0 shadow-apple-sm">
             <div className="grid max-h-[560px] gap-3 overflow-y-auto p-4">
               {(graph?.nodes || []).map((node) => (
                 <button
@@ -249,7 +249,7 @@ export function AdminWorkflowScreen() {
         <section>
           <SectionHeader icon={<SlidersHorizontal className="h-4 w-4" />} title="规则治理" desc="表单编辑条件、严重级别、提示文案和启停状态" />
           <div className="grid gap-4 lg:grid-cols-[0.42fr_0.58fr]">
-            <Card className="border-border bg-card p-0 shadow-soft">
+            <Card className="border-border bg-card p-0 shadow-apple-sm">
               <div className="max-h-[560px] overflow-y-auto p-3">
                 {rules.map((rule) => {
                   const active = rule.rule_id === selectedRule?.rule_id;
@@ -280,7 +280,7 @@ export function AdminWorkflowScreen() {
               </div>
             </Card>
 
-            <Card className="border-border bg-card p-5 shadow-soft">
+            <Card className="border-border bg-card p-5 shadow-apple-sm">
               {selectedRule ? (
                 <div className="space-y-5">
                   <div>
@@ -370,7 +370,7 @@ export function AdminWorkflowScreen() {
       <div className="mt-8 grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
         <section>
           <SectionHeader icon={<History className="h-4 w-4" />} title="版本历史" desc="发布和回滚会重建 active rule set，只影响之后新建项目" />
-          <Card className="border-border bg-card p-0 shadow-soft">
+          <Card className="border-border bg-card p-0 shadow-apple-sm">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -417,7 +417,7 @@ export function AdminWorkflowScreen() {
 
         <section>
           <SectionHeader icon={<History className="h-4 w-4" />} title="审计日志" desc="所有规则发布、回滚、seed 和 rule set 激活留痕" />
-          <Card className="border-border bg-card p-0 shadow-soft">
+          <Card className="border-border bg-card p-0 shadow-apple-sm">
             <div className="max-h-[420px] overflow-y-auto p-4">
               {audit.length ? (
                 <div className="space-y-3">
@@ -465,7 +465,7 @@ function SectionHeader({
       <div>
         <div className="flex items-center gap-2">
           <span className="text-bronze">{icon}</span>
-          <h2 className="t-module">{title}</h2>
+          <h2 className="t-module font-semibold text-foreground">{title}</h2>
         </div>
         {desc && <p className="mt-1 t-caption text-muted-foreground">{desc}</p>}
       </div>

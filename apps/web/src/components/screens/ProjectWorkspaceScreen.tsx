@@ -991,7 +991,7 @@ function ProjectWorkspace({ project }: { project: ProjectMeta }) {
           desc="按公开课备课顺序推进：完成的步骤可回看，未解锁的步骤先保持锁定。"
           right={<KeyboardHint keys={["←", "→"]} label="回看已完成步骤" />}
         />
-        <Card className="border-border bg-card p-3 shadow-soft">
+        <Card className="border-border bg-card p-3 shadow-apple-sm">
           <UserStepRail
             steps={userStepViews}
             selectedStepId={selectedStepView?.step.id}
@@ -1195,11 +1195,11 @@ function SectionLabel({
   return (
     <div className="mb-4 flex items-end justify-between gap-3">
       <div className="flex items-baseline gap-3">
-        <span className="t-overline text-bronze">{index}</span>
+        <span className="t-overline font-bold text-bronze">{index}</span>
         <div>
-          <h2 className="t-module">{title}</h2>
+          <h2 className="t-module font-semibold text-foreground">{title}</h2>
           {desc && (
-            <p className="mt-0.5 t-caption text-muted-foreground">{desc}</p>
+            <p className="mt-1 t-caption text-muted-foreground">{desc}</p>
           )}
         </div>
       </div>
@@ -1359,8 +1359,8 @@ function UserStepRail({
                 aria-current={selected ? "step" : undefined}
                 onClick={() => onSelect(item.step.id)}
                 className={cn(
-                  "relative flex h-[96px] w-[116px] shrink-0 flex-col items-center justify-center gap-2 rounded-md border px-3 text-center transition-colors focus-ring",
-                  selected && "border-primary bg-primary/[0.04] shadow-soft",
+                  "nav-item-pro relative flex h-[96px] w-[116px] shrink-0 flex-col items-center justify-center gap-2 rounded-md border px-3 text-center transition-all focus-ring",
+                  selected && "border-primary bg-primary/[0.04] shadow-apple-sm",
                   !selected && completed && "border-transparent hover:bg-success/5",
                   !selected && !completed && !locked && "border-transparent hover:bg-muted/60",
                   locked && "border-transparent bg-muted/25 text-muted-foreground",
@@ -1368,10 +1368,10 @@ function UserStepRail({
               >
                 <span
                   className={cn(
-                    "flex h-8 w-8 items-center justify-center rounded-full text-[0.72rem] font-semibold",
-                    completed && "bg-success/15 text-success",
-                    item.state === "current" && "bg-primary text-primary-foreground",
-                    locked && "bg-muted text-muted-foreground",
+                    "flex h-8 w-8 items-center justify-center rounded-full text-[0.72rem] font-bold transition-all duration-300 ease-apple",
+                    completed && "stage-node-done",
+                    item.state === "current" && "stage-node-current",
+                    locked && "stage-node-pending",
                   )}
                 >
                   {completed ? (
@@ -1410,7 +1410,7 @@ function LockedStepCard({
   steps: UserStepView[];
 }) {
   return (
-    <Card className="border-dashed bg-card p-8 text-center shadow-soft">
+    <Card className="border-dashed bg-card p-8 text-center shadow-apple-sm">
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
         <Lock className="h-5 w-5" />
       </div>
@@ -1506,13 +1506,13 @@ function WorkspaceTaskCard({
   const shouldShowOrdinaryEvidence = stepView.step.id !== "final-delivery";
   if (stepView.step.id === "video-generation") {
     return (
-      <Card className="border-border bg-card p-0 shadow-soft">
+      <Card className="border-border bg-card p-0 shadow-apple-sm">
         <div className="border-b border-border px-4 py-4 sm:px-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
-              <div className="t-overline text-muted-foreground/70">{stepView.step.label}</div>
-              <h3 className="mt-1 t-module">{stage.title}</h3>
-              <p className="mt-1 t-body text-muted-foreground">{stepView.step.goal}</p>
+              <div className="t-overline text-bronze">{stepView.step.label}</div>
+              <h3 className="mt-1 text-[1.125rem] font-bold leading-tight text-foreground">{stage.title}</h3>
+              <p className="mt-1 h-page-subtitle">{stepView.step.goal}</p>
             </div>
             <StatusBadge status={stage.status} />
           </div>
@@ -1537,11 +1537,11 @@ function WorkspaceTaskCard({
             <div className="space-y-4">
               <VideoGenerationSubStatusList stages={stepStages} subGates={workspaceStepSubGates} />
               {shouldShowOrdinaryEvidence && stage.evidence.length > 0 && (
-                <div className="rounded-md border border-border bg-muted/20 p-3">
-                  <div className="t-caption font-medium text-foreground">可回看的依据材料</div>
+                <div className="rounded-lg border border-border bg-gradient-to-br from-muted/30 to-muted/10 p-3 transition-all duration-300 ease-apple hover:border-bronze/30">
+                  <div className="t-overline text-muted-foreground/70">可回看的依据材料</div>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {stage.evidence.slice(0, 4).map((file) => (
-                      <Button key={file} type="button" size="sm" variant="outline" onClick={() => onPreview(file)}>
+                      <Button key={file} type="button" size="sm" variant="outline" className="btn-cta-secondary" onClick={() => onPreview(file)}>
                         查看{getUserEvidenceLabel(file)}
                       </Button>
                     ))}
@@ -1556,7 +1556,7 @@ function WorkspaceTaskCard({
             </VideoWorkbenchErrorBoundary>
           </div>
           <div className="flex justify-end border-t border-border pt-4">
-            <Button className="gap-2" disabled={primaryActionDisabled} onClick={onPrimaryAction}>
+            <Button className="btn-cta-primary gap-2 h-11 px-5" disabled={primaryActionDisabled} onClick={onPrimaryAction}>
               {selectedActionStatus === "loading" || stage.status === "running" ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
@@ -1570,13 +1570,13 @@ function WorkspaceTaskCard({
     );
   }
   return (
-    <Card className="border-border bg-card p-0 shadow-soft">
+    <Card className="border-border bg-card p-0 shadow-apple-sm">
       <div className="border-b border-border px-4 py-4 sm:px-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="t-overline text-muted-foreground/70">{stepView.step.label}</div>
-            <h3 className="mt-1 t-module">{stage.title}</h3>
-            <p className="mt-1 t-body text-muted-foreground">{stepView.step.goal}</p>
+            <div className="t-overline text-bronze">{stepView.step.label}</div>
+            <h3 className="mt-1 text-[1.125rem] font-bold leading-tight text-foreground">{stage.title}</h3>
+            <p className="mt-1 h-page-subtitle">{stepView.step.goal}</p>
           </div>
           <StatusBadge status={stage.status} />
         </div>
@@ -1597,11 +1597,11 @@ function WorkspaceTaskCard({
             <PptDraftSubStatusList stages={stepStages} subGates={workspaceStepSubGates} />
           )}
           {shouldShowOrdinaryEvidence && stage.evidence.length > 0 && (
-            <div className="rounded-md border border-border bg-muted/20 p-3">
-              <div className="t-caption font-medium text-foreground">可回看的依据材料</div>
+            <div className="rounded-lg border border-border bg-gradient-to-br from-muted/30 to-muted/10 p-3 transition-all duration-300 ease-apple hover:border-bronze/30">
+              <div className="t-overline text-muted-foreground/70">可回看的依据材料</div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {stage.evidence.slice(0, 4).map((file) => (
-                  <Button key={file} type="button" size="sm" variant="outline" onClick={() => onPreview(file)}>
+                  <Button key={file} type="button" size="sm" variant="outline" className="btn-cta-secondary" onClick={() => onPreview(file)}>
                     查看{getUserEvidenceLabel(file)}
                   </Button>
                 ))}
@@ -1642,7 +1642,7 @@ function WorkspaceTaskCard({
             onExportPpt={onExportPpt}
           />
           <div className="flex justify-end border-t border-border pt-4">
-            <Button className="gap-2" disabled={primaryActionDisabled} onClick={onPrimaryAction}>
+            <Button className="btn-cta-primary gap-2 h-11 px-5" disabled={primaryActionDisabled} onClick={onPrimaryAction}>
               {selectedActionStatus === "loading" || stage.status === "running" ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
@@ -2516,7 +2516,7 @@ function DeveloperDiagnostics({
         <span className="t-module">开发诊断</span>
         <ChevronDown className="h-4 w-4 text-muted-foreground" />
       </summary>
-      <Card className="border-border bg-card p-0 shadow-soft">
+      <Card className="border-border bg-card p-0 shadow-apple-sm">
         {dataMode === "api" && stage && <StateEngineDiagnostics stage={stage} />}
         <Tabs value={tab} onValueChange={(value) => onTabChange(value as TabKey)} className="gap-0">
           <div className="overflow-x-auto scroll-fine px-3 py-2 sm:px-5">
@@ -2819,7 +2819,7 @@ function WorkspaceHeader({
     stages.find((item) => item.key === project.currentStage) ||
     stageDefByKey(project.currentStage);
   return (
-    <Card className="border-border bg-card p-0 shadow-soft">
+    <Card className="border-border bg-card p-0 shadow-apple-sm">
       <div className="p-4 sm:p-6">
         {/* 顶部行：返回 + 项目名 + 状态 */}
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -2832,7 +2832,7 @@ function WorkspaceHeader({
               <ArrowLeft className="h-3.5 w-3.5" />
               返回项目列表
             </button>
-            <h1 className="mt-2 t-title">{project.name}</h1>
+            <h1 className="mt-2 h-page-title">{project.name}</h1>
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 t-body text-muted-foreground">
               <span>{project.subject}</span>
               <span className="h-3 w-px bg-border" />
@@ -2869,23 +2869,25 @@ function WorkspaceHeader({
 
         {/* 底部 3 列：当前阶段 / 总进度 / 下一步动作 */}
         <div className="mt-6 grid gap-4 sm:grid-cols-3">
-          <div>
+          <div className="rounded-lg border border-border bg-gradient-to-br from-muted/30 to-transparent p-3.5 transition-all duration-300 ease-apple hover:border-bronze/30 hover:shadow-apple-sm">
             <div className="t-overline text-muted-foreground/70">当前阶段</div>
             <div className="mt-1.5 t-body font-medium text-foreground">
               {currentStepLabel || stage?.title || project.currentStage}
             </div>
           </div>
-          <div>
+          <div className="rounded-lg border border-border bg-gradient-to-br from-muted/30 to-transparent p-3.5 transition-all duration-300 ease-apple hover:border-bronze/30 hover:shadow-apple-sm">
             <div className="t-overline text-muted-foreground/70">总进度</div>
             <div className="mt-1.5 flex items-baseline gap-2">
-              <span className="t-module">{project.progress}%</span>
+              <span className="t-module font-bold text-foreground">{project.progress}%</span>
             </div>
-            <Progress
-              value={project.progress}
-              className="mt-2 h-1.5 bg-muted"
-            />
+            <div className="progress-pro mt-2">
+              <div
+                className="progress-pro-bar"
+                style={{ width: `${project.progress}%` }}
+              />
+            </div>
           </div>
-          <div>
+          <div className="rounded-lg border border-border bg-gradient-to-br from-muted/30 to-transparent p-3.5 transition-all duration-300 ease-apple hover:border-bronze/30 hover:shadow-apple-sm">
             <div className="t-overline text-muted-foreground/70">下一步动作</div>
             <div className="mt-1.5 t-body font-medium text-foreground">
               {nextActionOverride || project.nextAction}
@@ -2932,7 +2934,7 @@ function WorkflowRail({
                 className={cn(
                   "relative flex h-[88px] w-[88px] shrink-0 flex-col items-center gap-1 rounded-md border px-2 pt-2.5 pb-2 text-center transition-all focus-ring",
                   isSelected
-                    ? "border-primary bg-primary/[0.04] shadow-soft"
+                    ? "border-primary bg-primary/[0.04] shadow-apple-sm"
                     : "border-transparent hover:bg-muted/60",
                 )}
               >
@@ -5223,7 +5225,7 @@ function VideoPlanCard({
   return (
     <Card
       className={cn(
-        "relative border bg-card p-0 shadow-soft transition-all",
+        "relative border bg-card p-0 shadow-apple-sm transition-all",
         plan.accepted
           ? "border-primary/40 bg-primary/[0.02] ring-1 ring-primary/20"
           : selected

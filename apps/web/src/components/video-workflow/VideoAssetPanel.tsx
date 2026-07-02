@@ -203,17 +203,16 @@ export function VideoAssetPanel({
   }
 
   return (
-    <section className="rounded-md border border-border bg-card p-4">
+    <section className="card-pro card-pro-radius rounded-lg border border-border bg-card p-4 shadow-apple-sm">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <h3 className="t-module">项目素材</h3>
+          <h3 className="t-module font-semibold text-foreground">项目素材</h3>
           <p className="mt-1 t-caption text-muted-foreground">已选 {selectedIds.length} / {maxSelected}</p>
         </div>
         <Button
           type="button"
           size="sm"
-          variant="outline"
-          className="gap-1.5"
+          className="btn-cta-primary gap-1.5 h-9"
           disabled={busy}
           onClick={() => inputRef.current?.click()}
         >
@@ -231,11 +230,12 @@ export function VideoAssetPanel({
         onChange={(event) => void handleFiles(event.target.files)}
       />
 
-      <div className="mb-4 min-h-20 rounded-md border border-dashed border-border bg-muted/20 p-2">
+      {/* 多槽位已选区强化：4 通道上传提示 */}
+      <div className="mb-4 min-h-20 rounded-lg border-2 border-dashed border-border bg-gradient-to-br from-muted/30 to-muted/10 p-2 transition-all duration-300 ease-apple hover:border-bronze/40">
         {selectedAssets.length ? (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={selectedIds} strategy={horizontalListSortingStrategy}>
-              <div className="flex gap-2 overflow-x-auto pb-1">
+              <div className="flex gap-2 overflow-x-auto scroll-fine pb-1">
                 {selectedAssets.map((asset, index) => (
                   <SortableSelectedItem key={asset.asset_id} asset={asset} projectId={projectId} index={index} />
                 ))}
@@ -243,9 +243,12 @@ export function VideoAssetPanel({
             </SortableContext>
           </DndContext>
         ) : (
-          <div className="flex h-16 items-center justify-center gap-2 text-muted-foreground">
-            <ImagePlus className="h-4 w-4" />
-            <span className="t-caption">可直接文生视频</span>
+          <div className="flex h-16 flex-col items-center justify-center gap-1 text-muted-foreground">
+            <div className="flex items-center gap-2">
+              <ImagePlus className="h-4 w-4" />
+              <span className="t-caption font-medium text-foreground/80">可直接文生视频</span>
+            </div>
+            <span className="t-caption text-muted-foreground/70">拖拽或点击上传多张参考图</span>
           </div>
         )}
       </div>
@@ -298,6 +301,13 @@ export function VideoAssetPanel({
       )}
 
       <div className="grid grid-cols-2 gap-2">
+        {assets.length === 0 && (
+          <div className="empty-state-pro col-span-2 rounded-lg border border-dashed border-border">
+            <div className="icon-wrap"><ImagePlus className="h-5 w-5" /></div>
+            <div className="title">项目素材库为空</div>
+            <div className="desc">点击右上角上传按钮，拖入参考图后即可用于视频生成。支持 PNG / JPEG / WebP。</div>
+          </div>
+        )}
         {assets.map((asset) => {
           const order = selectedIds.indexOf(asset.asset_id);
           const selected = order >= 0;
@@ -305,8 +315,8 @@ export function VideoAssetPanel({
             <div
               key={asset.asset_id}
               className={cn(
-                "group relative overflow-hidden rounded-md border bg-background",
-                selected ? "border-primary ring-1 ring-primary/25" : "border-border",
+                "card-pro group relative overflow-hidden rounded-lg border bg-background",
+                selected ? "border-primary ring-2 ring-primary/25 shadow-apple-sm" : "border-border hover:border-bronze/40",
               )}
             >
               <button
@@ -319,11 +329,11 @@ export function VideoAssetPanel({
                     src={videoWorkflowAssetContent(projectId, asset.asset_id)}
                     alt={asset.filename}
                     loading="lazy"
-                    className="h-full w-full object-cover transition-transform group-hover:scale-[1.02]"
+                    className="h-full w-full object-cover transition-transform duration-500 ease-apple group-hover:scale-[1.04]"
                   />
                 </div>
                 <div className="min-w-0 px-2 py-2">
-                  <div className="truncate t-caption text-foreground">{asset.filename}</div>
+                  <div className="truncate t-caption font-medium text-foreground">{asset.filename}</div>
                   <div className="mt-0.5 t-caption text-muted-foreground">{asset.width}x{asset.height}</div>
                 </div>
               </button>

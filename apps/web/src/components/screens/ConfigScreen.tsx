@@ -167,7 +167,7 @@ export function ConfigScreen() {
             title="安全模式"
             desc="与教学业务直接相关的内容确认开关"
           />
-          <Card className="border-border bg-card p-6 shadow-soft">
+          <Card className="border-border bg-card p-6 shadow-apple-sm">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
@@ -227,7 +227,7 @@ export function ConfigScreen() {
           title="模型配置"
           desc="各阶段使用的模型与状态占位"
         />
-        <Card className="border-border bg-card p-0 shadow-soft">
+        <Card className="border-border bg-card p-0 shadow-apple-sm">
           <Table>
             <TableHeader>
               <TableRow className="border-border">
@@ -277,7 +277,7 @@ export function ConfigScreen() {
             title="安全模式"
             desc="人工确认开关"
           />
-          <Card className="border-border bg-card p-6 shadow-soft">
+          <Card className="border-border bg-card p-6 shadow-apple-sm">
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
@@ -324,7 +324,7 @@ export function ConfigScreen() {
             title="全局参数"
             desc="调度与输出默认值（占位）"
           />
-          <Card className="border-border bg-card p-6 shadow-soft">
+          <Card className="border-border bg-card p-6 shadow-apple-sm">
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label className="t-caption text-muted-foreground">
@@ -348,7 +348,7 @@ export function ConfigScreen() {
                   超时（秒）
                 </Label>
                 <Select value={timeout} onValueChange={setTimeout}>
-                  <SelectTrigger className="h-11 w-full bg-card">
+                  <SelectTrigger className="input-pro h-11 w-full bg-card">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -385,7 +385,7 @@ export function ConfigScreen() {
                   输出格式
                 </Label>
                 <Select value={outputFormat} onValueChange={setOutputFormat}>
-                  <SelectTrigger className="h-11 w-full bg-card">
+                  <SelectTrigger className="input-pro h-11 w-full bg-card">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -437,7 +437,7 @@ export function ConfigScreen() {
           title="密钥状态"
           desc="仅显示配置状态与最后更新时间，不展示明文密钥"
         />
-        <Card className="border-border bg-card p-0 shadow-soft">
+        <Card className="border-border bg-card p-0 shadow-apple-sm">
           <Table>
             <TableHeader>
               <TableRow className="border-border">
@@ -563,7 +563,7 @@ function VideoCapabilityTable({
     );
   }
   return (
-    <Card className="border-border bg-card p-0 shadow-soft">
+    <Card className="border-border bg-card p-0 shadow-apple-sm">
       <Table>
         <TableHeader>
           <TableRow className="border-border">
@@ -634,7 +634,7 @@ function PageHeader({
       <div>
         <div className="t-overline text-muted-foreground/70">{overline}</div>
         <h1 className="mt-2 t-title">{title}</h1>
-        <p className="mt-2 t-body text-muted-foreground">{desc}</p>
+        <p className="mt-3 h-page-subtitle">{desc}</p>
       </div>
       {action && <div className="flex items-center gap-2">{action}</div>}
     </div>
@@ -652,11 +652,11 @@ function SectionHeader({
 }) {
   return (
     <div className="mb-4 flex items-baseline gap-3">
-      <span className="t-overline text-bronze">{index}</span>
+      <span className="t-overline font-bold text-bronze">{index}</span>
       <div>
-        <h2 className="t-module">{title}</h2>
+        <h2 className="t-module font-semibold text-foreground">{title}</h2>
         {desc && (
-          <p className="mt-0.5 t-caption text-muted-foreground">{desc}</p>
+          <p className="mt-1 t-caption text-muted-foreground">{desc}</p>
         )}
       </div>
     </div>

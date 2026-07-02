@@ -168,14 +168,14 @@ export function LogsScreen() {
         <div>
           <div className="t-overline text-muted-foreground/70">运行日志</div>
           <h1 className="mt-2 t-title">日志</h1>
-          <p className="mt-2 t-body text-muted-foreground">
+          <p className="mt-3 h-page-subtitle">
             查看各阶段运行日志与异常记录。第一阶段为 mock 数据。
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
-            className="gap-2"
+            className="btn-cta-secondary gap-2 h-10"
             onClick={handleRefresh}
           >
             <RefreshCw className="h-4 w-4" />
@@ -184,7 +184,7 @@ export function LogsScreen() {
           {isAdmin && (
             <Button
               variant="outline"
-              className="gap-2"
+              className="btn-cta-secondary gap-2 h-10"
               onClick={handleExport}
             >
               <Download className="h-4 w-4" />
@@ -195,12 +195,12 @@ export function LogsScreen() {
       </div>
 
       {/* 筛选器 */}
-      <Card className="mt-6 border-border bg-card p-4 shadow-soft sm:p-5">
+      <Card className="mt-6 border-border bg-card p-4 shadow-apple-sm sm:p-5">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="space-y-1.5">
             <Label className="t-caption text-muted-foreground">阶段</Label>
             <Select value={stage} onValueChange={setStage}>
-              <SelectTrigger className="h-11 w-full bg-card">
+              <SelectTrigger className="input-pro h-11 w-full bg-card">
                 <SelectValue placeholder="全部阶段" />
               </SelectTrigger>
               <SelectContent>
@@ -217,7 +217,7 @@ export function LogsScreen() {
           <div className="space-y-1.5">
             <Label className="t-caption text-muted-foreground">级别</Label>
             <Select value={level} onValueChange={setLevel}>
-              <SelectTrigger className="h-11 w-full bg-card">
+              <SelectTrigger className="input-pro h-11 w-full bg-card">
                 <SelectValue placeholder="全部级别" />
               </SelectTrigger>
               <SelectContent>
@@ -235,7 +235,7 @@ export function LogsScreen() {
           <div className="space-y-1.5">
             <Label className="t-caption text-muted-foreground">项目</Label>
             <Select value={projectId} onValueChange={setProjectId}>
-              <SelectTrigger className="h-11 w-full bg-card">
+              <SelectTrigger className="input-pro h-11 w-full bg-card">
                 <SelectValue placeholder="全部项目" />
               </SelectTrigger>
               <SelectContent>
@@ -257,7 +257,7 @@ export function LogsScreen() {
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
                 placeholder="搜索消息 / 项目 / 阶段"
-                className="h-11 bg-card pl-9"
+                className="input-pro h-11 bg-card pl-9"
               />
             </div>
           </div>
@@ -281,7 +281,7 @@ export function LogsScreen() {
       </Card>
 
       {/* 日志列表 */}
-      <Card className="mt-4 border-border bg-card p-0 shadow-soft">
+      <Card className="mt-4 border-border bg-card p-0 shadow-apple-sm">
         <div className="flex items-center justify-between border-b border-border px-5 py-3">
           <div className="flex items-center gap-2">
             <ScrollText className="h-4 w-4 text-muted-foreground" />

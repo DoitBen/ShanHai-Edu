@@ -104,7 +104,7 @@ export function ScriptsScreen() {
       />
 
       {/* 脚本列表 */}
-      <Card className="mt-8 border-border bg-card p-0 shadow-soft">
+      <Card className="mt-8 border-border bg-card p-0 shadow-apple-sm">
         <div className="flex items-center justify-between border-b border-border px-5 py-3">
           <div className="flex items-center gap-2">
             <FileCode2 className="h-4 w-4 text-muted-foreground" />
@@ -312,7 +312,7 @@ function PageHeader({
       <div>
         <div className="t-overline text-muted-foreground/70">{overline}</div>
         <h1 className="mt-2 t-title">{title}</h1>
-        <p className="mt-2 t-body text-muted-foreground">{desc}</p>
+        <p className="mt-3 h-page-subtitle">{desc}</p>
       </div>
       {action && <div className="flex items-center gap-2">{action}</div>}
     </div>

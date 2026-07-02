@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { AlertTriangle, Loader2, RefreshCw } from "lucide-react";
+import { AlertTriangle, History, Images, Loader2, RefreshCw, Wand2 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
-import type { VideoWorkflowRun } from "@/lib/types";
+import type { VideoWorkflowConfig, VideoWorkflowRun } from "@/lib/types";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -12,11 +12,34 @@ import { VideoAssetPanel } from "./VideoAssetPanel";
 import { VideoComposerPanel } from "./VideoComposerPanel";
 import { VideoRunHistoryPanel } from "./VideoRunHistoryPanel";
 import { useVideoWorkflowPolling } from "./use-video-workflow-polling";
-import { addReference, isActiveVideoRun, reusableReferenceIds } from "./video-workflow-utils";
+import { isActiveVideoRun, addReference, reusableReferenceIds } from "./video-workflow-utils";
 import { VIDEO_WORKFLOW_SYNC_CHANNEL, VIDEO_WORKFLOW_TAB_ID } from "@/lib/video-workflow-cross-tab";
 import { videoWorkflowErrorToast } from "@/lib/video-workflow-errors";
 
 const VIDEO_WORKFLOW_DRAFT_PREFIX = "video-workflow-draft";
+
+/* ETA 估算：基于模型默认总时长 + 进度反推剩余秒数
+ * - queued / submitting: 视为「等待启动」，估算为总时长
+ * - processing: 用 (100 - progress) / 100 * 总时长，再叠加网络抖动 +2s
+ * - 其他状态：返回 null（不展示）
+ */
+function estimateEta(run: VideoWorkflowRun, config: VideoWorkflowConfig | undefined): number | null {
+  if (!config) return null;
+  const totalSeconds = Math.max(5, config.duration_sec * 6); // 经验值：10s 视频约 60s 生成
+  if (run.status === "queued" || run.status === "submission_unknown") return totalSeconds;
+  if (run.status === "processing") {
+    const remaining = Math.max(2, Math.ceil(((100 - run.progress) / 100) * totalSeconds) + 2);
+    return remaining;
+  }
+  return null;
+}
+
+function formatEta(seconds: number): string {
+  if (seconds < 60) return `${seconds} 秒`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return s > 0 ? `${m} 分 ${s} 秒` : `${m} 分`;
+}
 
 export function VideoWorkflowWorkbench({ projectId }: { projectId: string }) {
   return <VideoWorkflowWorkbenchInner key={projectId} projectId={projectId} />;
@@ -242,6 +265,10 @@ function VideoWorkflowWorkbenchInner({ projectId }: { projectId: string }) {
   const showPollingNotice = hasActiveRuns && (pollingState.state === "backoff" || pollingState.state === "paused");
   const retrySeconds = Math.max(1, Math.ceil((pollingState.nextRetryInMs || 0) / 1000));
 
+  // 顶部活动任务状态条：取最早一个 active run（实际只允许一个）
+  const activeRun = (workflow.runs || []).find(isActiveVideoRun) || null;
+  const activeEta = activeRun ? estimateEta(activeRun, workflow.config) : null;
+
   const assetPanel = (
     <VideoAssetPanel
       projectId={projectId}
@@ -283,6 +310,54 @@ function VideoWorkflowWorkbenchInner({ projectId }: { projectId: string }) {
 
   return (
     <>
+      {/* 顶部活动任务状态条：非阻塞，带进度+ETA+pulse 动画 */}
+      {activeRun && (
+        <Card className="mb-4 border-primary/30 bg-gradient-to-r from-primary/[0.06] to-bronze/[0.04] p-4 shadow-apple-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary anim-pulse-soft" />
+              </span>
+              <div className="min-w-0">
+                <div className="t-body font-semibold text-foreground">
+                  视频生成中
+                  <span className="ml-2 t-caption font-normal text-muted-foreground">
+                    {activeRun.status === "queued" ? "排队等待" : `${activeRun.progress}%`}
+                  </span>
+                </div>
+                <div className="mt-1 t-caption text-muted-foreground">
+                  模型 {activeRun.model} · 尺寸 {activeRun.size}
+                  {activeEta !== null && (
+                    <span className="ml-2 inline-flex items-center gap-1 text-bronze">
+                      · 预计剩余 {formatEta(activeEta)}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="progress-pro w-40 sm:w-56">
+                <div
+                  className="progress-pro-bar anim-pulse-soft"
+                  style={{ width: `${Math.max(5, activeRun.progress)}%` }}
+                />
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="btn-cta-secondary h-8 gap-1.5"
+                onClick={requestSync}
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                立即同步
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
+
       {showPollingNotice && (
         <Card className="mb-4 flex flex-col gap-3 border-amber-300 bg-amber-50 p-4 text-amber-950 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-2">
@@ -304,20 +379,28 @@ function VideoWorkflowWorkbenchInner({ projectId }: { projectId: string }) {
           </Button>
         </Card>
       )}
-      <div className="hidden min-h-[640px] gap-4 xl:grid xl:grid-cols-[260px_minmax(0,1fr)_320px]">
+
+      {/* 三栏布局：xl 三栏、lg 三栏（更窄）、md 及以下 Tabs */}
+      <div className="hidden min-h-[640px] gap-4 lg:grid lg:grid-cols-[240px_minmax(0,1fr)_320px] xl:grid-cols-[280px_minmax(0,1fr)_360px]">
         {assetPanel}
         {composerPanel}
         {historyPanel}
       </div>
-      <Tabs defaultValue="create" className="xl:hidden">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="assets">素材</TabsTrigger>
-          <TabsTrigger value="create">创作</TabsTrigger>
-          <TabsTrigger value="history">历史</TabsTrigger>
+      <Tabs defaultValue="create" className="lg:hidden">
+        <TabsList className="grid h-auto w-full grid-cols-3 rounded-lg">
+          <TabsTrigger value="assets" className="gap-1.5 h-11">
+            <Images className="h-4 w-4" />素材
+          </TabsTrigger>
+          <TabsTrigger value="create" className="gap-1.5 h-11">
+            <Wand2 className="h-4 w-4" />创作
+          </TabsTrigger>
+          <TabsTrigger value="history" className="gap-1.5 h-11">
+            <History className="h-4 w-4" />历史
+          </TabsTrigger>
         </TabsList>
-        <TabsContent value="assets">{assetPanel}</TabsContent>
-        <TabsContent value="create">{composerPanel}</TabsContent>
-        <TabsContent value="history">{historyPanel}</TabsContent>
+        <TabsContent value="assets" className="mt-4">{assetPanel}</TabsContent>
+        <TabsContent value="create" className="mt-4">{composerPanel}</TabsContent>
+        <TabsContent value="history" className="mt-4">{historyPanel}</TabsContent>
       </Tabs>
     </>
   );

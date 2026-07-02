@@ -117,7 +117,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         <div className="t-overline mb-2 px-2 text-muted-foreground/70">
           工作台
         </div>
-        <ul className="space-y-0.5">
+        <ul className="space-y-1.5">
           {NAV.filter((n) => !n.adminOnly || isAdmin).map((item) => {
             const Icon = item.icon;
             const isActive =
@@ -137,10 +137,10 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
                   disabled={disabled}
                   onClick={() => handleClick(item)}
                   className={cn(
-                    "group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors",
+                    "nav-item-pro group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition",
                     "focus-ring",
                     isActive
-                      ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                      ? "nav-item-active-pro"
                       : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
                     disabled && "opacity-40 cursor-not-allowed hover:bg-transparent"
                   )}
@@ -174,13 +174,13 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             <div className="t-overline mb-2 mt-6 px-2 text-muted-foreground/70">
               系统轻状态
             </div>
-            <div className="rounded-lg border border-sidebar-border bg-card/60 p-3.5">
+            <div className="rounded-lg border border-sidebar-border bg-card/60 p-3.5 shadow-apple-sm">
               <div className="t-body flex items-center justify-between">
                 <span className="text-muted-foreground">调度器</span>
                 <span
                   className={cn(
-                    "inline-flex items-center gap-1.5 font-medium",
-                    dataMode === "demo" ? "text-success" : "text-muted-foreground"
+                    "inline-flex items-center gap-1.5 font-semibold",
+                    dataMode === "demo" ? "stat-value-success" : "text-muted-foreground"
                   )}
                 >
                   <span
@@ -194,16 +194,16 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
               </div>
               <div className="t-body mt-2.5 flex items-center justify-between">
                 <span className="text-muted-foreground">队列任务</span>
-                <span className="font-medium">{dataMode === "demo" ? "3 个演示任务" : "未接入检测"}</span>
+                <span className={cn("font-semibold", dataMode === "demo" ? "stat-value-info" : "text-foreground")}>{dataMode === "demo" ? "3 个演示任务" : "未接入检测"}</span>
               </div>
               <div className="mt-2.5">
                 <div className="flex items-center justify-between t-body">
                   <span className="text-muted-foreground">存储</span>
-                  <span className="font-medium">{dataMode === "demo" ? "38%" : "未接入检测"}</span>
+                  <span className="font-semibold">{dataMode === "demo" ? "38%" : "未接入检测"}</span>
                 </div>
                 <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted">
                   <div
-                    className="h-full rounded-full bg-bronze/70"
+                    className="h-full rounded-full bg-bronze transition-all duration-500 ease-apple"
                     style={{ width: dataMode === "demo" ? "38%" : "0%" }}
                   />
                 </div>

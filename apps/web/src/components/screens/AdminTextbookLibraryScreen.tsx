@@ -303,7 +303,7 @@ export function AdminTextbookLibraryScreen() {
         <div>
           <div className="t-overline text-muted-foreground/70">管理员</div>
           <h1 className="mt-2 t-title">管理教材库</h1>
-          <p className="mt-2 max-w-3xl t-body text-muted-foreground">
+          <p className="mt-3 max-w-3xl h-page-subtitle">
             在管理员侧维护教材、知识点资产和教案库。教师新建项目页只选择已整理好的教材和教案，不再承担教材加工动作。
           </p>
         </div>
@@ -326,7 +326,7 @@ export function AdminTextbookLibraryScreen() {
             title="教材列表"
             desc="从后端教材库读取，选择后管理知识点资产"
           />
-          <Card className="border-border bg-card p-0 shadow-soft">
+          <Card className="border-border bg-card p-0 shadow-apple-sm">
             <div className="max-h-[520px] overflow-y-auto p-3">
               {textbooks.length ? (
                 textbooks.map((item) => {
@@ -377,7 +377,7 @@ export function AdminTextbookLibraryScreen() {
             title="入库与任务"
             desc="上传教材后可查询后端解析任务状态"
           />
-          <Card className="border-border bg-card p-5 shadow-soft">
+          <Card className="border-border bg-card p-5 shadow-apple-sm">
             <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
               <div className="space-y-2">
                 <Label>上传教材</Label>
@@ -436,7 +436,7 @@ export function AdminTextbookLibraryScreen() {
             title="知识点与教材资产"
             desc="可全量或选中知识点执行切分教材、解析教材内容和确认资产"
           />
-          <Card className="border-border bg-card p-0 shadow-soft">
+          <Card className="border-border bg-card p-0 shadow-apple-sm">
             <div className="flex flex-col gap-3 border-b border-border p-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <div className="t-body font-medium">
@@ -530,7 +530,7 @@ export function AdminTextbookLibraryScreen() {
             title="资产详情"
             desc="查看后端返回的切片、Markdown 和审核状态"
           />
-          <Card className="border-border bg-card p-5 shadow-soft">
+          <Card className="border-border bg-card p-5 shadow-apple-sm">
             {selectedAsset ? (
               <div className="space-y-4">
                 <div className="flex items-start justify-between gap-3">
@@ -567,7 +567,7 @@ export function AdminTextbookLibraryScreen() {
             title="教案库"
             desc="按当前教材和知识点筛选，支持上传教案"
           />
-          <Card className="border-border bg-card p-5 shadow-soft">
+          <Card className="border-border bg-card p-5 shadow-apple-sm">
             <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
               <div className="space-y-2">
                 <Label>上传教案</Label>
@@ -628,7 +628,7 @@ export function AdminTextbookLibraryScreen() {
           title="操作记录"
           desc="本页只记录当前浏览器会话的管理员操作反馈"
         />
-        <Card className="border-border bg-card p-0 shadow-soft">
+        <Card className="border-border bg-card p-0 shadow-apple-sm">
           <div className="max-h-[260px] overflow-y-auto p-4">
             {actionLog.length ? (
               <div className="space-y-3">
@@ -670,7 +670,7 @@ function SectionHeader({
       <div>
         <div className="flex items-center gap-2">
           <span className="text-bronze">{icon}</span>
-          <h2 className="t-module">{title}</h2>
+          <h2 className="t-module font-semibold text-foreground">{title}</h2>
         </div>
         {desc && <p className="mt-1 t-caption text-muted-foreground">{desc}</p>}
       </div>
@@ -680,9 +680,9 @@ function SectionHeader({
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border border-border bg-background p-3">
+    <div className="stat-card rounded-lg border border-border bg-card p-3 shadow-apple-sm">
       <div className="t-caption text-muted-foreground">{label}</div>
-      <div className="mt-1 t-module">{value}</div>
+      <div className="mt-1.5 t-module font-bold text-foreground">{value}</div>
     </div>
   );
 }

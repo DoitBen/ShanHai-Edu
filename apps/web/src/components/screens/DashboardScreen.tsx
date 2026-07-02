@@ -74,14 +74,14 @@ export function DashboardScreen() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="t-overline text-muted-foreground/70">工作台首页</div>
-          <h1 className="mt-2 t-title">
+          <h1 className="mt-2 h-page-title">
             {greeting}，{user?.displayName}
           </h1>
-          <p className="mt-2 t-body text-muted-foreground">
+          <p className="mt-3 h-page-subtitle">
             以下是当前需要你关注的工作。一眼看清下一步要做什么。
           </p>
         </div>
-        <Button className="gap-2" onClick={() => go("new-project")}>
+        <Button className="btn-cta-primary gap-2 h-11 px-5" onClick={() => go("new-project")}>
           <Plus className="h-4 w-4" />
           新建项目
         </Button>
@@ -241,11 +241,11 @@ function SectionHeader({
   return (
     <div className="mb-4 flex items-end justify-between gap-3">
       <div className="flex items-baseline gap-3">
-        <span className="t-overline text-bronze">{index}</span>
+        <span className="t-overline font-bold text-bronze">{index}</span>
         <div>
-          <h2 className="t-module">{title}</h2>
+          <h2 className="t-module font-semibold text-foreground">{title}</h2>
           {desc && (
-            <p className="mt-0.5 t-caption text-muted-foreground">{desc}</p>
+            <p className="mt-1 t-caption text-muted-foreground">{desc}</p>
           )}
         </div>
       </div>
@@ -272,11 +272,11 @@ function ContinueWorkHero({
             <span className="t-overline text-bronze">继续工作</span>
             <ProjectStatusBadge status={project.status} />
           </div>
-          <h3 className="mt-3 text-2xl font-semibold leading-tight">
+          <h3 className="mt-3 text-[1.625rem] font-bold leading-tight tracking-tight">
             {project.name}
           </h3>
-          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 t-body text-muted-foreground">
-            <span>{project.subject}</span>
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 t-caption text-muted-foreground">
+            <span className="font-medium text-foreground/80">{project.subject}</span>
             <span className="h-3 w-px bg-border" />
             <span>{project.grade}</span>
             <span className="h-3 w-px bg-border" />
@@ -287,9 +287,9 @@ function ContinueWorkHero({
             <span>{project.lessonType}</span>
           </div>
 
-          <div className="mt-6 rounded-lg border border-border bg-muted/40 p-4">
-            <div className="t-caption text-muted-foreground">下一步动作</div>
-            <div className="mt-1.5 flex items-center gap-2 t-body font-medium">
+          <div className="mt-6 rounded-lg border border-border bg-gradient-to-br from-muted/40 to-muted/20 p-4 transition-all duration-300 ease-apple hover:border-bronze/30 hover:shadow-apple-sm">
+            <div className="t-overline text-muted-foreground/70">下一步动作</div>
+            <div className="mt-1.5 flex items-center gap-2 t-body font-semibold text-foreground">
               <span className="inline-block h-4 w-1 rounded-full bg-primary" />
               {project.nextAction}
             </div>
@@ -302,15 +302,20 @@ function ContinueWorkHero({
                 {project.progress}%
               </span>
             </div>
-            <Progress value={project.progress} className="mt-2 h-1.5 bg-muted" />
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-primary to-bronze transition-all duration-700 ease-apple"
+                style={{ width: `${project.progress}%` }}
+              />
+            </div>
           </div>
 
           <div className="mt-6 flex flex-wrap gap-3">
-            <Button className="gap-2" onClick={onEnter}>
+            <Button className="btn-cta-primary gap-2 h-11 px-5" onClick={onEnter}>
               进入工作区
               <ArrowRight className="h-4 w-4" />
             </Button>
-            <Button variant="outline" className="gap-2">
+            <Button variant="outline" className="btn-cta-secondary gap-2 h-11 px-5">
               <ClipboardList className="h-4 w-4" />
               查看流程
             </Button>
@@ -446,10 +451,10 @@ function StageMiniRail({ currentStageKey }: { currentStageKey: string }) {
           <div key={n.k} className="flex items-center gap-3">
             <span
               className={cn(
-                "flex h-6 w-6 items-center justify-center rounded-full text-[0.65rem] font-medium",
-                done && "bg-success/15 text-success",
-                current && "bg-primary text-primary-foreground",
-                !done && !current && "bg-muted text-muted-foreground"
+                "flex h-6 w-6 items-center justify-center rounded-full text-[0.65rem] font-bold transition-all duration-300 ease-apple",
+                done && "stage-node-done",
+                current && "stage-node-current",
+                !done && !current && "stage-node-pending"
               )}
             >
               {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : i + 1}
@@ -494,7 +499,7 @@ function PendingRow({
       <button
         type="button"
         onClick={onClick}
-        className="flex w-full items-start gap-3 px-3 py-3 text-left transition-colors hover:bg-muted/50 focus-ring"
+        className="card-pro flex w-full items-start gap-3 rounded-lg px-3 py-3 text-left hover:bg-muted/30 focus-ring"
       >
         <span
           className={cn(
@@ -514,10 +519,10 @@ function PendingRow({
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="t-body truncate font-medium">{item.title}</span>
+            <span className="t-body truncate font-semibold text-foreground">{item.title}</span>
             {item.priority === "high" && (
-              <span className="t-caption rounded bg-destructive/10 px-1.5 py-0.5 text-destructive">
-                高
+              <span className="inline-flex items-center gap-1 t-caption rounded-md px-2 py-0.5 bg-destructive/10 text-destructive">
+                <AlertTriangle className="h-3 w-3" />高优先级
               </span>
             )}
           </div>
@@ -551,19 +556,27 @@ function LightStat({
 }) {
   const toneText =
     tone === "success"
+      ? "stat-value-success"
+      : tone === "info"
+      ? "stat-value-info"
+      : tone === "warning"
+      ? "stat-value-warning"
+      : "text-foreground font-semibold";
+  const iconTone =
+    tone === "success"
       ? "text-success"
       : tone === "info"
       ? "text-info"
       : tone === "warning"
       ? "text-warning"
-      : "text-foreground";
+      : "text-muted-foreground";
   return (
-    <Card className="border-border bg-card p-4">
+    <Card className="stat-card border-border bg-card p-4 shadow-apple-sm">
       <div className="flex items-center justify-between">
         <span className="t-caption text-muted-foreground">{label}</span>
-        <span className={cn("text-muted-foreground", toneText)}>{icon}</span>
+        <span className={iconTone}>{icon}</span>
       </div>
-      <div className={cn("mt-2 text-xl font-semibold", toneText)}>{value}</div>
+      <div className={cn("mt-2 text-xl", toneText)}>{value}</div>
       {typeof progress === "number" && (
         <Progress value={progress} className="mt-2 h-1 bg-muted" />
       )}

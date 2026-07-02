@@ -54,6 +54,7 @@ import {
   FileText,
   RefreshCw,
   CheckCircle2,
+  AlertTriangle,
   Save,
   FolderPlus,
   BookOpen,
@@ -229,15 +230,15 @@ export function NewProjectScreen() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="t-overline text-muted-foreground/70">新建项目</div>
-          <h1 className="mt-2 t-title">新建项目</h1>
-          <p className="mt-2 t-body text-muted-foreground">
+          <h1 className="mt-2 h-page-title">新建项目</h1>
+          <p className="mt-3 h-page-subtitle">
             按 5 步工作流配置教学资源生产项目。当前步骤展开，其他步骤折叠为摘要。
           </p>
         </div>
         <Button
-          variant="ghost"
+          variant="outline"
           size="sm"
-          className="gap-1.5 self-start text-muted-foreground"
+          className="btn-cta-secondary gap-1.5 self-start h-9"
           onClick={handleBackToDashboard}
         >
           <ArrowLeft className="h-4 w-4" />
@@ -297,21 +298,26 @@ export function NewProjectScreen() {
       </div>
 
       {/* 底部操作栏 */}
-      <div className="mt-6 flex flex-col gap-3 rounded-xl border border-border bg-card p-4 shadow-soft sm:flex-row sm:items-center sm:justify-between lg:px-6">
-        <div className="t-caption text-muted-foreground">
-          步骤 {currentStep} / 5 ·{" "}
+      <div className="mt-6 flex flex-col gap-3 rounded-xl border border-border bg-card p-4 shadow-apple-sm sm:flex-row sm:items-center sm:justify-between lg:px-6">
+        <div className="t-caption text-muted-foreground font-medium">
+          步骤 <span className="font-semibold text-foreground">{currentStep}</span> / 5 ·{" "}
           <span
             className={cn(
+              "font-medium inline-flex items-center gap-1",
               currentValidation.ok ? "text-success" : "text-warning"
             )}
           >
-            {currentValidation.ok ? "当前步骤已就绪" : "请完善当前步骤"}
+            {currentValidation.ok ? (
+              <><CheckCircle2 className="h-3.5 w-3.5" />当前步骤已就绪</>
+            ) : (
+              <><AlertTriangle className="h-3.5 w-3.5" />请完善当前步骤</>
+            )}
           </span>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
             variant="ghost"
-            className="gap-1.5"
+            className="btn-cta-secondary gap-1.5 h-10"
             onClick={handleSaveDraft}
           >
             <Save className="h-4 w-4" />
@@ -321,19 +327,19 @@ export function NewProjectScreen() {
             <Button
               variant="outline"
               onClick={handlePrev}
-              className="gap-1.5"
+              className="btn-cta-secondary gap-1.5 h-10"
             >
               <ArrowLeft className="h-4 w-4" />
               上一步
             </Button>
           )}
           {currentStep < 5 ? (
-            <Button onClick={handleNext} className="gap-1.5">
+            <Button onClick={handleNext} className="btn-cta-primary gap-1.5 h-10 px-5">
               下一步
               <ArrowRight className="h-4 w-4" />
             </Button>
           ) : (
-            <Button onClick={handleCreate} className="gap-1.5" disabled={creating}>
+            <Button onClick={handleCreate} className="btn-cta-primary gap-1.5 h-10 px-5" disabled={creating}>
               {creating ? (
                 <RefreshCw className="h-4 w-4 animate-spin" />
               ) : (
@@ -425,20 +431,20 @@ function Stepper({
 function StepCircle({ step, status }: { step: number; status: StepStatus }) {
   if (status === "done") {
     return (
-      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-success/15 text-success ring-1 ring-success/30">
+      <span className="flex h-9 w-9 items-center justify-center rounded-full stage-node-done font-bold transition-all duration-300 ease-apple">
         <Check className="h-4 w-4" />
       </span>
     );
   }
   if (status === "current") {
     return (
-      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground ring-2 ring-primary/20 ring-offset-2 ring-offset-background">
+      <span className="flex h-9 w-9 items-center justify-center rounded-full stage-node-current font-bold transition-all duration-300 ease-apple">
         {step}
       </span>
     );
   }
   return (
-    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-muted text-muted-foreground ring-1 ring-border">
+    <span className="flex h-9 w-9 items-center justify-center rounded-full stage-node-pending font-medium transition-all duration-300 ease-apple">
       {step}
     </span>
   );
@@ -469,7 +475,7 @@ function StepCard({
     <Card
       className={cn(
         "gap-0 border-border bg-card p-0 shadow-sm",
-        expanded && "shadow-soft"
+        expanded && "shadow-apple-sm"
       )}
     >
       <div

@@ -11,6 +11,23 @@ import { PromptBatchInput } from "./PromptBatchInput";
 import { PROMPT_TEMPLATES_IMAGE, DS_PILL_BTN_H8 } from "./constants";
 import type { AspectRatio, ImageModelOption } from "./types";
 
+/** 并发数候选（D2/F2）：1 / 2 / 3 / 4 */
+const CONCURRENCY_VALUES = ["1", "2", "3", "4"];
+
+/** DS 风格内联警告条 —— 替换原 alert-warning-pro 自定义类（D10/F10） */
+function DSWarningAlert({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      className={cn(
+        "mt-3 flex items-start gap-3 rounded-lg border border-[#9a7340]/25 bg-[#9a7340]/8 px-3.5 py-2.5 t-caption text-[#9a7340]",
+      )}
+    >
+      <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+      <span>{children}</span>
+    </div>
+  );
+}
+
 /**
  * 图片操作面板（F1 / F2 / F3 / F5）
  *
@@ -49,6 +66,10 @@ export interface ImageGenPanelProps {
   onCountChange: (value: string) => void;
   maxCount: number;
 
+  // 并发控制（D2/F2）—— 仅批量模式下生效
+  concurrency: string;
+  onConcurrencyChange: (value: string) => void;
+
   // 状态
   busy: boolean;
   workbenchLoaded: boolean;
@@ -81,6 +102,8 @@ export function ImageGenPanel(props: ImageGenPanelProps) {
     count,
     onCountChange,
     maxCount,
+    concurrency,
+    onConcurrencyChange,
     busy,
     workbenchLoaded,
     providerUnavailable,
@@ -189,8 +212,23 @@ export function ImageGenPanel(props: ImageGenPanelProps) {
         />
       </div>
 
-      {/* 张数（仅单模式） */}
-      {!batchMode && (
+      {/* 张数 + 并发数（仅单模式显示张数；批量模式显示并发数） */}
+      {batchMode ? (
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <SelectField
+            label="并发数（每批同时提交）"
+            value={concurrency}
+            values={CONCURRENCY_VALUES}
+            onValueChange={onConcurrencyChange}
+            disabled={!workbenchLoaded}
+          />
+          <div className="flex items-end gap-3 pb-1 t-caption text-muted-foreground">
+            <span className="tabular-nums">{Number(concurrency)} 个任务/批</span>
+            <span>·</span>
+            <span>每行一个提示词，按并发分批提交</span>
+          </div>
+        </div>
+      ) : (
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <SelectField
             label="张数"
@@ -216,10 +254,9 @@ export function ImageGenPanel(props: ImageGenPanelProps) {
       </DSButton>
 
       {providerUnavailable && (
-        <div className="alert-warning-pro mt-3 t-caption">
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-          <span>后端没有检测到图片生成接口配置，暂时不能提交真实生图任务。</span>
-        </div>
+        <DSWarningAlert>
+          后端没有检测到图片生成接口配置，暂时不能提交真实生图任务。
+        </DSWarningAlert>
       )}
     </DSCard>
   );

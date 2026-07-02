@@ -87,7 +87,7 @@ export function ThumbnailPanel({
                   aria-label={`预览 ${asset.filename}`}
                 >
                   <div className="aspect-square overflow-hidden bg-muted">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    { }
                     <img
                       src={downloadMediaWorkbenchAsset(asset.asset_id)}
                       alt={asset.filename}

@@ -132,7 +132,7 @@ export function ImagePreviewModal({
             </button>
           )}
           {current ? (
-            // eslint-disable-next-line @next/next/no-img-element
+             
             <img
               src={downloadUrl(current.asset_id)}
               alt={current.filename}

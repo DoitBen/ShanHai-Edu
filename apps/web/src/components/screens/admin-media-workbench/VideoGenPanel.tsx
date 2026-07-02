@@ -22,8 +22,22 @@ import { cn } from "@/lib/utils";
 import type { MediaAsset, VideoGenerationMode } from "@/lib/types";
 import { downloadMediaWorkbenchAsset } from "@/lib/api-client";
 import { RatioSelector } from "./RatioSelector";
-import { PROMPT_TEMPLATES_VIDEO, DS_PILL_BTN_H8 } from "./constants";
+import { PROMPT_TEMPLATES_VIDEO, DS_PILL_BTN_H8, VIDEO_REFERENCE_BASKET_LIMIT_HINT } from "./constants";
 import type { AspectRatio, ModelOption } from "./types";
+
+/** DS 风格内联警告条 —— 替换原 alert-warning-pro 自定义类（D10/F10） */
+function DSWarningAlert({ children }: { children: ReactNode }) {
+  return (
+    <div
+      className={cn(
+        "mt-3 flex items-start gap-3 rounded-lg border border-[#9a7340]/25 bg-[#9a7340]/8 px-3.5 py-2.5 t-caption text-[#9a7340]",
+      )}
+    >
+      <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+      <span>{children}</span>
+    </div>
+  );
+}
 
 /**
  * 视频操作面板（F2 / F5）
@@ -190,6 +204,16 @@ export function VideoGenPanel(props: VideoGenPanelProps) {
 
         {basketCount > 0 && <MiniAssetList assets={basketAssets} compact />}
 
+        {/* 参考图数量提示 —— 保留原有文案以保证契约字面量可见 */}
+        <p
+          className={cn(
+            "mt-3 t-caption",
+            basketCount > 0 ? "text-primary" : "text-muted-foreground",
+          )}
+        >
+          参考图数量：{basketCount} / {maxReferenceImages}，有参考图时会自动按图生视频提交。（Omni 接口限制：{VIDEO_REFERENCE_BASKET_LIMIT_HINT}）
+        </p>
+
         {/* Pill 参数 + 比例预设 */}
         <div className="mt-4 flex flex-col gap-4">
           <div className="flex flex-wrap gap-3">
@@ -242,10 +266,9 @@ export function VideoGenPanel(props: VideoGenPanelProps) {
       </div>
 
       {providerUnavailable && (
-        <div className="alert-warning-pro mt-3 t-caption">
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-          <span>后端没有检测到视频生成接口配置，暂时不能提交真实视频任务。</span>
-        </div>
+        <DSWarningAlert>
+          后端没有检测到视频生成接口配置，暂时不能提交真实视频任务。
+        </DSWarningAlert>
       )}
     </DSCard>
   );
@@ -305,7 +328,7 @@ function MiniAssetList({ assets, compact = false }: { assets: MediaAsset[]; comp
           key={asset.asset_id}
           className="flex items-center gap-3 rounded-lg border border-border bg-card p-2 transition-all duration-300 ease-apple hover:border-bronze/30 hover:shadow-apple-sm"
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
+          { }
           <img
             src={downloadMediaWorkbenchAsset(asset.asset_id)}
             alt={asset.filename}

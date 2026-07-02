@@ -16,11 +16,26 @@ import {
   DSEmptyState,
   DSProgress,
   DSStatusDot,
+  DSSectionTitle,
 } from "@/components/ui/ds";
 import { cn } from "@/lib/utils";
 import { downloadVideoWorkbenchRun } from "@/lib/api-client";
 import type { VideoWorkbenchRun } from "@/lib/types";
 import { DS_ANCHOR_PRIMARY_SM } from "./constants";
+
+/** DS 风格内联错误提示条 —— 替换原 alert-error-pro 自定义类（D10/F10） */
+function DSErrorAlert({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      className={cn(
+        "flex items-start gap-3 rounded-lg border border-[#9a4747]/25 bg-[#9a4747]/8 px-3.5 py-2 t-caption text-[#9a4747]",
+      )}
+    >
+      <AlertTriangle className="h-3 w-3 shrink-0 mt-0.5" />
+      <span>{children}</span>
+    </div>
+  );
+}
 
 /**
  * 视频任务面板（F7）
@@ -42,13 +57,12 @@ export interface VideoRunPanelProps {
 export function VideoRunPanel({ runs, syncingRunId, onSync }: VideoRunPanelProps) {
   return (
     <DSCard className="h-full p-4">
-      <div className="module-card-header-pro !px-0 !border-0 !pb-3">
-        <div className="title-block">
-          <div className="overline">任务队列</div>
-          <h3>视频任务</h3>
-        </div>
-        <Clock className="h-4 w-4 text-muted-foreground" />
-      </div>
+      <DSSectionTitle
+        className="mb-3"
+        icon={<Clock className="h-4 w-4" />}
+        title="视频任务"
+        desc="任务队列"
+      />
       {runs.length === 0 ? (
         <DSEmptyState
           className="mt-4"
@@ -150,10 +164,7 @@ function VideoRunCard({
         )}
 
         {run.error_message && (
-          <div className="alert-error-pro t-caption !py-2">
-            <AlertTriangle className="h-3 w-3 shrink-0 mt-0.5" />
-            <span>{run.error_message}</span>
-          </div>
+          <DSErrorAlert>{run.error_message}</DSErrorAlert>
         )}
 
         <div className="flex shrink-0 gap-3">

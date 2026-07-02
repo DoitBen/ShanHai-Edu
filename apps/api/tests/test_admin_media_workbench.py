@@ -66,6 +66,22 @@ def image_bytes(fmt: str = "PNG", size: tuple[int, int] = (64, 48)) -> bytes:
     return stream.getvalue()
 
 
+def wait_for_image_run(client: TestClient, run_id: str, expected_status: str = "completed") -> dict[str, Any]:
+    deadline = time.monotonic() + 2
+    last_run: dict[str, Any] | None = None
+    while time.monotonic() < deadline:
+        last_run = unwrap_ok(
+            client.get(
+                f"/admin/media-workbench/images/runs/{run_id}",
+                headers=auth_headers(),
+            )
+        )
+        if last_run["status"] == expected_status:
+            return last_run
+        time.sleep(0.03)
+    raise AssertionError(f"image run did not reach {expected_status}: {last_run}")
+
+
 def test_admin_media_workbench_capabilities_defaults_and_readiness(tmp_path: Path):
     client = make_client(tmp_path)
 
@@ -128,7 +144,7 @@ def test_admin_media_workbench_image_run_saves_b64_asset_and_payload(tmp_path: P
     client = make_client(tmp_path, {"image_provider_mode": "real"})
     client.app.state.service.media_workbench.image_provider = RecordingImageProvider()
 
-    run = unwrap_ok(
+    created = unwrap_ok(
         client.post(
             "/admin/media-workbench/images/runs",
             headers=auth_headers(),
@@ -141,6 +157,7 @@ def test_admin_media_workbench_image_run_saves_b64_asset_and_payload(tmp_path: P
             },
         )
     )
+    run = wait_for_image_run(client, created["run_id"])
 
     assert run["task_type"] == "admin_image_generation"
     assert run["status"] == "completed"
@@ -177,19 +194,54 @@ def test_admin_media_workbench_image_run_saves_url_asset(tmp_path: Path):
     client = make_client(tmp_path, {"image_provider_mode": "real"})
     client.app.state.service.media_workbench.image_provider = RecordingImageProvider()
 
-    run = unwrap_ok(
+    created = unwrap_ok(
         client.post(
             "/admin/media-workbench/images/runs",
             headers=auth_headers(),
             json={"prompt": "URL 图片保存", "count": 1},
         )
     )
+    run = wait_for_image_run(client, created["run_id"])
 
     asset_path = Path(client.app.state.service.media_workbench.asset_path(run["assets"][0]["asset_id"]))
     assert asset_path.read_bytes().startswith(b"\x89PNG")
 
 
-def test_admin_media_workbench_image_count_runs_concurrently(tmp_path: Path):
+def test_admin_media_workbench_image_run_returns_before_provider_completion(tmp_path: Path):
+    class SlowImageProvider:
+        def generate_image(self, payload: dict[str, Any]) -> dict[str, Any]:
+            time.sleep(0.4)
+            return {
+                "provider_task_id": "remote_img_async",
+                "status": "completed",
+                "b64_json": base64.b64encode(b"\x89PNG\r\n\x1a\nfake-image").decode("ascii"),
+                "image_url": None,
+                "raw": {},
+            }
+
+    client = make_client(tmp_path, {"image_provider_mode": "real"})
+    client.app.state.service.media_workbench.image_provider = SlowImageProvider()
+
+    started_at = time.monotonic()
+    run = unwrap_ok(
+        client.post(
+            "/admin/media-workbench/images/runs",
+            headers=auth_headers(),
+            json={"prompt": "异步图片任务", "count": 1},
+        )
+    )
+    elapsed = time.monotonic() - started_at
+
+    assert elapsed < 0.2
+    assert run["status"] == "processing"
+    assert run["assets"] == []
+
+    completed = wait_for_image_run(client, run["run_id"])
+    assert completed["status"] == "completed"
+    assert len(completed["assets"]) == 1
+
+
+def test_admin_media_workbench_image_count_runs_concurrently_inside_background_task(tmp_path: Path):
     lock = threading.Lock()
     active = 0
     max_active = 0
@@ -214,13 +266,14 @@ def test_admin_media_workbench_image_count_runs_concurrently(tmp_path: Path):
     client = make_client(tmp_path, {"image_provider_mode": "real"})
     client.app.state.service.media_workbench.image_provider = SlowImageProvider()
 
-    run = unwrap_ok(
+    created = unwrap_ok(
         client.post(
             "/admin/media-workbench/images/runs",
             headers=auth_headers(),
             json={"prompt": "并发图片测试", "count": 3},
         )
     )
+    run = wait_for_image_run(client, created["run_id"])
 
     assert len(run["assets"]) == 3
     assert max_active > 1
@@ -257,13 +310,14 @@ def test_admin_media_workbench_imports_image_assets_to_video_basket(tmp_path: Pa
             }
         },
     )()
-    run = unwrap_ok(
+    created = unwrap_ok(
         client.post(
             "/admin/media-workbench/images/runs",
             headers=auth_headers(),
             json={"prompt": "可作为视频参考图的图片", "count": 1},
         )
     )
+    run = wait_for_image_run(client, created["run_id"])
 
     basket = unwrap_ok(
         client.post(
@@ -431,6 +485,84 @@ def test_admin_media_workbench_video_reference_run_uses_local_asset_paths(tmp_pa
     assert "images" not in submitted_payloads[0]
     assert len(submitted_payloads[0]["reference_image_paths"]) == 1
     assert submitted_payloads[0]["reference_image_paths"][0].endswith("ref.png")
+    assert run["mode"] == "reference"
+    assert run["reference_count"] == 1
+
+
+def test_admin_media_workbench_reference_assets_force_reference_mode(tmp_path: Path):
+    submitted_payloads: list[dict[str, Any]] = []
+
+    class RecordingVideoProvider:
+        def submit_video(self, payload: dict[str, Any]) -> dict[str, Any]:
+            submitted_payloads.append(payload)
+            return {
+                "provider_task_id": "remote_video_force_reference",
+                "status": "queued",
+                "progress": 0,
+                "video_url": None,
+                "raw": {},
+            }
+
+    client = make_client(tmp_path, {"video_provider_mode": "real"})
+    client.app.state.service.media_workbench.video_provider = RecordingVideoProvider()
+    upload = unwrap_ok(
+        client.post(
+            "/admin/media-workbench/videos/references",
+            headers=auth_headers(),
+            files=[("files", ("ref.png", image_bytes("PNG"), "image/png"))],
+        )
+    )
+
+    run = unwrap_ok(
+        client.post(
+            "/admin/media-workbench/videos/runs",
+            headers=auth_headers(),
+            json={
+                "prompt": "前端误传 text 时仍应使用参考图生成。",
+                "model": "omni_flash-10s",
+                "mode": "text",
+                "size": "1280x720",
+                "duration_sec": 10,
+                "reference_asset_ids": [upload["assets"][0]["asset_id"]],
+            },
+        )
+    )
+
+    assert run["mode"] == "reference"
+    assert run["reference_count"] == 1
+    assert len(submitted_payloads[0]["reference_image_paths"]) == 1
+
+
+def test_admin_media_workbench_reference_run_rejects_missing_asset_file(tmp_path: Path):
+    client = make_client(tmp_path, {"video_provider_mode": "real"})
+    upload = unwrap_ok(
+        client.post(
+            "/admin/media-workbench/videos/references",
+            headers=auth_headers(),
+            files=[("files", ("ref.png", image_bytes("PNG"), "image/png"))],
+        )
+    )
+    asset_path = Path(client.app.state.service.media_workbench.asset_path(upload["assets"][0]["asset_id"]))
+    asset_path.unlink()
+
+    error = unwrap_error(
+        client.post(
+            "/admin/media-workbench/videos/runs",
+            headers=auth_headers(),
+            json={
+                "prompt": "缺失参考图文件不能提交给 provider。",
+                "model": "omni_flash-10s",
+                "mode": "reference",
+                "size": "1280x720",
+                "duration_sec": 10,
+                "reference_asset_ids": [upload["assets"][0]["asset_id"]],
+            },
+        ),
+        400,
+        "MEDIA_ASSET_NOT_FOUND",
+    )
+
+    assert "参考图文件不存在" in error["message"]
 
 
 def test_admin_media_workbench_sync_commits_video_run_update(tmp_path: Path):
@@ -559,20 +691,22 @@ def test_admin_media_workbench_provider_errors_are_sanitized(tmp_path: Path):
                 "IMAGE_REQUEST_FAILED",
                 "HTTP 500",
                 retryable=True,
-                response_excerpt='{"Authorization":"Bearer secret-token","message":"bad"}',
+                response_excerpt='{"private_header":"hidden-sentinel","message":"bad"}',
             )
 
     client = make_client(tmp_path, {"image_provider_mode": "real"})
     client.app.state.service.media_workbench.image_provider = FailingImageProvider()
 
-    error = unwrap_error(
+    created = unwrap_ok(
         client.post(
             "/admin/media-workbench/images/runs",
             headers=auth_headers(),
             json={"prompt": "课堂图片"},
-        ),
-        502,
-        "IMAGE_REQUEST_FAILED",
+        )
     )
+    failed = wait_for_image_run(client, created["run_id"], expected_status="failed")
 
-    assert "secret-token" not in str(error)
+    assert "图片生成请求失败" in failed["error_message"]
+    assert "HTTP 500" in failed["error_message"]
+    assert failed["result"]["error_code"] == "IMAGE_REQUEST_FAILED"
+    assert "hidden-sentinel" not in str(failed)

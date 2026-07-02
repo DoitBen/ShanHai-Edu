@@ -55,6 +55,7 @@ import {
   fetchProjects,
   fetchVideoWorkflow,
   fetchMediaWorkbench,
+  fetchImageWorkbenchRun as fetchImageWorkbenchRunRequest,
   generateProjectNode,
   retryProjectTask as retryProjectTaskRequest,
   saveVideoWorkflow,
@@ -342,6 +343,7 @@ interface AppState {
   ) => Promise<{ ok: boolean; msg?: string; error?: unknown; run?: VideoWorkflowRun }>;
   loadMediaWorkbench: () => Promise<void>;
   createImageWorkbenchRun: (payload: ImageWorkbenchRunRequest) => Promise<{ ok: boolean; msg?: string; run?: ImageWorkbenchRun }>;
+  syncImageWorkbenchRun: (runId: string) => Promise<{ ok: boolean; msg?: string; run?: ImageWorkbenchRun }>;
   uploadMediaWorkbenchReferences: (files: File[]) => Promise<{ ok: boolean; msg?: string }>;
   importImagesToVideoReferences: (assetIds: string[]) => Promise<{ ok: boolean; msg?: string }>;
   createVideoWorkbenchRun: (payload: VideoWorkbenchRunRequest) => Promise<{ ok: boolean; msg?: string; run?: VideoWorkbenchRun }>;
@@ -1528,6 +1530,31 @@ export const useAppStore = create<AppState>((set, get) => ({
       return { ok: true, run };
     } catch (error) {
       const msg = error instanceof Error ? error.message : "图片生成任务创建失败";
+      set({ mediaWorkbenchError: msg });
+      return { ok: false, msg };
+    }
+  },
+
+  syncImageWorkbenchRun: async (runId) => {
+    try {
+      const run = await fetchImageWorkbenchRunRequest(runId);
+      const current = get().mediaWorkbench;
+      if (current) {
+        const assets = run.assets.length
+          ? [...run.assets, ...current.assets.filter((asset) => !run.assets.some((item) => item.asset_id === asset.asset_id))]
+          : current.assets;
+        set({
+          mediaWorkbench: {
+            ...current,
+            assets,
+            image_runs: [run, ...current.image_runs.filter((item) => item.run_id !== run.run_id)],
+          },
+          mediaWorkbenchStatus: "ready",
+        });
+      }
+      return { ok: true, run };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "图片任务同步失败";
       set({ mediaWorkbenchError: msg });
       return { ok: false, msg };
     }

@@ -5,6 +5,7 @@ import base64
 import urllib.request
 import urllib.error
 import uuid
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import BytesIO
 import sqlite3
@@ -54,6 +55,8 @@ class MediaWorkbenchService:
         self.image_provider = image_provider
         self.video_provider = video_provider
         self.image_model = image_model or DEFAULT_IMAGE_MODEL
+        self._image_run_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="admin-image-workbench")
+        self._assets_lock = threading.Lock()
         self._ensure_workspace()
 
     def summary(self) -> dict[str, Any]:
@@ -123,43 +126,10 @@ class MediaWorkbenchService:
                 "admin_image_generation",
                 run_payload,
                 status="processing",
-                result={"provider_phase": "submit"},
+                result={"provider_phase": "queued", "assets": [], "progress": 0, "expected_count": count, "completed_count": 0},
             )
-            assets = []
-            try:
-                submissions: dict[int, dict[str, Any]] = {}
-                request_payload = {
-                    "prompt": prompt,
-                    "model": model,
-                    "size": size,
-                    "quality": quality,
-                    "response_format": "b64_json",
-                }
-                with ThreadPoolExecutor(max_workers=min(count, 4)) as executor:
-                    futures = {
-                        executor.submit(self.image_provider.generate_image, dict(request_payload)): index
-                        for index in range(count)
-                    }
-                    for future in as_completed(futures):
-                        submissions[futures[future]] = future.result()
-                for index in range(count):
-                    assets.append(self._save_image_result(task["task_id"], index, prompt, submissions[index]))
-            except ProviderError as exc:
-                self.store.update_task(
-                    conn,
-                    task["task_id"],
-                    "failed",
-                    {"provider_phase": "submit", "error_code": exc.code, "retryable": exc.retryable},
-                    str(exc),
-                )
-                raise
-            updated = self.store.update_task(
-                conn,
-                task["task_id"],
-                "completed",
-                {"provider_phase": "completed", "assets": assets, "model": model, "size": size, "quality": quality},
-            )
-        return self._decorate_image_run(updated)
+        self._image_run_executor.submit(self._run_image_generation, task["task_id"], run_payload)
+        return self._decorate_image_run(task)
 
     def get_image_run(self, run_id: str) -> dict[str, Any]:
         return self._decorate_image_run(self._task(run_id))
@@ -238,10 +208,11 @@ class MediaWorkbenchService:
         if not prompt:
             raise MediaWorkbenchError("VIDEO_PROMPT_REQUIRED", "请先填写视频提示词")
         model = str(payload.get("model") or DEFAULT_VIDEO_MODEL)
-        mode = str(payload.get("mode") or "text")
+        requested_mode = str(payload.get("mode") or "text")
         size = str(payload.get("size") or DEFAULT_VIDEO_SIZE)
         duration_sec = int(payload.get("duration_sec") or DEFAULT_VIDEO_DURATION_SEC)
         reference_asset_ids = [str(item) for item in payload.get("reference_asset_ids") or []]
+        mode = "reference" if reference_asset_ids else requested_mode
         limit = self._reference_limit(model)
         if len(reference_asset_ids) > limit:
             raise MediaWorkbenchError("VIDEO_REFERENCE_LIMIT_EXCEEDED", f"当前模型参考图最多 {limit} 张")
@@ -249,7 +220,7 @@ class MediaWorkbenchService:
             raise MediaWorkbenchError("VIDEO_REFERENCE_REQUIRED", "图生视频需要至少 1 张参考图")
         reference_paths = self._resolve_asset_paths(reference_asset_ids)
         submit_payload: dict[str, Any] = {"model": model, "prompt": prompt, "size": size}
-        if mode != "text" and reference_paths:
+        if mode == "reference" and reference_paths:
             submit_payload["reference_image_paths"] = [str(path) for path in reference_paths]
         task_payload = {
             "prompt": prompt,
@@ -290,6 +261,7 @@ class MediaWorkbenchService:
                     "download_status": "not_started",
                     "duration_sec": duration_sec,
                     "model": model,
+                    "reference_count": len(reference_paths),
                 },
             )
         return self._decorate_video_run(updated)
@@ -418,9 +390,10 @@ class MediaWorkbenchService:
             "created_at": now_iso(),
             "index": index,
         }
-        assets = self._read_assets()
-        assets.append(asset)
-        self._write_assets(assets)
+        with self._assets_lock:
+            assets = self._read_assets()
+            assets.append(asset)
+            self._write_assets(assets)
         return asset
 
     def _upsert_video_asset(self, run_id: str, rel_path: str, task: dict[str, Any]) -> dict[str, Any]:
@@ -437,9 +410,10 @@ class MediaWorkbenchService:
             "run_id": run_id,
             "created_at": now_iso(),
         }
-        assets = [item for item in self._read_assets() if item.get("asset_id") != asset_id]
-        assets.append(asset)
-        self._write_assets(assets)
+        with self._assets_lock:
+            assets = [item for item in self._read_assets() if item.get("asset_id") != asset_id]
+            assets.append(asset)
+            self._write_assets(assets)
         return asset
 
     def _reference_limit(self, model: str) -> int:
@@ -455,8 +429,87 @@ class MediaWorkbenchService:
             asset = assets.get(asset_id)
             if not asset:
                 raise MediaWorkbenchError("MEDIA_ASSET_NOT_FOUND", "素材不存在")
-            paths.append(self._storage_root() / str(asset["path"]))
+            if asset.get("asset_type") != "image":
+                raise MediaWorkbenchError("VIDEO_REFERENCE_INVALID", "图生视频只能使用图片参考物")
+            path = self._storage_root() / str(asset["path"])
+            if not path.is_file():
+                raise MediaWorkbenchError("MEDIA_ASSET_NOT_FOUND", "参考图文件不存在，请重新上传后再生成视频")
+            paths.append(path)
         return paths
+
+    def _run_image_generation(self, run_id: str, payload: dict[str, Any]) -> None:
+        if self.image_provider is None:
+            self._fail_image_run(run_id, "IMAGE_PROVIDER_NOT_CONFIGURED", "图片生成服务未配置", retryable=False)
+            return
+        prompt = str(payload["prompt"])
+        count = int(payload["count"])
+        request_payload = {
+            "prompt": prompt,
+            "model": payload["model"],
+            "size": payload["size"],
+            "quality": payload["quality"],
+            "response_format": "b64_json",
+        }
+        try:
+            submissions: dict[int, dict[str, Any]] = {}
+            with self.store.connect(self._workspace_dir()) as conn:
+                self.store.update_task(
+                    conn,
+                    run_id,
+                    "processing",
+                    {**payload, "provider_phase": "submit", "assets": [], "progress": 0, "expected_count": count, "completed_count": 0},
+                )
+            with ThreadPoolExecutor(max_workers=min(count, 4)) as executor:
+                futures = {
+                    executor.submit(self.image_provider.generate_image, dict(request_payload)): index
+                    for index in range(count)
+                }
+                for future in as_completed(futures):
+                    submissions[futures[future]] = future.result()
+            assets = [self._save_image_result(run_id, index, prompt, submissions[index]) for index in range(count)]
+            with self.store.connect(self._workspace_dir()) as conn:
+                self.store.update_task(
+                    conn,
+                    run_id,
+                    "completed",
+                    {
+                        "provider_phase": "completed",
+                        "assets": assets,
+                        "model": payload["model"],
+                        "size": payload["size"],
+                        "quality": payload["quality"],
+                        "progress": 100,
+                        "expected_count": count,
+                        "completed_count": len(assets),
+                    },
+                )
+        except ProviderError as exc:
+            self._fail_image_run(run_id, exc.code, self._image_provider_error_message(exc), retryable=exc.retryable)
+        except Exception as exc:  # pragma: no cover - defensive background task guard
+            self._fail_image_run(run_id, "IMAGE_GENERATION_FAILED", f"图片生成任务执行失败：{type(exc).__name__}", retryable=True)
+
+    def _fail_image_run(self, run_id: str, code: str, message: str, *, retryable: bool) -> None:
+        with self.store.connect(self._workspace_dir()) as conn:
+            task = self._task(run_id)
+            result = {
+                **(task.get("result") or {}),
+                "provider_phase": "failed",
+                "error_code": code,
+                "retryable": retryable,
+                "progress": 100,
+            }
+            self.store.update_task(conn, run_id, "failed", result, message)
+
+    def _image_provider_error_message(self, exc: ProviderError) -> str:
+        message = str(exc).strip()
+        lowered = message.lower()
+        if exc.code == "IMAGE_REQUEST_FAILED" and "connection error" in lowered:
+            return "图片生成请求失败：无法连接图片服务，请检查 provider 配置、网络代理或稍后重试"
+        if exc.code == "IMAGE_REQUEST_FAILED" and "http" in lowered:
+            return f"图片生成请求失败：上游返回 {message}，请检查 provider 配置或稍后重试"
+        if message:
+            return message if any("\u4e00" <= char <= "\u9fff" for char in message) else f"图片生成失败：{message}"
+        return "图片生成失败，请检查 provider 配置后重试"
 
     def _validate_reference_image(self, content: bytes) -> str:
         try:
@@ -511,6 +564,7 @@ class MediaWorkbenchService:
             "quality": payload.get("quality"),
             "count": payload.get("count"),
             "assets": result.get("assets", []),
+            "progress": result.get("progress", 100 if task.get("status") == "completed" else 0),
         }
 
     def _decorate_video_run(self, task: dict[str, Any]) -> dict[str, Any]:
@@ -525,6 +579,7 @@ class MediaWorkbenchService:
             "size": payload.get("size"),
             "duration_sec": payload.get("duration_sec"),
             "reference_asset_ids": payload.get("reference_asset_ids", []),
+            "reference_count": result.get("reference_count", len(payload.get("reference_asset_ids", []))),
             "progress": result.get("progress", 0),
             "download_path": result.get("download_path") or task.get("download_path"),
             "video_url_present": bool(result.get("video_url")),

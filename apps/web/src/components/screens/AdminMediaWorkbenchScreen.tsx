@@ -55,6 +55,8 @@ const DEFAULT_IMAGE_QUALITY = "high";
 const DEFAULT_VIDEO_MODEL = "omni_flash-10s";
 const DEFAULT_VIDEO_SIZE = "1280x720";
 const DEFAULT_VIDEO_DURATION = 10;
+const ACTIVE_IMAGE_STATUSES = new Set(["queued", "submitting", "processing"]);
+const ACTIVE_VIDEO_STATUSES = new Set(["queued", "submitting", "processing", "completed_pending_download"]);
 
 const PROMPT_TEMPLATES_IMAGE: { label: string; snippet: string }[] = [
   { label: "主体", snippet: "[主体：明亮的小学数学课堂，桌面上有彩色计数棒和练习卡]" },
@@ -91,6 +93,7 @@ export function AdminMediaWorkbenchScreen() {
   const error = useAppStore((s) => s.mediaWorkbenchError);
   const loadMediaWorkbench = useAppStore((s) => s.loadMediaWorkbench);
   const createImageWorkbenchRun = useAppStore((s) => s.createImageWorkbenchRun);
+  const syncImageWorkbenchRun = useAppStore((s) => s.syncImageWorkbenchRun);
   const uploadMediaWorkbenchReferences = useAppStore((s) => s.uploadMediaWorkbenchReferences);
   const importImagesToVideoReferences = useAppStore((s) => s.importImagesToVideoReferences);
   const createVideoWorkbenchRun = useAppStore((s) => s.createVideoWorkbenchRun);
@@ -117,6 +120,27 @@ export function AdminMediaWorkbenchScreen() {
     if (!isAdmin) return;
     void loadMediaWorkbench();
   }, [isAdmin, loadMediaWorkbench]);
+
+  useEffect(() => {
+    if (!isAdmin || !mediaWorkbench) return;
+    const activeImageRunIds = mediaWorkbench.image_runs
+      .filter((run) => ACTIVE_IMAGE_STATUSES.has(run.status))
+      .map((run) => run.run_id);
+    const activeVideoRunIds = mediaWorkbench.video_runs
+      .filter((run) => ACTIVE_VIDEO_STATUSES.has(run.status) || (run.status === "completed" && !run.download_path))
+      .map((run) => run.run_id);
+    if (!activeImageRunIds.length && !activeVideoRunIds.length) return;
+
+    const timer = window.setInterval(() => {
+      for (const runId of activeImageRunIds) {
+        void syncImageWorkbenchRun(runId);
+      }
+      for (const runId of activeVideoRunIds) {
+        void syncVideoWorkbenchRun(runId);
+      }
+    }, 30000);
+    return () => window.clearInterval(timer);
+  }, [isAdmin, mediaWorkbench, syncImageWorkbenchRun, syncVideoWorkbenchRun]);
 
   const imageAssets = useMemo(
     () => (mediaWorkbench?.assets || []).filter((asset) => asset.asset_type === "image"),
@@ -163,8 +187,8 @@ export function AdminMediaWorkbenchScreen() {
     setImageBusy(false);
     if (!result.ok) { toast.error(result.msg || "图片生成失败"); return; }
     const ids = result.run?.assets.map((asset) => asset.asset_id) || [];
-    setSelectedImageIds(ids);
-    toast.success("图片已生成，可加入视频参考篮");
+    if (ids.length) setSelectedImageIds(ids);
+    toast.success(ids.length ? "图片已生成，可加入视频参考篮" : "图片任务已创建，完成后会自动刷新");
   }
 
   async function polishImagePrompt() {
@@ -228,7 +252,7 @@ export function AdminMediaWorkbenchScreen() {
       size: videoSize, duration_sec: DEFAULT_VIDEO_DURATION, reference_asset_ids: referenceAssetIds,
     });
     setVideoBusy(false);
-    if (result.ok) toast.success("视频任务已创建");
+    if (result.ok) toast.success(referenceAssetIds.length ? "已按参考图模式创建视频任务" : "视频任务已创建");
     else toast.error(result.msg || "视频任务创建失败");
   }
 
@@ -433,6 +457,9 @@ export function AdminMediaWorkbenchScreen() {
                   </div>
                 </div>
 
+                <p className={cn("mt-3 t-caption", basketCount > 0 ? "text-primary" : "text-muted-foreground")}>
+                  参考图数量：{basketCount} / {maxReferenceImages}，有参考图时会自动按图生视频提交。
+                </p>
                 {basketCount > 0 && <MiniAssetList assets={basket?.assets || []} compact />}
 
                 {/* Pill 参数 + CTA */}
@@ -670,6 +697,15 @@ function RunList({ runs, syncingRunId, onSync }: {
               <p className="line-clamp-2 t-caption text-foreground">{run.prompt || run.run_id}</p>
               {isActive && (
                 <DSProgress value={run.progress || 0} variant="default" />
+              )}
+              {run.download_path && (
+                <video
+                  className="mt-3 aspect-video w-full rounded-lg border border-border bg-black"
+                  controls
+                  preload="metadata"
+                  src={downloadVideoWorkbenchRun(run.run_id)}
+                />
+              )}
               )}
               {run.error_message && (
                 <div className="alert-error-pro t-caption !py-2">

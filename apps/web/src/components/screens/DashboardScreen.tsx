@@ -71,7 +71,7 @@ export function DashboardScreen() {
   return (
     <div className="mx-auto w-full max-w-[1440px] px-4 py-6 lg:px-8 lg:py-8">
       {/* 页头 */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-lg sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="t-overline text-muted-foreground/70">工作台首页</div>
           <h1 className="mt-2 h-page-title">
@@ -81,7 +81,7 @@ export function DashboardScreen() {
             以下是当前需要你关注的工作。一眼看清下一步要做什么。
           </p>
         </div>
-        <Button className="btn-cta-primary gap-2 h-11 px-5" onClick={() => go("new-project")}>
+        <Button className="btn-cta-primary btn-md gap-sm" onClick={() => go("new-project")}>
           <Plus className="h-4 w-4" />
           新建项目
         </Button>
@@ -91,7 +91,7 @@ export function DashboardScreen() {
       <section className="mt-8">
         <SectionHeader index="01" title="继续工作" desc="从上次离开的地方继续推进" />
         {projectsStatus === "loading" ? (
-          <Card className="border-border bg-card p-10 text-center">
+          <Card className="card-unified card-pad-lg text-center">
             <Activity className="mx-auto h-8 w-8 animate-pulse text-muted-foreground" />
             <p className="mt-3 t-module">正在同步项目列表</p>
             <p className="mt-1 t-caption text-muted-foreground">
@@ -99,13 +99,13 @@ export function DashboardScreen() {
             </p>
           </Card>
         ) : projectsStatus === "error" ? (
-          <Card className="border-dashed bg-card p-10 text-center">
+          <Card className="card-unified card-pad-lg border-dashed text-center">
             <AlertTriangle className="mx-auto h-8 w-8 text-destructive" />
             <p className="mt-3 t-module">项目列表读取失败</p>
             <p className="mt-1 t-caption text-muted-foreground">
               {projectsError || "请确认后端 API 已启动"}
             </p>
-            <Button className="mt-4 gap-2" onClick={() => void loadProjects()}>
+            <Button className="btn-cta-primary btn-md mt-lg gap-sm" onClick={() => void loadProjects()}>
               <RefreshCwIcon />
               重试
             </Button>
@@ -116,7 +116,7 @@ export function DashboardScreen() {
             onEnter={() => openProject(continueProject.id)}
           />
         ) : (
-          <Card className="border-dashed bg-card p-10 text-center">
+          <Card className="card-unified card-pad-lg border-dashed text-center">
             <Inbox className="mx-auto h-8 w-8 text-muted-foreground" />
             <p className="mt-3 t-module">暂无进行中的项目</p>
             {dataMode === "api" && (
@@ -124,7 +124,7 @@ export function DashboardScreen() {
                 当前连接真实后端项目数据。
               </p>
             )}
-            <Button className="mt-4 gap-2" onClick={() => go("new-project")}>
+            <Button className="btn-cta-primary btn-md mt-lg gap-sm" onClick={() => go("new-project")}>
               <Plus className="h-4 w-4" /> 新建第一个项目
             </Button>
           </Card>
@@ -132,7 +132,7 @@ export function DashboardScreen() {
       </section>
 
       {/* 2 + 3 双栏 */}
-      <div className="mt-10 grid gap-8 lg:grid-cols-3">
+      <div className="mt-10 grid gap-xl lg:grid-cols-3 grid-align-stretch">
         {/* 2. 项目概览（带筛选/排序/搜索） */}
         <section className="lg:col-span-2">
           <ProjectOverview />
@@ -145,7 +145,7 @@ export function DashboardScreen() {
             title="待处理事项"
             desc="需要你确认或处理"
           />
-          <Card className="border-border bg-card p-2">
+          <Card className="card-unified card-pad-sm">
             {pendingItems.length > 0 ? (
               <ul className="divide-y divide-border">
                 {pendingItems.map((item) => (
@@ -174,7 +174,7 @@ export function DashboardScreen() {
           title="系统轻状态"
           desc="仅显示必要的运行状态，不堆砌监控"
         />
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-lg sm:grid-cols-2 lg:grid-cols-4 grid-align-stretch">
           <LightStat
             icon={<Activity className="h-4 w-4" />}
             label="调度器"
@@ -203,7 +203,7 @@ export function DashboardScreen() {
         </div>
 
         {isAdmin && (
-          <Card className="mt-4 border-border bg-card p-5">
+          <Card className="card-unified card-pad-md mt-4">
             <div className="t-overline mb-3 text-muted-foreground/70">
               服务状态
             </div>
@@ -211,7 +211,7 @@ export function DashboardScreen() {
               {system.services.map((svc) => (
                 <div
                   key={svc.name}
-                  className="flex items-center justify-between gap-3"
+                  className="flex items-center justify-between gap-md"
                 >
                   <span className="t-body text-muted-foreground">{svc.name}</span>
                   <ServiceStatus status={svc.status} note={svc.note} />
@@ -239,14 +239,14 @@ function SectionHeader({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="mb-4 flex items-end justify-between gap-3">
-      <div className="flex items-baseline gap-3">
-        <span className="t-overline font-bold text-bronze">{index}</span>
-        <div>
-          <h2 className="t-module font-semibold text-foreground">{title}</h2>
-          {desc && (
-            <p className="mt-1 t-caption text-muted-foreground">{desc}</p>
-          )}
+    <div className="mb-lg flex items-end justify-between gap-md">
+      <div className="section-title-unified mb-0!">
+        <div className="icon-box">
+          <span className="text-overline">{index}</span>
+        </div>
+        <div className="text-block">
+          <h2>{title}</h2>
+          {desc && <div className="desc">{desc}</div>}
         </div>
       </div>
       {action}
@@ -264,11 +264,11 @@ function ContinueWorkHero({
   const stage = stageDefByKey(project.currentStage);
   const stageTitle = project.currentStageTitle || stage?.title || project.currentStage;
   return (
-    <Card className="relative overflow-hidden border-border bg-card p-0">
+    <Card className="card-unified relative overflow-hidden p-0">
       <div className="grid gap-0 lg:grid-cols-[1.4fr_1fr]">
         {/* 左：项目信息 */}
         <div className="p-6 lg:p-8">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-sm">
             <span className="t-overline text-bronze">继续工作</span>
             <ProjectStatusBadge status={project.status} />
           </div>
@@ -287,9 +287,9 @@ function ContinueWorkHero({
             <span>{project.lessonType}</span>
           </div>
 
-          <div className="mt-6 rounded-lg border border-border bg-gradient-to-br from-muted/40 to-muted/20 p-4 transition-all duration-300 ease-apple hover:border-bronze/30 hover:shadow-apple-sm">
+          <div className="mt-6 r-lg border border-border bg-gradient-to-br from-muted/40 to-muted/20 p-lg transition-all duration-300 ease-apple hover:border-bronze/30 hover:shadow-apple-sm">
             <div className="t-overline text-muted-foreground/70">下一步动作</div>
-            <div className="mt-1.5 flex items-center gap-2 t-body font-semibold text-foreground">
+            <div className="mt-1.5 flex items-center gap-sm t-body font-semibold text-foreground">
               <span className="inline-block h-4 w-1 rounded-full bg-primary" />
               {project.nextAction}
             </div>
@@ -310,12 +310,12 @@ function ContinueWorkHero({
             </div>
           </div>
 
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Button className="btn-cta-primary gap-2 h-11 px-5" onClick={onEnter}>
+          <div className="mt-6 flex flex-wrap gap-md">
+            <Button className="btn-cta-primary btn-lg gap-sm" onClick={onEnter}>
               进入工作区
               <ArrowRight className="h-4 w-4" />
             </Button>
-            <Button variant="outline" className="btn-cta-secondary gap-2 h-11 px-5">
+            <Button variant="outline" className="btn-cta-secondary btn-lg gap-sm">
               <ClipboardList className="h-4 w-4" />
               查看流程
             </Button>
@@ -381,7 +381,7 @@ function ActivityTimeline({ projectId }: { projectId?: string }) {
         const Icon = meta.Icon;
         const isLast = idx === items.length - 1;
         return (
-          <li key={item.id} className="relative flex gap-3">
+          <li key={item.id} className="relative flex gap-md">
             {/* 时间线竖线 */}
             {!isLast && (
               <span
@@ -391,14 +391,14 @@ function ActivityTimeline({ projectId }: { projectId?: string }) {
             )}
             <span
               className={cn(
-                "relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full",
+                "relative z-10 flex h-7 w-7 shrink-0 items-center justify-center r-full",
                 meta.bg,
               )}
             >
               <Icon className={cn("h-3.5 w-3.5", meta.tone)} />
             </span>
             <div className="min-w-0 flex-1 pb-1">
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center justify-between gap-sm">
                 <span className="t-caption font-medium text-foreground/80">
                   {item.title}
                 </span>
@@ -448,10 +448,10 @@ function StageMiniRail({ currentStageKey }: { currentStageKey: string }) {
         const done = i < currentIndex;
         const current = i === currentIndex;
         return (
-          <div key={n.k} className="flex items-center gap-3">
+          <div key={n.k} className="flex items-center gap-md">
             <span
               className={cn(
-                "flex h-6 w-6 items-center justify-center rounded-full text-[0.65rem] font-bold transition-all duration-300 ease-apple",
+                "flex h-7 w-7 items-center justify-center r-full text-[0.65rem] font-bold transition-all duration-300 ease-apple",
                 done && "stage-node-done",
                 current && "stage-node-current",
                 !done && !current && "stage-node-pending"
@@ -499,11 +499,11 @@ function PendingRow({
       <button
         type="button"
         onClick={onClick}
-        className="card-pro flex w-full items-start gap-3 rounded-lg px-3 py-3 text-left hover:bg-muted/30 focus-ring"
+        className="card-pro flex w-full items-start gap-md r-lg p-3 text-left hover:bg-muted/30 focus-ring"
       >
         <span
           className={cn(
-            "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full",
+            "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center r-full",
             meta.tone === "danger"
               ? "bg-destructive/10 text-destructive"
               : meta.tone === "warning"
@@ -518,10 +518,10 @@ function PendingRow({
           )}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-sm">
             <span className="t-body truncate font-semibold text-foreground">{item.title}</span>
             {item.priority === "high" && (
-              <span className="inline-flex items-center gap-1 t-caption rounded-md px-2 py-0.5 bg-destructive/10 text-destructive">
+              <span className="badge-unified bg-destructive/10 text-destructive">
                 <AlertTriangle className="h-3 w-3" />高优先级
               </span>
             )}
@@ -529,7 +529,7 @@ function PendingRow({
           <div className="mt-0.5 t-caption text-muted-foreground line-clamp-1">
             {item.desc}
           </div>
-          <div className="mt-1.5 flex items-center gap-2 t-caption text-muted-foreground/80">
+          <div className="mt-1.5 flex items-center gap-sm t-caption text-muted-foreground/80">
             <span className="truncate">{item.projectName}</span>
             <span>·</span>
             <span>{item.stageTitle}</span>
@@ -571,7 +571,7 @@ function LightStat({
       ? "text-warning"
       : "text-muted-foreground";
   return (
-    <Card className="stat-card border-border bg-card p-4 shadow-apple-sm">
+    <Card className="card-unified card-pad-sm card-equal">
       <div className="flex items-center justify-between">
         <span className="t-caption text-muted-foreground">{label}</span>
         <span className={iconTone}>{icon}</span>
@@ -598,7 +598,7 @@ function ServiceStatus({
   };
   const m = map[status];
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-sm">
       <ToneBadge tone={m.tone}>{m.label}</ToneBadge>
       <span className="t-caption text-muted-foreground">{note}</span>
     </div>
@@ -693,8 +693,8 @@ function ProjectOverview() {
       />
 
       {/* 筛选栏 */}
-      <Card className="mb-4 border-border bg-card p-3">
-        <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center">
+      <Card className="card-unified card-pad-sm mb-lg">
+        <div className="flex flex-col gap-md lg:flex-row lg:items-center">
           {/* 搜索 */}
           <div className="relative flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -702,7 +702,7 @@ function ProjectOverview() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="搜索项目名、学科、年级、负责人…"
-              className="h-9 border-border bg-background pl-9 pr-8"
+              className="ctrl-sm border-border bg-background pl-9 pr-8"
             />
             {query && (
               <button
@@ -721,7 +721,7 @@ function ProjectOverview() {
             value={statusFilter}
             onValueChange={(v) => setStatusFilter(v as StatusFilter)}
           >
-            <SelectTrigger className="h-9 w-full border-border bg-background sm:w-[130px]">
+            <SelectTrigger className="ctrl-sm w-full border-border bg-background sm:w-[130px]">
               <SelectValue placeholder="状态" />
             </SelectTrigger>
             <SelectContent>
@@ -738,7 +738,7 @@ function ProjectOverview() {
             value={subjectFilter}
             onValueChange={setSubjectFilter}
           >
-            <SelectTrigger className="h-9 w-full border-border bg-background sm:w-[110px]">
+            <SelectTrigger className="ctrl-sm w-full border-border bg-background sm:w-[110px]">
               <SelectValue placeholder="学科" />
             </SelectTrigger>
             <SelectContent>
@@ -755,7 +755,7 @@ function ProjectOverview() {
             value={sortKey}
             onValueChange={(v) => setSortKey(v as SortKey)}
           >
-            <SelectTrigger className="h-9 w-full border-border bg-background sm:w-[130px]">
+            <SelectTrigger className="ctrl-sm w-full border-border bg-background sm:w-[130px]">
               <ArrowDownUp className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
               <SelectValue placeholder="排序" />
             </SelectTrigger>
@@ -772,7 +772,7 @@ function ProjectOverview() {
             <Button
               variant="ghost"
               size="sm"
-              className="h-9 gap-1.5 text-muted-foreground"
+              className="btn-sm gap-sm text-muted-foreground"
               onClick={resetFilters}
             >
               <X className="h-3.5 w-3.5" />
@@ -783,7 +783,7 @@ function ProjectOverview() {
 
         {/* 激活筛选标签 */}
         {hasActiveFilter && (
-          <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t border-border pt-2.5">
+          <div className="mt-2.5 flex flex-wrap items-center gap-sm border-t border-border pt-2.5">
             <span className="t-caption text-muted-foreground">已筛选：</span>
             {statusFilter !== "all" && (
               <FilterChip
@@ -803,13 +803,13 @@ function ProjectOverview() {
 
       {/* 项目卡片网格 */}
       {filtered.length > 0 ? (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-lg sm:grid-cols-2 xl:grid-cols-3 grid-align-stretch">
           {filtered.map((p) => (
             <ProjectCard key={p.id} project={p} />
           ))}
         </div>
       ) : (
-        <Card className="border-dashed bg-card p-10">
+        <Card className="card-unified card-pad-lg border-dashed">
           <EmptyState
             title="未找到匹配的项目"
             desc="尝试调整筛选条件或搜索关键词。"
@@ -817,7 +817,7 @@ function ProjectOverview() {
           />
           {hasActiveFilter && (
             <div className="flex justify-center pb-2">
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={resetFilters}>
+              <Button variant="outline" size="sm" className="btn-cta-secondary btn-sm gap-sm" onClick={resetFilters}>
                 <X className="h-3.5 w-3.5" />
                 清除筛选
               </Button>

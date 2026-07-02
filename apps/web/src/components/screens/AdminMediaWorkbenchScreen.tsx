@@ -236,7 +236,7 @@ export function AdminMediaWorkbenchScreen() {
   return (
     <div className="mx-auto w-full max-w-[1440px] px-4 py-6 lg:px-8 lg:py-8">
       {/* 页头 */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-lg sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="t-overline text-muted-foreground/70">管理员工具台</div>
           <h1 className="mt-2 h-page-title">媒体生成工作台</h1>
@@ -244,7 +244,7 @@ export function AdminMediaWorkbenchScreen() {
             图片和视频可以独立生成，也可以把已生成图片直接送入视频参考篮。密钥只在后端使用，前端只传提示词和素材 ID。
           </p>
         </div>
-        <Button variant="outline" className="btn-cta-secondary gap-2 h-10 px-4" onClick={() => void loadMediaWorkbench()}>
+        <Button variant="outline" className="btn-cta-secondary btn-md gap-sm" onClick={() => void loadMediaWorkbench()}>
           {status === "loading" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           刷新
         </Button>
@@ -258,7 +258,7 @@ export function AdminMediaWorkbenchScreen() {
       )}
 
       {/* VLM 修复：状态卡片 — 检测中用 loading-dot 轻量动画 */}
-      <div className="mt-6 grid gap-3 md:grid-cols-4">
+      <div className="mt-6 grid gap-lg md:grid-cols-4 grid-align-stretch">
         <StatusTile icon={<ImagePlus className="h-4 w-4" />} label="图片接口"
           value={!workbenchLoaded ? "检测中" : providerReady.image ? "已连接" : "未连接"}
           loading={!workbenchLoaded}
@@ -275,27 +275,27 @@ export function AdminMediaWorkbenchScreen() {
       </div>
 
       <Tabs defaultValue="images" className="mt-8">
-        <TabsList className="grid h-auto w-full grid-cols-3 rounded-lg md:w-[560px]">
-          <TabsTrigger value="images" className="gap-2 h-11"><ImagePlus className="h-4 w-4" />图片生成</TabsTrigger>
-          <TabsTrigger value="videos" className="gap-2 h-11"><Film className="h-4 w-4" />视频生成</TabsTrigger>
-          <TabsTrigger value="assets" className="gap-2 h-11"><Images className="h-4 w-4" />素材篮/历史</TabsTrigger>
+        <TabsList className="grid h-auto w-full grid-cols-3 r-lg md:w-[560px]">
+          <TabsTrigger value="images" className="gap-sm h-11"><ImagePlus className="h-4 w-4" />图片生成</TabsTrigger>
+          <TabsTrigger value="videos" className="gap-sm h-11"><Film className="h-4 w-4" />视频生成</TabsTrigger>
+          <TabsTrigger value="assets" className="gap-sm h-11"><Images className="h-4 w-4" />素材篮/历史</TabsTrigger>
         </TabsList>
 
         {/* ========== 图片生成 ========== */}
         <TabsContent value="images" className="mt-5">
-          <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-            <Card className="card-pro card-pro-radius border-border bg-card p-5 shadow-apple-sm">
-              <SectionTitle icon={<ImagePlus className="h-4 w-4" />} title="图片生成" desc="默认 gpt-image-2 / 1920x1080 / high" />
+          <div className="grid gap-xl xl:grid-cols-[0.9fr_1.1fr] grid-align-stretch">
+            <Card className="card-unified card-pad-md card-equal">
+              <SectionTitle className="mb-0!" icon={<ImagePlus className="h-4 w-4" />} title="图片生成" desc="默认 gpt-image-2 / 1920x1080 / high" />
 
               {/* 结构化模板 */}
               <div className="mt-4">
-                <div className="mb-2 flex items-center gap-1.5 t-overline text-muted-foreground/70">
+                <div className="mb-2 flex items-center gap-sm t-overline text-muted-foreground/70">
                   <Wand2 className="h-3 w-3" />结构化模板
                 </div>
-                <div className="flex flex-wrap gap-1.5">
+                <div className="flex flex-wrap gap-sm">
                   {PROMPT_TEMPLATES_IMAGE.map((tpl) => (
                     <button key={tpl.label} type="button" onClick={() => insertImageTemplate(tpl.snippet)}
-                      className="rounded-full border border-border bg-background px-2.5 py-1 t-caption text-foreground transition-all duration-300 ease-apple hover:-translate-y-0.5 hover:border-bronze/50 hover:bg-bronze/5 hover:text-bronze">
+                      className="pill-unified h-8!">
                       {tpl.label}
                     </button>
                   ))}
@@ -303,10 +303,10 @@ export function AdminMediaWorkbenchScreen() {
               </div>
 
               {/* VLM 修复：AI 润色改为链接式（降低视觉权重） */}
-              <div className="mt-4 space-y-2">
-                <div className="flex items-center justify-between gap-2">
+              <div className="mt-4 space-y-sm">
+                <div className="flex items-center justify-between gap-sm">
                   <Label className="t-caption text-muted-foreground">图片提示词</Label>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-md">
                     <button type="button" onClick={() => void polishImagePrompt()}
                       disabled={!imagePrompt.trim() || imagePolishing} className="ai-polish-link">
                       {imagePolishing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}AI 润色
@@ -315,11 +315,11 @@ export function AdminMediaWorkbenchScreen() {
                   </div>
                 </div>
                 <Textarea value={imagePrompt} onChange={(event) => setImagePrompt(event.target.value)}
-                  className="input-pro min-h-32 bg-background"
+                  className="input-pro min-h-[100px] bg-background"
                   placeholder="例如：明亮的小学数学课堂，桌面上有彩色计数棒和练习卡，非写实卡通插画风格，无文字。" />
               </div>
 
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="mt-4 grid gap-md sm:grid-cols-2">
                 <SelectField label="模型" value={imageModel} onValueChange={setImageModel} values={[DEFAULT_IMAGE_MODEL]} />
                 <SelectField label="尺寸" value={imageSize} onValueChange={setImageSize} values={["1920x1080", "1024x1024", "1080x1920"]} />
                 <SelectField label="质量" value={imageQuality} onValueChange={setImageQuality} values={["high", "low"]} />
@@ -327,7 +327,7 @@ export function AdminMediaWorkbenchScreen() {
               </div>
 
               {/* VLM 修复：积分提示柔化为灰色小字 */}
-              <Button className="btn-cta-primary mt-5 h-12 w-full gap-2 text-base font-semibold"
+              <Button className="btn-cta-primary btn-lg mt-5 w-full gap-sm font-semibold"
                 onClick={() => void submitImageRun()} disabled={imageBusy || !workbenchLoaded || imageProviderUnavailable}>
                 {imageBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                 <span>生成图片</span>
@@ -341,16 +341,16 @@ export function AdminMediaWorkbenchScreen() {
               )}
             </Card>
 
-            <Card className="card-pro card-pro-radius border-border bg-card p-5 shadow-apple-sm">
-              <SectionTitle icon={<Images className="h-4 w-4" />} title="图片结果" desc="选择后可加入视频参考篮" />
+            <Card className="card-unified card-pad-md card-equal">
+              <SectionTitle className="mb-0!" icon={<Images className="h-4 w-4" />} title="图片结果" desc="选择后可加入视频参考篮" />
               <AssetGrid assets={imageAssets} selectedIds={selectedImageIds}
                 onToggle={(assetId) => setSelectedImageIds((current) =>
                   current.includes(assetId) ? current.filter((item) => item !== assetId) : [...current, assetId])} />
-              <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="mt-4 flex flex-col gap-sm sm:flex-row sm:items-center sm:justify-between">
                 <p className="t-caption text-muted-foreground">
                   已选择 <span className="font-semibold text-foreground">{selectedCount}</span> 张 · 参考篮最多 {maxReferenceImages} 张
                 </p>
-                <Button variant="outline" className="btn-cta-secondary gap-2 h-10 px-4"
+                <Button variant="outline" className="btn-cta-secondary btn-md gap-sm"
                   onClick={() => void addSelectedImagesToVideoBasket()} disabled={selectedCount === 0}>
                   <Send className="h-4 w-4" />加入视频参考篮
                 </Button>
@@ -361,34 +361,34 @@ export function AdminMediaWorkbenchScreen() {
 
         {/* ========== 视频生成 — 小云雀规范核心 ========== */}
         <TabsContent value="videos" className="mt-5">
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-            <Card className="card-pro card-pro-radius border-border bg-card p-5 shadow-apple-sm">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <SectionTitle icon={<Film className="h-4 w-4" />} title="视频生成" desc="Omni 默认生成 10 秒横版视频" />
+          <div className="grid gap-xl xl:grid-cols-[minmax(0,1fr)_340px] grid-align-stretch">
+            <Card className="card-unified card-pad-md card-equal">
+              <div className="flex flex-col gap-md sm:flex-row sm:items-center sm:justify-between">
+                <SectionTitle className="mb-0!" icon={<Film className="h-4 w-4" />} title="视频生成" desc="Omni 默认生成 10 秒横版视频" />
                 <ToneBadge tone={providerReady.video ? "success" : "neutral"}>
                   {providerReady.video ? "真实接口已连接" : "检测中"}
                 </ToneBadge>
               </div>
 
               {/* 参考图篮 + 提示词 */}
-              <div className="mt-5 rounded-xl border border-border bg-gradient-to-br from-muted/30 to-muted/10 p-4">
-                <div className="mb-3 flex items-center justify-between">
+              <div className="mt-5 r-xl border border-border bg-gradient-to-br from-muted/30 to-muted/10 p-lg">
+                <div className="mb-md flex items-center justify-between">
                   <div className="t-overline text-muted-foreground/70">参考图篮</div>
                   <span className={cn("t-caption font-semibold", basketCount > 0 ? "text-success" : "text-muted-foreground")}>
                     {basketCount} / {maxReferenceImages}
                   </span>
                 </div>
-                <div className="grid gap-4 lg:grid-cols-[100px_minmax(0,1fr)]">
-                  <label className="group flex h-[100px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-border bg-card transition-all duration-300 ease-apple hover:border-bronze/50 hover:bg-bronze/5">
+                <div className="grid gap-lg lg:grid-cols-[100px_minmax(0,1fr)]">
+                  <label className="group flex h-[100px] cursor-pointer flex-col items-center justify-center r-xl border-2 border-dashed border-border bg-card transition-all duration-300 ease-apple hover:border-bronze/50 hover:bg-bronze/5">
                     <Upload className="h-5 w-5 text-muted-foreground transition-colors group-hover:text-bronze" />
                     <span className="mt-2 text-xs font-medium text-foreground">上传参考图</span>
                     <span className="text-[11px] text-muted-foreground">点击/拖拽</span>
                     <input type="file" accept="image/*" multiple className="sr-only" onChange={(event) => void uploadReferences(event.target.files)} />
                   </label>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-2">
+                  <div className="space-y-sm">
+                    <div className="flex items-center justify-between gap-sm">
                       <Label className="t-caption text-muted-foreground">视频提示词</Label>
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-md">
                         {/* VLM 修复：AI 润色改为链接式 */}
                         <button type="button" onClick={() => void polishVideoPrompt()}
                           disabled={!videoPrompt.trim() || videoPolishing} className="ai-polish-link">
@@ -405,13 +405,13 @@ export function AdminMediaWorkbenchScreen() {
 
                 {/* 结构化模板 */}
                 <div className="mt-4">
-                  <div className="mb-2 flex items-center gap-1.5 t-overline text-muted-foreground/70">
+                  <div className="mb-2 flex items-center gap-sm t-overline text-muted-foreground/70">
                     <Wand2 className="h-3 w-3" />结构化模板
                   </div>
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="flex flex-wrap gap-sm">
                     {PROMPT_TEMPLATES_VIDEO.map((tpl) => (
                       <button key={tpl.label} type="button" onClick={() => insertVideoTemplate(tpl.snippet)}
-                        className="rounded-full border border-border bg-background px-2.5 py-1 t-caption text-foreground transition-all duration-300 ease-apple hover:-translate-y-0.5 hover:border-bronze/50 hover:bg-bronze/5 hover:text-bronze">
+                        className="pill-unified h-8!">
                         {tpl.label}
                       </button>
                     ))}
@@ -421,15 +421,15 @@ export function AdminMediaWorkbenchScreen() {
                 {basketCount > 0 && <MiniAssetList assets={basket?.assets || []} compact />}
 
                 {/* Pill 参数 + CTA */}
-                <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="flex flex-wrap gap-2">
+                <div className="mt-4 flex flex-col gap-md lg:flex-row lg:items-center lg:justify-between">
+                  <div className="flex flex-wrap gap-sm">
                     <PillSelect icon={<span className="text-sm font-semibold">O</span>} value={videoModel} onValueChange={setVideoModel} values={[DEFAULT_VIDEO_MODEL]} />
                     <PillSelect icon={<Film className="h-4 w-4" />} value={effectiveVideoMode} onValueChange={(value) => setVideoMode(value as VideoGenerationMode)} values={["text", "reference"]} />
                     <PillSelect icon={<Monitor className="h-4 w-4" />} value={videoSize} onValueChange={setVideoSize} values={["1280x720"]} />
                     <ReadonlyPill icon={<Smartphone className="h-4 w-4" />} value={`${DEFAULT_VIDEO_DURATION} 秒`} />
                   </div>
                   {/* VLM 修复：CTA 深色强化 + 积分柔化 */}
-                  <Button className="btn-cta-primary h-11 shrink-0 gap-2 px-6" disabled={videoSubmitDisabled} onClick={() => void submitVideoRun()}>
+                  <Button className="btn-cta-primary btn-lg shrink-0 gap-sm" disabled={videoSubmitDisabled} onClick={() => void submitVideoRun()}>
                     {videoBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
                     <span>生成 10 秒视频</span>
                     <span className="credits-hint">≈{videoCredits} 积分</span>
@@ -446,7 +446,7 @@ export function AdminMediaWorkbenchScreen() {
             </Card>
 
             {/* VLM 修复：任务队列 — 状态视觉区分 + 占位卡片 */}
-            <Card className="card-pro card-pro-radius border-border bg-card p-4 shadow-apple-sm">
+            <Card className="card-unified card-pad-sm card-equal">
               <div className="module-card-header-pro !px-0 !border-0 !pb-3">
                 <div className="title-block">
                   <div className="overline">任务队列</div>
@@ -461,13 +461,13 @@ export function AdminMediaWorkbenchScreen() {
 
         {/* ========== 素材篮/历史 ========== */}
         <TabsContent value="assets" className="mt-5">
-          <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-            <Card className="card-pro card-pro-radius border-border bg-card p-5 shadow-apple-sm">
-              <SectionTitle icon={<Images className="h-4 w-4" />} title="素材库" desc="图片、上传参考图和视频输出统一保存" />
+          <div className="grid gap-xl xl:grid-cols-[1fr_1fr] grid-align-stretch">
+            <Card className="card-unified card-pad-md card-equal">
+              <SectionTitle className="mb-0!" icon={<Images className="h-4 w-4" />} title="素材库" desc="图片、上传参考图和视频输出统一保存" />
               <AssetList assets={[...imageAssets, ...videoAssets]} />
             </Card>
-            <Card className="card-pro card-pro-radius border-border bg-card p-5 shadow-apple-sm">
-              <SectionTitle icon={<RefreshCw className="h-4 w-4" />} title="历史任务" desc="图片任务和视频任务" />
+            <Card className="card-unified card-pad-md card-equal">
+              <SectionTitle className="mb-0!" icon={<RefreshCw className="h-4 w-4" />} title="历史任务" desc="图片任务和视频任务" />
               <HistoryList imageRuns={mediaWorkbench?.image_runs || []} videoRuns={mediaWorkbench?.video_runs || []} />
             </Card>
           </div>
@@ -487,12 +487,12 @@ function StatusTile({ icon, label, value, tone, loading }: {
   const toneClass = tone === "success" ? "stat-value-success" : tone === "info" ? "stat-value-info" : tone === "warning" ? "stat-value-warning" : "text-foreground font-semibold";
   const iconClass = tone === "success" ? "text-success" : tone === "info" ? "text-info" : tone === "warning" ? "text-warning" : "text-muted-foreground";
   return (
-    <Card className="stat-card card-pro-radius border-border bg-card p-4 shadow-apple-sm">
+    <Card className="card-unified card-pad-sm card-equal">
       <div className="flex items-center justify-between">
         <span className="t-caption font-medium text-muted-foreground">{label}</span>
         <span className={iconClass}>{icon}</span>
       </div>
-      <div className={cn("mt-2 text-lg flex items-center gap-1.5", toneClass)}>
+      <div className={cn("mt-2 text-lg flex items-center gap-sm", toneClass)}>
         {loading && <span className="loading-dot" />}
         {value}
       </div>
@@ -500,13 +500,13 @@ function StatusTile({ icon, label, value, tone, loading }: {
   );
 }
 
-function SectionTitle({ icon, title, desc }: { icon: ReactNode; title: string; desc: string }) {
+function SectionTitle({ icon, title, desc, className }: { icon: ReactNode; title: string; desc: string; className?: string }) {
   return (
-    <div className="flex items-start gap-3">
-      <div className="mt-0.5 rounded-lg border border-border bg-background p-2 text-primary shadow-apple-sm transition-all duration-300 ease-apple hover:border-bronze/40">{icon}</div>
-      <div>
-        <h2 className="t-module font-semibold text-foreground">{title}</h2>
-        <p className="mt-1 t-caption text-muted-foreground">{desc}</p>
+    <div className={cn("section-title-unified", className)}>
+      <div className="icon-box">{icon}</div>
+      <div className="text-block">
+        <h2>{title}</h2>
+        <div className="desc">{desc}</div>
       </div>
     </div>
   );
@@ -517,7 +517,7 @@ function SelectField({ label, value, values, onValueChange }: { label: string; v
     <div className="form-field-pro">
       <Label>{label}</Label>
       <Select value={value} onValueChange={onValueChange}>
-        <SelectTrigger className="input-pro bg-background"><SelectValue /></SelectTrigger>
+        <SelectTrigger className="input-pro ctrl-md bg-background"><SelectValue /></SelectTrigger>
         <SelectContent>{values.map((item) => (<SelectItem key={item} value={item}>{item}</SelectItem>))}</SelectContent>
       </Select>
     </div>
@@ -527,7 +527,7 @@ function SelectField({ label, value, values, onValueChange }: { label: string; v
 function PillSelect({ icon, value, values, onValueChange }: { icon: ReactNode; value: string; values: string[]; onValueChange: (value: string) => void; }) {
   return (
     <Select value={value} onValueChange={onValueChange}>
-      <SelectTrigger className="h-10 w-auto gap-2 rounded-full border-0 bg-muted px-4 shadow-none transition-all duration-300 ease-apple hover:bg-muted/70">
+      <SelectTrigger className="pill-unified w-auto">
         <span className="text-muted-foreground">{icon}</span><SelectValue />
       </SelectTrigger>
       <SelectContent>{values.map((item) => (<SelectItem key={item} value={item}>{item}</SelectItem>))}</SelectContent>
@@ -537,7 +537,7 @@ function PillSelect({ icon, value, values, onValueChange }: { icon: ReactNode; v
 
 function ReadonlyPill({ icon, value }: { icon: ReactNode; value: string }) {
   return (
-    <div className="inline-flex h-10 items-center gap-2 rounded-full bg-muted px-4 text-sm">
+    <div className="pill-unified">
       <span className="text-muted-foreground">{icon}</span><span className="font-medium">{value}</span>
     </div>
   );
@@ -546,7 +546,7 @@ function ReadonlyPill({ icon, value }: { icon: ReactNode; value: string }) {
 function AssetGrid({ assets, selectedIds, onToggle }: { assets: MediaAsset[]; selectedIds: string[]; onToggle: (assetId: string) => void; }) {
   if (!assets.length) {
     return (
-      <div className="empty-state-pro mt-5 rounded-lg border border-dashed border-border">
+      <div className="empty-state-pro mt-5 r-lg border border-dashed border-border">
         <div className="icon-wrap"><Images className="h-5 w-5" /></div>
         <div className="title">暂无图片素材</div>
         <div className="desc">先在左侧生成图片，结果会出现在这里。</div>
@@ -554,18 +554,18 @@ function AssetGrid({ assets, selectedIds, onToggle }: { assets: MediaAsset[]; se
     );
   }
   return (
-    <div className="mt-5 grid max-h-[520px] gap-3 overflow-y-auto scroll-fine sm:grid-cols-2">
+    <div className="mt-5 grid max-h-[520px] gap-md overflow-y-auto scroll-fine sm:grid-cols-2">
       {assets.map((asset) => {
         const selected = selectedIds.includes(asset.asset_id);
         return (
           <button key={asset.asset_id} type="button" onClick={() => onToggle(asset.asset_id)}
-            className={cn("card-pro group overflow-hidden rounded-lg border bg-background text-left focus-ring",
+            className={cn("card-pro group overflow-hidden r-lg border bg-background text-left focus-ring",
               selected ? "border-primary ring-2 ring-primary/25 shadow-apple-sm" : "border-border hover:border-bronze/40")}>
             <div className="aspect-video overflow-hidden bg-muted">
               <img src={downloadMediaWorkbenchAsset(asset.asset_id)} alt={asset.filename}
                 className="h-full w-full object-cover transition-transform duration-500 ease-apple group-hover:scale-[1.04]" />
             </div>
-            <div className="flex items-start gap-2 p-3">
+            <div className="flex items-start gap-sm p-3">
               <Checkbox checked={selected} className="mt-0.5" aria-label="选择图片素材" />
               <div className="min-w-0">
                 <div className="truncate t-body font-medium text-foreground">{asset.filename}</div>
@@ -582,9 +582,9 @@ function AssetGrid({ assets, selectedIds, onToggle }: { assets: MediaAsset[]; se
 function MiniAssetList({ assets, compact = false }: { assets: MediaAsset[]; compact?: boolean }) {
   if (!assets.length) return null;
   return (
-    <div className={cn("mt-4 grid gap-2", compact ? "sm:grid-cols-4" : "sm:grid-cols-2")}>
+    <div className={cn("mt-4 grid gap-sm", compact ? "sm:grid-cols-4" : "sm:grid-cols-2")}>
       {assets.map((asset) => (
-        <div key={asset.asset_id} className="flex items-center gap-2 rounded-lg border border-border bg-card p-2 transition-all duration-300 ease-apple hover:border-bronze/30 hover:shadow-apple-sm">
+        <div key={asset.asset_id} className="flex items-center gap-sm r-lg border border-border bg-card p-2 transition-all duration-300 ease-apple hover:border-bronze/30 hover:shadow-apple-sm">
           <img src={downloadMediaWorkbenchAsset(asset.asset_id)} alt={asset.filename}
             className={cn("rounded object-cover", compact ? "h-9 w-12" : "h-12 w-16")} />
           {!compact && (
@@ -607,8 +607,8 @@ function RunList({ runs, syncingRunId, onSync }: {
   if (!runs.length) {
     // VLM 修复：空状态改为「等待生成」占位卡片
     return (
-      <div className="mt-3 rounded-lg border border-dashed border-border bg-muted/20 p-6 text-center">
-        <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-background shadow-apple-sm">
+      <div className="mt-3 r-lg border border-dashed border-border bg-muted/20 p-6 text-center">
+        <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center r-lg bg-background shadow-apple-sm">
           <Clock className="h-4 w-4 text-muted-foreground" />
         </div>
         <div className="t-body font-medium text-foreground">等待生成</div>
@@ -624,10 +624,10 @@ function RunList({ runs, syncingRunId, onSync }: {
         const dotClass = run.status === "completed" ? "bg-success" : run.status === "failed" ? "bg-destructive" : isActive ? "bg-primary anim-pulse-soft" : "bg-muted-foreground";
         return (
           <div key={run.run_id}
-            className={cn("rounded-lg border bg-background p-3 transition-all duration-300 ease-apple",
+            className={cn("r-lg border bg-background p-3 transition-all duration-300 ease-apple",
               isActive ? "border-primary/30 shadow-apple-sm" : "border-border hover:border-bronze/30")}>
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-2">
+            <div className="flex flex-col gap-sm">
+              <div className="flex items-center gap-sm">
                 <span className={cn("h-2 w-2 shrink-0 rounded-full", dotClass)} />
                 <ToneBadge tone={run.status === "failed" ? "warning" : run.status === "completed" ? "success" : "neutral"}>{run.status}</ToneBadge>
                 {isActive && (
@@ -652,13 +652,13 @@ function RunList({ runs, syncingRunId, onSync }: {
                   <AlertTriangle className="h-3 w-3 shrink-0 mt-0.5" /><span>{run.error_message}</span>
                 </div>
               )}
-              <div className="flex shrink-0 gap-2">
-                <Button variant="outline" size="sm" className="btn-cta-secondary h-8 gap-1.5 t-caption"
+              <div className="flex shrink-0 gap-sm">
+                <Button variant="outline" size="sm" className="btn-cta-secondary btn-sm gap-sm t-caption"
                   onClick={() => void onSync(run.run_id)} disabled={syncingRunId === run.run_id}>
                   {syncingRunId === run.run_id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}同步
                 </Button>
                 {run.download_path && (
-                  <Button asChild size="sm" className="btn-cta-primary h-8 gap-1.5 t-caption">
+                  <Button asChild size="sm" className="btn-cta-primary btn-sm gap-sm t-caption">
                     <a href={downloadVideoWorkbenchRun(run.run_id)}><Download className="h-3.5 w-3.5" />下载</a>
                   </Button>
                 )}
@@ -674,7 +674,7 @@ function RunList({ runs, syncingRunId, onSync }: {
 function AssetList({ assets }: { assets: MediaAsset[] }) {
   if (!assets.length) {
     return (
-      <div className="empty-state-pro mt-5 rounded-lg border border-dashed border-border">
+      <div className="empty-state-pro mt-5 r-lg border border-dashed border-border">
         <div className="icon-wrap"><Images className="h-5 w-5" /></div>
         <div className="title">暂无素材</div>
         <div className="desc">生成图片或视频后，素材会在这里归档。</div>
@@ -682,14 +682,14 @@ function AssetList({ assets }: { assets: MediaAsset[] }) {
     );
   }
   return (
-    <div className="mt-5 max-h-[560px] space-y-2 overflow-y-auto scroll-fine">
+    <div className="mt-5 max-h-[560px] space-y-sm overflow-y-auto scroll-fine">
       {assets.map((asset) => (
-        <div key={asset.asset_id} className="card-pro flex items-center justify-between gap-3 rounded-lg border border-border bg-background p-3">
+        <div key={asset.asset_id} className="card-pro flex items-center justify-between gap-md r-lg border border-border bg-background p-3">
           <div className="min-w-0">
             <div className="truncate t-body font-medium text-foreground">{asset.filename}</div>
             <div className="t-caption text-muted-foreground">{asset.asset_type} · {asset.source}</div>
           </div>
-          <Button asChild variant="outline" size="sm" className="btn-cta-secondary h-8">
+          <Button asChild variant="outline" size="sm" className="btn-cta-secondary btn-sm">
             <a href={downloadMediaWorkbenchAsset(asset.asset_id)}><Download className="h-3.5 w-3.5" />下载</a>
           </Button>
         </div>
@@ -708,7 +708,7 @@ function HistoryList({ imageRuns, videoRuns }: {
   ];
   if (!rows.length) {
     return (
-      <div className="empty-state-pro mt-5 rounded-lg border border-dashed border-border">
+      <div className="empty-state-pro mt-5 r-lg border border-dashed border-border">
         <div className="icon-wrap"><RefreshCw className="h-5 w-5" /></div>
         <div className="title">暂无历史任务</div>
         <div className="desc">真实生成任务会在这里保留最近记录。</div>
@@ -716,10 +716,10 @@ function HistoryList({ imageRuns, videoRuns }: {
     );
   }
   return (
-    <div className="mt-5 max-h-[560px] space-y-2 overflow-y-auto scroll-fine">
+    <div className="mt-5 max-h-[560px] space-y-sm overflow-y-auto scroll-fine">
       {rows.map((row) => (
-        <div key={row.id} className="card-pro rounded-lg border border-border bg-background p-3">
-          <div className="flex items-center justify-between gap-3">
+        <div key={row.id} className="card-pro r-lg border border-border bg-background p-3">
+          <div className="flex items-center justify-between gap-md">
             <div className="t-caption font-medium text-muted-foreground">{row.kind} · {row.meta}</div>
             <ToneBadge tone={row.status === "failed" ? "warning" : row.status === "completed" ? "success" : "neutral"}>{row.status}</ToneBadge>
           </div>

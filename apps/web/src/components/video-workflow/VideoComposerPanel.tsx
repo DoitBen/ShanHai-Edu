@@ -55,7 +55,7 @@ function VideoRunPlaceholder({ run }: { run: VideoWorkflowRun | null }) {
   return (
     <div className="flex aspect-video w-full items-center justify-center bg-muted anim-float">
       <div className="max-w-sm text-center">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-md bg-background text-muted-foreground shadow-apple-sm">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center r-md bg-background text-muted-foreground shadow-apple-sm">
           {run?.status === "failed" || run?.status === "submission_unknown" ? (
             <AlertTriangle className="h-5 w-5 text-destructive" />
           ) : run ? (
@@ -89,13 +89,13 @@ function VideoPreview({ projectId, run }: { projectId: string; run: VideoWorkflo
   return (
     <div className="relative">
       {state === "loading" && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center gap-2 bg-black/60 t-caption text-white">
+        <div className="absolute inset-0 z-10 flex items-center justify-center gap-sm bg-black/60 t-caption text-white">
           <Loader2 className="h-4 w-4 animate-spin" />
           正在加载视频
         </div>
       )}
       {state === "error" && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/80 px-4 text-center text-white">
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-md bg-black/80 px-4 text-center text-white">
           <AlertTriangle className="h-5 w-5 text-destructive" />
           <div className="t-caption">视频无法播放，可以重新加载或下载源文件。</div>
           <Button
@@ -126,7 +126,7 @@ function VideoPreview({ projectId, run }: { projectId: string; run: VideoWorkflo
         onError={() => setState("error")}
       />
       {state === "ready" && (
-        <div className="absolute bottom-2 right-2 flex gap-1.5">
+        <div className="absolute bottom-2 right-2 flex gap-sm">
           <Button
             type="button"
             size="sm"
@@ -262,18 +262,18 @@ export function VideoComposerPanel({
   }
 
   return (
-    <section className="card-pro card-pro-radius rounded-lg border border-border bg-card p-4 shadow-apple-sm">
-      <div className="mb-4 flex items-start justify-between gap-3">
+    <section className="card-unified card-pad-md">
+      <div className="mb-lg flex items-start justify-between gap-md">
         <div>
           <h3 className="t-module font-semibold text-foreground">创作与预览</h3>
           <p className="mt-1 t-caption text-muted-foreground">{modeLabel}</p>
         </div>
-        <Badge variant={config.provider_ready ? "secondary" : "destructive"}>
+        <Badge className="badge-unified" variant={config.provider_ready ? "secondary" : "destructive"}>
           {config.provider_ready ? "可生成" : config.provider_user_message}
         </Badge>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-border bg-black">
+      <div className="overflow-hidden r-lg border border-border bg-black">
         {selectedRun?.video_ready ? (
           <VideoPreview projectId={projectId} run={selectedRun} />
         ) : (
@@ -281,25 +281,25 @@ export function VideoComposerPanel({
         )}
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        <Badge variant="outline">{config.model}</Badge>
-        <Badge variant="outline">{config.size}</Badge>
-        <Badge variant="outline">{config.duration_sec} 秒</Badge>
-        <Badge variant="outline">单结果</Badge>
+      <div className="mt-4 flex flex-wrap gap-sm">
+        <Badge className="badge-unified" variant="outline">{config.model}</Badge>
+        <Badge className="badge-unified" variant="outline">{config.size}</Badge>
+        <Badge className="badge-unified" variant="outline">{config.duration_sec} 秒</Badge>
+        <Badge className="badge-unified" variant="outline">单结果</Badge>
       </div>
 
       {/* 六维结构化模板 */}
       <div className="mt-4">
-        <div className="mb-2 flex items-center gap-1.5 t-overline text-muted-foreground/70">
+        <div className="mb-2 flex items-center gap-sm t-overline text-muted-foreground/70">
           <Wand2 className="h-3 w-3" />结构化模板
         </div>
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-sm">
           {PROMPT_TEMPLATES.map((tpl) => (
             <button
               key={tpl.label}
               type="button"
               onClick={() => insertTemplate(tpl.snippet)}
-              className="rounded-full border border-border bg-background px-2.5 py-1 t-caption text-foreground transition-all duration-300 ease-apple hover:-translate-y-0.5 hover:border-bronze/50 hover:bg-bronze/5 hover:text-bronze"
+              className="pill-unified h-8!"
             >
               {tpl.label}
             </button>
@@ -308,12 +308,12 @@ export function VideoComposerPanel({
       </div>
 
       {/* 提示词 + AI 润色 + 三色计数器 */}
-      <div className="mt-4 space-y-2">
-        <div className="flex items-center justify-between gap-2">
+      <div className="mt-4 space-y-sm">
+        <div className="flex items-center justify-between gap-sm">
           <Label htmlFor="video-workflow-prompt" className="t-caption text-muted-foreground">
             视频提示词
           </Label>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-md">
             <button
               type="button"
               onClick={() => void polishPrompt()}
@@ -335,13 +335,13 @@ export function VideoComposerPanel({
           value={prompt}
           onChange={(event) => onPromptChange(event.target.value)}
           placeholder="描述画面主体、动作、镜头和课堂氛围。建议先用结构化模板补充维度，再用 AI 润色增强细节。"
-          className="input-pro min-h-36 resize-none bg-background"
+          className="input-pro min-h-[120px] resize-none bg-background"
         />
       </div>
 
       {/* CTA 强化：btn-cta-primary + credits-hint */}
       <Button
-        className="btn-cta-primary mt-4 w-full gap-2 h-12 text-base font-semibold"
+        className="btn-cta-primary btn-lg mt-4 w-full gap-sm font-semibold"
         disabled={submitDisabled}
         aria-disabled={submitDisabled}
         onClick={() => void handleSubmit()}
@@ -362,7 +362,7 @@ export function VideoComposerPanel({
         </p>
       )}
       {!disabledReason && (
-        <p className="mt-2 flex items-center gap-1 t-caption text-muted-foreground/70">
+        <p className="mt-2 flex items-center gap-sm t-caption text-muted-foreground/70">
           <Zap className="h-3 w-3 text-bronze" />
           参考图越多画面越稳定；空提示词时建议先用模板补全结构。
         </p>

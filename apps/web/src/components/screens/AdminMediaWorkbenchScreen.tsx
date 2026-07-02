@@ -6,10 +6,7 @@ import { useAppStore } from "@/lib/store";
 import type { MediaAsset, VideoGenerationMode } from "@/lib/types";
 import { downloadMediaWorkbenchAsset, downloadVideoWorkbenchRun } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -20,8 +17,16 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { EmptyState } from "@/components/common/StateViews";
-import { ToneBadge } from "@/components/common/StatusBadge";
+import {
+  DSButton,
+  DSCard,
+  DSSectionTitle,
+  DSBadge,
+  DSPill,
+  DSEmptyState,
+  DSProgress,
+  DSStatusDot,
+} from "@/components/ui/ds";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -33,7 +38,6 @@ import {
   Layers,
   Loader2,
   Monitor,
-  Play,
   RefreshCw,
   Send,
   ShieldAlert,
@@ -67,6 +71,17 @@ const PROMPT_TEMPLATES_VIDEO: { label: string; snippet: string }[] = [
   { label: "氛围", snippet: "[氛围：清晨阳光 / 暖色调 / 柔光散射]" },
   { label: "画质", snippet: "[画质：4K 超清 / 电影级动态范围 / 浅景深虚化]" },
 ];
+
+// DSButton-equivalent anchor styles (for download links that must render as <a>)
+const DS_ANCHOR_PRIMARY_SM =
+  "inline-flex items-center justify-center gap-3 font-medium rounded-lg transition-all duration-300 ease-apple focus-ring whitespace-nowrap h-9 px-3.5 text-xs bg-[#1a2b3c] text-white shadow-[0_4px_12px_rgba(26,43,60,0.25),0_8px_20px_-4px_rgba(26,43,60,0.20)] hover:bg-[#142233] hover:-translate-y-0.5 hover:shadow-[0_6px_16px_rgba(26,43,60,0.30),0_12px_28px_-6px_rgba(26,43,60,0.25)] active:translate-y-0";
+
+const DS_ANCHOR_SECONDARY_SM =
+  "inline-flex items-center justify-center gap-3 font-medium rounded-lg transition-all duration-300 ease-apple focus-ring whitespace-nowrap h-9 px-3.5 text-xs bg-transparent text-foreground border border-border hover:border-bronze/50 hover:text-bronze hover:bg-bronze/5 hover:-translate-y-0.5 active:translate-y-0";
+
+// DSPill-equivalent button styles (for template tag buttons that need onClick)
+const DS_PILL_BTN_H8 =
+  "inline-flex h-8 items-center gap-3 rounded-full px-4 text-xs font-medium transition-all duration-300 ease-apple bg-muted text-foreground hover:bg-muted/70 hover:border-border border border-transparent cursor-pointer focus-ring";
 
 export function AdminMediaWorkbenchScreen() {
   const user = useAppStore((s) => s.user);
@@ -228,7 +243,7 @@ export function AdminMediaWorkbenchScreen() {
   if (!isAdmin) {
     return (
       <div className="mx-auto w-full max-w-[1440px] px-4 py-6 lg:px-8 lg:py-8">
-        <EmptyState icon={<ShieldAlert className="h-5 w-5" />} title="资源不存在" desc="媒体生成工作台仅管理员可见。" />
+        <DSEmptyState icon={<ShieldAlert className="h-5 w-5" />} title="资源不存在" desc="媒体生成工作台仅管理员可见。" />
       </div>
     );
   }
@@ -236,7 +251,7 @@ export function AdminMediaWorkbenchScreen() {
   return (
     <div className="mx-auto w-full max-w-[1440px] px-4 py-6 lg:px-8 lg:py-8">
       {/* 页头 */}
-      <div className="flex flex-col gap-lg sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="t-overline text-muted-foreground/70">管理员工具台</div>
           <h1 className="mt-2 h-page-title">媒体生成工作台</h1>
@@ -244,10 +259,10 @@ export function AdminMediaWorkbenchScreen() {
             图片和视频可以独立生成，也可以把已生成图片直接送入视频参考篮。密钥只在后端使用，前端只传提示词和素材 ID。
           </p>
         </div>
-        <Button variant="outline" className="btn-cta-secondary btn-md gap-sm" onClick={() => void loadMediaWorkbench()}>
+        <DSButton variant="secondary" size="md" onClick={() => void loadMediaWorkbench()}>
           {status === "loading" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           刷新
-        </Button>
+        </DSButton>
       </div>
 
       {error && (
@@ -258,7 +273,7 @@ export function AdminMediaWorkbenchScreen() {
       )}
 
       {/* VLM 修复：状态卡片 — 检测中用 loading-dot 轻量动画 */}
-      <div className="mt-6 grid gap-lg md:grid-cols-4 grid-align-stretch">
+      <div className="mt-6 grid gap-4 md:grid-cols-4 items-stretch">
         <StatusTile icon={<ImagePlus className="h-4 w-4" />} label="图片接口"
           value={!workbenchLoaded ? "检测中" : providerReady.image ? "已连接" : "未连接"}
           loading={!workbenchLoaded}
@@ -275,27 +290,27 @@ export function AdminMediaWorkbenchScreen() {
       </div>
 
       <Tabs defaultValue="images" className="mt-8">
-        <TabsList className="grid h-auto w-full grid-cols-3 r-lg md:w-[560px]">
-          <TabsTrigger value="images" className="gap-sm h-11"><ImagePlus className="h-4 w-4" />图片生成</TabsTrigger>
-          <TabsTrigger value="videos" className="gap-sm h-11"><Film className="h-4 w-4" />视频生成</TabsTrigger>
-          <TabsTrigger value="assets" className="gap-sm h-11"><Images className="h-4 w-4" />素材篮/历史</TabsTrigger>
+        <TabsList className="grid h-auto w-full grid-cols-3 rounded-lg md:w-[560px]">
+          <TabsTrigger value="images" className="gap-3 h-11"><ImagePlus className="h-4 w-4" />图片生成</TabsTrigger>
+          <TabsTrigger value="videos" className="gap-3 h-11"><Film className="h-4 w-4" />视频生成</TabsTrigger>
+          <TabsTrigger value="assets" className="gap-3 h-11"><Images className="h-4 w-4" />素材篮/历史</TabsTrigger>
         </TabsList>
 
         {/* ========== 图片生成 ========== */}
-        <TabsContent value="images" className="mt-5">
-          <div className="grid gap-xl xl:grid-cols-[0.9fr_1.1fr] grid-align-stretch">
-            <Card className="card-unified card-pad-md card-equal">
-              <SectionTitle className="mb-0!" icon={<ImagePlus className="h-4 w-4" />} title="图片生成" desc="默认 gpt-image-2 / 1920x1080 / high" />
+        <TabsContent value="images" className="mt-6">
+          <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr] items-stretch">
+            <DSCard className="h-full">
+              <DSSectionTitle icon={<ImagePlus className="h-4 w-4" />} title="图片生成" desc="默认 gpt-image-2 / 1920x1080 / high" />
 
               {/* 结构化模板 */}
               <div className="mt-4">
-                <div className="mb-2 flex items-center gap-sm t-overline text-muted-foreground/70">
+                <div className="mb-3 flex items-center gap-3 t-overline text-muted-foreground/70">
                   <Wand2 className="h-3 w-3" />结构化模板
                 </div>
-                <div className="flex flex-wrap gap-sm">
+                <div className="flex flex-wrap gap-3">
                   {PROMPT_TEMPLATES_IMAGE.map((tpl) => (
                     <button key={tpl.label} type="button" onClick={() => insertImageTemplate(tpl.snippet)}
-                      className="pill-unified h-8!">
+                      className={DS_PILL_BTN_H8}>
                       {tpl.label}
                     </button>
                   ))}
@@ -303,10 +318,10 @@ export function AdminMediaWorkbenchScreen() {
               </div>
 
               {/* VLM 修复：AI 润色改为链接式（降低视觉权重） */}
-              <div className="mt-4 space-y-sm">
-                <div className="flex items-center justify-between gap-sm">
+              <div className="mt-4 flex flex-col gap-3">
+                <div className="flex items-center justify-between gap-3">
                   <Label className="t-caption text-muted-foreground">图片提示词</Label>
-                  <div className="flex items-center gap-md">
+                  <div className="flex items-center gap-4">
                     <button type="button" onClick={() => void polishImagePrompt()}
                       disabled={!imagePrompt.trim() || imagePolishing} className="ai-polish-link">
                       {imagePolishing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}AI 润色
@@ -319,7 +334,7 @@ export function AdminMediaWorkbenchScreen() {
                   placeholder="例如：明亮的小学数学课堂，桌面上有彩色计数棒和练习卡，非写实卡通插画风格，无文字。" />
               </div>
 
-              <div className="mt-4 grid gap-md sm:grid-cols-2">
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <SelectField label="模型" value={imageModel} onValueChange={setImageModel} values={[DEFAULT_IMAGE_MODEL]} />
                 <SelectField label="尺寸" value={imageSize} onValueChange={setImageSize} values={["1920x1080", "1024x1024", "1080x1920"]} />
                 <SelectField label="质量" value={imageQuality} onValueChange={setImageQuality} values={["high", "low"]} />
@@ -327,68 +342,68 @@ export function AdminMediaWorkbenchScreen() {
               </div>
 
               {/* VLM 修复：积分提示柔化为灰色小字 */}
-              <Button className="btn-cta-primary btn-lg mt-5 w-full gap-sm font-semibold"
+              <DSButton variant="primary" size="lg" className="mt-6 w-full font-semibold"
                 onClick={() => void submitImageRun()} disabled={imageBusy || !workbenchLoaded || imageProviderUnavailable}>
                 {imageBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                 <span>生成图片</span>
                 <span className="credits-hint">≈{imageCredits} 积分</span>
-              </Button>
+              </DSButton>
               {imageProviderUnavailable && (
                 <div className="alert-warning-pro mt-3 t-caption">
                   <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                   <span>后端没有检测到图片生成接口配置，暂时不能提交真实生图任务。</span>
                 </div>
               )}
-            </Card>
+            </DSCard>
 
-            <Card className="card-unified card-pad-md card-equal">
-              <SectionTitle className="mb-0!" icon={<Images className="h-4 w-4" />} title="图片结果" desc="选择后可加入视频参考篮" />
+            <DSCard className="h-full">
+              <DSSectionTitle icon={<Images className="h-4 w-4" />} title="图片结果" desc="选择后可加入视频参考篮" />
               <AssetGrid assets={imageAssets} selectedIds={selectedImageIds}
                 onToggle={(assetId) => setSelectedImageIds((current) =>
                   current.includes(assetId) ? current.filter((item) => item !== assetId) : [...current, assetId])} />
-              <div className="mt-4 flex flex-col gap-sm sm:flex-row sm:items-center sm:justify-between">
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="t-caption text-muted-foreground">
                   已选择 <span className="font-semibold text-foreground">{selectedCount}</span> 张 · 参考篮最多 {maxReferenceImages} 张
                 </p>
-                <Button variant="outline" className="btn-cta-secondary btn-md gap-sm"
+                <DSButton variant="secondary" size="md"
                   onClick={() => void addSelectedImagesToVideoBasket()} disabled={selectedCount === 0}>
                   <Send className="h-4 w-4" />加入视频参考篮
-                </Button>
+                </DSButton>
               </div>
-            </Card>
+            </DSCard>
           </div>
         </TabsContent>
 
         {/* ========== 视频生成 — 小云雀规范核心 ========== */}
-        <TabsContent value="videos" className="mt-5">
-          <div className="grid gap-xl xl:grid-cols-[minmax(0,1fr)_340px] grid-align-stretch">
-            <Card className="card-unified card-pad-md card-equal">
-              <div className="flex flex-col gap-md sm:flex-row sm:items-center sm:justify-between">
-                <SectionTitle className="mb-0!" icon={<Film className="h-4 w-4" />} title="视频生成" desc="Omni 默认生成 10 秒横版视频" />
-                <ToneBadge tone={providerReady.video ? "success" : "neutral"}>
+        <TabsContent value="videos" className="mt-6">
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px] items-stretch">
+            <DSCard className="h-full">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <DSSectionTitle className="mb-0" icon={<Film className="h-4 w-4" />} title="视频生成" desc="Omni 默认生成 10 秒横版视频" />
+                <DSBadge variant={providerReady.video ? "success" : "neutral"}>
                   {providerReady.video ? "真实接口已连接" : "检测中"}
-                </ToneBadge>
+                </DSBadge>
               </div>
 
               {/* 参考图篮 + 提示词 */}
-              <div className="mt-5 r-xl border border-border bg-gradient-to-br from-muted/30 to-muted/10 p-lg">
-                <div className="mb-md flex items-center justify-between">
+              <div className="mt-6 rounded-xl border border-border bg-gradient-to-br from-muted/30 to-muted/10 p-4">
+                <div className="mb-4 flex items-center justify-between">
                   <div className="t-overline text-muted-foreground/70">参考图篮</div>
                   <span className={cn("t-caption font-semibold", basketCount > 0 ? "text-success" : "text-muted-foreground")}>
                     {basketCount} / {maxReferenceImages}
                   </span>
                 </div>
-                <div className="grid gap-lg lg:grid-cols-[100px_minmax(0,1fr)]">
-                  <label className="group flex h-[100px] cursor-pointer flex-col items-center justify-center r-xl border-2 border-dashed border-border bg-card transition-all duration-300 ease-apple hover:border-bronze/50 hover:bg-bronze/5">
+                <div className="grid gap-4 lg:grid-cols-[100px_minmax(0,1fr)]">
+                  <label className="group flex h-[100px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-border bg-card transition-all duration-300 ease-apple hover:border-bronze/50 hover:bg-bronze/5">
                     <Upload className="h-5 w-5 text-muted-foreground transition-colors group-hover:text-bronze" />
                     <span className="mt-2 text-xs font-medium text-foreground">上传参考图</span>
                     <span className="text-[11px] text-muted-foreground">点击/拖拽</span>
                     <input type="file" accept="image/*" multiple className="sr-only" onChange={(event) => void uploadReferences(event.target.files)} />
                   </label>
-                  <div className="space-y-sm">
-                    <div className="flex items-center justify-between gap-sm">
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between gap-3">
                       <Label className="t-caption text-muted-foreground">视频提示词</Label>
-                      <div className="flex items-center gap-md">
+                      <div className="flex items-center gap-4">
                         {/* VLM 修复：AI 润色改为链接式 */}
                         <button type="button" onClick={() => void polishVideoPrompt()}
                           disabled={!videoPrompt.trim() || videoPolishing} className="ai-polish-link">
@@ -405,13 +420,13 @@ export function AdminMediaWorkbenchScreen() {
 
                 {/* 结构化模板 */}
                 <div className="mt-4">
-                  <div className="mb-2 flex items-center gap-sm t-overline text-muted-foreground/70">
+                  <div className="mb-3 flex items-center gap-3 t-overline text-muted-foreground/70">
                     <Wand2 className="h-3 w-3" />结构化模板
                   </div>
-                  <div className="flex flex-wrap gap-sm">
+                  <div className="flex flex-wrap gap-3">
                     {PROMPT_TEMPLATES_VIDEO.map((tpl) => (
                       <button key={tpl.label} type="button" onClick={() => insertVideoTemplate(tpl.snippet)}
-                        className="pill-unified h-8!">
+                        className={DS_PILL_BTN_H8}>
                         {tpl.label}
                       </button>
                     ))}
@@ -421,19 +436,19 @@ export function AdminMediaWorkbenchScreen() {
                 {basketCount > 0 && <MiniAssetList assets={basket?.assets || []} compact />}
 
                 {/* Pill 参数 + CTA */}
-                <div className="mt-4 flex flex-col gap-md lg:flex-row lg:items-center lg:justify-between">
-                  <div className="flex flex-wrap gap-sm">
+                <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="flex flex-wrap gap-3">
                     <PillSelect icon={<span className="text-sm font-semibold">O</span>} value={videoModel} onValueChange={setVideoModel} values={[DEFAULT_VIDEO_MODEL]} />
                     <PillSelect icon={<Film className="h-4 w-4" />} value={effectiveVideoMode} onValueChange={(value) => setVideoMode(value as VideoGenerationMode)} values={["text", "reference"]} />
                     <PillSelect icon={<Monitor className="h-4 w-4" />} value={videoSize} onValueChange={setVideoSize} values={["1280x720"]} />
                     <ReadonlyPill icon={<Smartphone className="h-4 w-4" />} value={`${DEFAULT_VIDEO_DURATION} 秒`} />
                   </div>
                   {/* VLM 修复：CTA 深色强化 + 积分柔化 */}
-                  <Button className="btn-cta-primary btn-lg shrink-0 gap-sm" disabled={videoSubmitDisabled} onClick={() => void submitVideoRun()}>
+                  <DSButton variant="primary" size="lg" className="shrink-0" disabled={videoSubmitDisabled} onClick={() => void submitVideoRun()}>
                     {videoBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
                     <span>生成 10 秒视频</span>
                     <span className="credits-hint">≈{videoCredits} 积分</span>
-                  </Button>
+                  </DSButton>
                 </div>
               </div>
 
@@ -443,10 +458,10 @@ export function AdminMediaWorkbenchScreen() {
                   <span>后端没有检测到视频生成接口配置，暂时不能提交真实视频任务。</span>
                 </div>
               )}
-            </Card>
+            </DSCard>
 
             {/* VLM 修复：任务队列 — 状态视觉区分 + 占位卡片 */}
-            <Card className="card-unified card-pad-sm card-equal">
+            <DSCard className="h-full p-4">
               <div className="module-card-header-pro !px-0 !border-0 !pb-3">
                 <div className="title-block">
                   <div className="overline">任务队列</div>
@@ -455,21 +470,21 @@ export function AdminMediaWorkbenchScreen() {
                 <Clock className="h-4 w-4 text-muted-foreground" />
               </div>
               <RunList runs={mediaWorkbench?.video_runs || []} syncingRunId={syncingRunId} onSync={syncRun} />
-            </Card>
+            </DSCard>
           </div>
         </TabsContent>
 
         {/* ========== 素材篮/历史 ========== */}
-        <TabsContent value="assets" className="mt-5">
-          <div className="grid gap-xl xl:grid-cols-[1fr_1fr] grid-align-stretch">
-            <Card className="card-unified card-pad-md card-equal">
-              <SectionTitle className="mb-0!" icon={<Images className="h-4 w-4" />} title="素材库" desc="图片、上传参考图和视频输出统一保存" />
+        <TabsContent value="assets" className="mt-6">
+          <div className="grid gap-6 xl:grid-cols-[1fr_1fr] items-stretch">
+            <DSCard className="h-full">
+              <DSSectionTitle icon={<Images className="h-4 w-4" />} title="素材库" desc="图片、上传参考图和视频输出统一保存" />
               <AssetList assets={[...imageAssets, ...videoAssets]} />
-            </Card>
-            <Card className="card-unified card-pad-md card-equal">
-              <SectionTitle className="mb-0!" icon={<RefreshCw className="h-4 w-4" />} title="历史任务" desc="图片任务和视频任务" />
+            </DSCard>
+            <DSCard className="h-full">
+              <DSSectionTitle icon={<RefreshCw className="h-4 w-4" />} title="历史任务" desc="图片任务和视频任务" />
               <HistoryList imageRuns={mediaWorkbench?.image_runs || []} videoRuns={mediaWorkbench?.video_runs || []} />
-            </Card>
+            </DSCard>
           </div>
         </TabsContent>
       </Tabs>
@@ -479,36 +494,40 @@ export function AdminMediaWorkbenchScreen() {
 
 /* ==================== 子组件 ==================== */
 
-// VLM 修复：StatusTile — loading 态用 loading-dot
+// VLM 修复：StatusTile — loading 态用 loading-dot；用 DSCard + DSBadge 重写
 function StatusTile({ icon, label, value, tone, loading }: {
   icon: ReactNode; label: string; value: string;
   tone: "success" | "warning" | "info" | "neutral"; loading?: boolean;
 }) {
-  const toneClass = tone === "success" ? "stat-value-success" : tone === "info" ? "stat-value-info" : tone === "warning" ? "stat-value-warning" : "text-foreground font-semibold";
-  const iconClass = tone === "success" ? "text-success" : tone === "info" ? "text-info" : tone === "warning" ? "text-warning" : "text-muted-foreground";
+  const toneText =
+    tone === "success" ? "stat-value-success"
+    : tone === "info" ? "stat-value-info"
+    : tone === "warning" ? "stat-value-warning"
+    : "text-foreground font-semibold";
+  const iconClass =
+    tone === "success" ? "text-success"
+    : tone === "info" ? "text-info"
+    : tone === "warning" ? "text-warning"
+    : "text-muted-foreground";
+  const badgeVariant =
+    tone === "success" ? "success"
+    : tone === "info" ? "info"
+    : tone === "warning" ? "warning"
+    : "neutral";
   return (
-    <Card className="card-unified card-pad-sm card-equal">
+    <DSCard hover={false} className="h-full p-4">
       <div className="flex items-center justify-between">
         <span className="t-caption font-medium text-muted-foreground">{label}</span>
         <span className={iconClass}>{icon}</span>
       </div>
-      <div className={cn("mt-2 text-lg flex items-center gap-sm", toneClass)}>
+      <div className={cn("mt-3 flex items-center gap-3 text-lg", toneText)}>
         {loading && <span className="loading-dot" />}
         {value}
       </div>
-    </Card>
-  );
-}
-
-function SectionTitle({ icon, title, desc, className }: { icon: ReactNode; title: string; desc: string; className?: string }) {
-  return (
-    <div className={cn("section-title-unified", className)}>
-      <div className="icon-box">{icon}</div>
-      <div className="text-block">
-        <h2>{title}</h2>
-        <div className="desc">{desc}</div>
+      <div className="mt-3">
+        <DSBadge variant={badgeVariant}>{value}</DSBadge>
       </div>
-    </div>
+    </DSCard>
   );
 }
 
@@ -526,46 +545,48 @@ function SelectField({ label, value, values, onValueChange }: { label: string; v
 
 function PillSelect({ icon, value, values, onValueChange }: { icon: ReactNode; value: string; values: string[]; onValueChange: (value: string) => void; }) {
   return (
-    <Select value={value} onValueChange={onValueChange}>
-      <SelectTrigger className="pill-unified w-auto">
-        <span className="text-muted-foreground">{icon}</span><SelectValue />
-      </SelectTrigger>
-      <SelectContent>{values.map((item) => (<SelectItem key={item} value={item}>{item}</SelectItem>))}</SelectContent>
-    </Select>
+    <DSPill className="w-auto p-0">
+      <span className="text-muted-foreground">{icon}</span>
+      <Select value={value} onValueChange={onValueChange}>
+        <SelectTrigger className="h-10 w-auto border-0 bg-transparent px-0 shadow-none focus:ring-0 focus-visible:ring-0">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>{values.map((item) => (<SelectItem key={item} value={item}>{item}</SelectItem>))}</SelectContent>
+      </Select>
+    </DSPill>
   );
 }
 
 function ReadonlyPill({ icon, value }: { icon: ReactNode; value: string }) {
   return (
-    <div className="pill-unified">
+    <DSPill>
       <span className="text-muted-foreground">{icon}</span><span className="font-medium">{value}</span>
-    </div>
+    </DSPill>
   );
 }
 
 function AssetGrid({ assets, selectedIds, onToggle }: { assets: MediaAsset[]; selectedIds: string[]; onToggle: (assetId: string) => void; }) {
   if (!assets.length) {
     return (
-      <div className="empty-state-pro mt-5 r-lg border border-dashed border-border">
-        <div className="icon-wrap"><Images className="h-5 w-5" /></div>
-        <div className="title">暂无图片素材</div>
-        <div className="desc">先在左侧生成图片，结果会出现在这里。</div>
-      </div>
+      <DSEmptyState className="mt-6"
+        icon={<Images className="h-5 w-5" />}
+        title="暂无图片素材"
+        desc="先在左侧生成图片，结果会出现在这里。" />
     );
   }
   return (
-    <div className="mt-5 grid max-h-[520px] gap-md overflow-y-auto scroll-fine sm:grid-cols-2">
+    <div className="mt-6 grid max-h-[520px] gap-4 overflow-y-auto scroll-fine sm:grid-cols-2">
       {assets.map((asset) => {
         const selected = selectedIds.includes(asset.asset_id);
         return (
           <button key={asset.asset_id} type="button" onClick={() => onToggle(asset.asset_id)}
-            className={cn("card-pro group overflow-hidden r-lg border bg-background text-left focus-ring",
-              selected ? "border-primary ring-2 ring-primary/25 shadow-apple-sm" : "border-border hover:border-bronze/40")}>
+            className={cn("group overflow-hidden rounded-lg border bg-background text-left focus-ring transition-all duration-300 ease-apple",
+              selected ? "border-primary ring-2 ring-primary/25 shadow-apple-sm" : "border-border hover:border-bronze/40 hover:-translate-y-0.5")}>
             <div className="aspect-video overflow-hidden bg-muted">
               <img src={downloadMediaWorkbenchAsset(asset.asset_id)} alt={asset.filename}
                 className="h-full w-full object-cover transition-transform duration-500 ease-apple group-hover:scale-[1.04]" />
             </div>
-            <div className="flex items-start gap-sm p-3">
+            <div className="flex items-start gap-3 p-3">
               <Checkbox checked={selected} className="mt-0.5" aria-label="选择图片素材" />
               <div className="min-w-0">
                 <div className="truncate t-body font-medium text-foreground">{asset.filename}</div>
@@ -582,9 +603,9 @@ function AssetGrid({ assets, selectedIds, onToggle }: { assets: MediaAsset[]; se
 function MiniAssetList({ assets, compact = false }: { assets: MediaAsset[]; compact?: boolean }) {
   if (!assets.length) return null;
   return (
-    <div className={cn("mt-4 grid gap-sm", compact ? "sm:grid-cols-4" : "sm:grid-cols-2")}>
+    <div className={cn("mt-4 grid gap-3", compact ? "sm:grid-cols-4" : "sm:grid-cols-2")}>
       {assets.map((asset) => (
-        <div key={asset.asset_id} className="flex items-center gap-sm r-lg border border-border bg-card p-2 transition-all duration-300 ease-apple hover:border-bronze/30 hover:shadow-apple-sm">
+        <div key={asset.asset_id} className="flex items-center gap-3 rounded-lg border border-border bg-card p-2 transition-all duration-300 ease-apple hover:border-bronze/30 hover:shadow-apple-sm">
           <img src={downloadMediaWorkbenchAsset(asset.asset_id)} alt={asset.filename}
             className={cn("rounded object-cover", compact ? "h-9 w-12" : "h-12 w-16")} />
           {!compact && (
@@ -599,7 +620,7 @@ function MiniAssetList({ assets, compact = false }: { assets: MediaAsset[]; comp
   );
 }
 
-// VLM 修复：RunList — 状态视觉区分 + 空状态占位卡片
+// VLM 修复：RunList — 用 DSBadge + DSStatusDot + DSProgress 重写状态视觉
 function RunList({ runs, syncingRunId, onSync }: {
   runs: Array<{ run_id: string; status: string; prompt?: string; progress?: number; download_path?: string | null; error_message?: string | null }>;
   syncingRunId: string | null; onSync: (runId: string) => Promise<void>;
@@ -607,60 +628,63 @@ function RunList({ runs, syncingRunId, onSync }: {
   if (!runs.length) {
     // VLM 修复：空状态改为「等待生成」占位卡片
     return (
-      <div className="mt-3 r-lg border border-dashed border-border bg-muted/20 p-6 text-center">
-        <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center r-lg bg-background shadow-apple-sm">
-          <Clock className="h-4 w-4 text-muted-foreground" />
-        </div>
-        <div className="t-body font-medium text-foreground">等待生成</div>
-        <div className="mt-1 t-caption text-muted-foreground">提交视频生成后，任务状态会出现在这里</div>
-      </div>
+      <DSEmptyState className="mt-4"
+        icon={<Clock className="h-4 w-4" />}
+        title="等待生成"
+        desc="提交视频生成后，任务状态会出现在这里" />
     );
   }
   return (
-    <div className="mt-3 flex-1 space-y-2.5 overflow-y-auto scroll-fine" style={{ maxHeight: "calc(100vh - 320px)" }}>
+    <div className="mt-4 flex-1 space-y-3 overflow-y-auto scroll-fine" style={{ maxHeight: "calc(100vh - 320px)" }}>
       {runs.map((run) => {
         const isActive = run.status === "processing" || run.status === "queued";
-        // VLM 修复：状态视觉区分 — 不同颜色圆点
-        const dotClass = run.status === "completed" ? "bg-success" : run.status === "failed" ? "bg-destructive" : isActive ? "bg-primary anim-pulse-soft" : "bg-muted-foreground";
+        const dotStatus: "active" | "completed" | "failed" | "pending" =
+          run.status === "completed" ? "completed"
+          : run.status === "failed" ? "failed"
+          : isActive ? "active"
+          : "pending";
+        const badgeVariant: "success" | "warning" | "error" | "info" | "neutral" =
+          run.status === "failed" ? "error"
+          : run.status === "completed" ? "success"
+          : isActive ? "info"
+          : "neutral";
         return (
           <div key={run.run_id}
-            className={cn("r-lg border bg-background p-3 transition-all duration-300 ease-apple",
+            className={cn("rounded-lg border bg-background p-3 transition-all duration-300 ease-apple",
               isActive ? "border-primary/30 shadow-apple-sm" : "border-border hover:border-bronze/30")}>
-            <div className="flex flex-col gap-sm">
-              <div className="flex items-center gap-sm">
-                <span className={cn("h-2 w-2 shrink-0 rounded-full", dotClass)} />
-                <ToneBadge tone={run.status === "failed" ? "warning" : run.status === "completed" ? "success" : "neutral"}>{run.status}</ToneBadge>
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-3">
+                <DSStatusDot status={dotStatus} />
+                <DSBadge variant={badgeVariant}>{run.status}</DSBadge>
                 {isActive && (
-                  <span className="flex items-center gap-0.5 t-caption text-muted-foreground">
+                  <span className="flex items-center gap-3 t-caption text-muted-foreground">
                     <Clock className="h-3 w-3" />{run.progress || 0}%
                   </span>
                 )}
                 {run.status === "completed" && run.download_path && (
-                  <span className="flex items-center gap-0.5 t-caption text-success">
+                  <span className="flex items-center gap-3 t-caption text-success">
                     <CheckCircle2 className="h-3 w-3" />可下载
                   </span>
                 )}
               </div>
               <p className="line-clamp-2 t-caption text-foreground">{run.prompt || run.run_id}</p>
               {isActive && (
-                <div className="progress-pro">
-                  <div className={cn("progress-pro-bar", run.status === "processing" && "anim-pulse-soft")} style={{ width: `${run.progress || 0}%` }} />
-                </div>
+                <DSProgress value={run.progress || 0} variant="default" />
               )}
               {run.error_message && (
                 <div className="alert-error-pro t-caption !py-2">
                   <AlertTriangle className="h-3 w-3 shrink-0 mt-0.5" /><span>{run.error_message}</span>
                 </div>
               )}
-              <div className="flex shrink-0 gap-sm">
-                <Button variant="outline" size="sm" className="btn-cta-secondary btn-sm gap-sm t-caption"
+              <div className="flex shrink-0 gap-3">
+                <DSButton variant="secondary" size="sm" className="t-caption"
                   onClick={() => void onSync(run.run_id)} disabled={syncingRunId === run.run_id}>
                   {syncingRunId === run.run_id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}同步
-                </Button>
+                </DSButton>
                 {run.download_path && (
-                  <Button asChild size="sm" className="btn-cta-primary btn-sm gap-sm t-caption">
-                    <a href={downloadVideoWorkbenchRun(run.run_id)}><Download className="h-3.5 w-3.5" />下载</a>
-                  </Button>
+                  <a href={downloadVideoWorkbenchRun(run.run_id)} className={cn(DS_ANCHOR_PRIMARY_SM, "t-caption")}>
+                    <Download className="h-3.5 w-3.5" />下载
+                  </a>
                 )}
               </div>
             </div>
@@ -674,24 +698,23 @@ function RunList({ runs, syncingRunId, onSync }: {
 function AssetList({ assets }: { assets: MediaAsset[] }) {
   if (!assets.length) {
     return (
-      <div className="empty-state-pro mt-5 r-lg border border-dashed border-border">
-        <div className="icon-wrap"><Images className="h-5 w-5" /></div>
-        <div className="title">暂无素材</div>
-        <div className="desc">生成图片或视频后，素材会在这里归档。</div>
-      </div>
+      <DSEmptyState className="mt-6"
+        icon={<Images className="h-5 w-5" />}
+        title="暂无素材"
+        desc="生成图片或视频后，素材会在这里归档。" />
     );
   }
   return (
-    <div className="mt-5 max-h-[560px] space-y-sm overflow-y-auto scroll-fine">
+    <div className="mt-6 max-h-[560px] space-y-3 overflow-y-auto scroll-fine">
       {assets.map((asset) => (
-        <div key={asset.asset_id} className="card-pro flex items-center justify-between gap-md r-lg border border-border bg-background p-3">
+        <div key={asset.asset_id} className="flex items-center justify-between gap-4 rounded-lg border border-border bg-background p-3 transition-all duration-300 ease-apple hover:border-bronze/30 hover:-translate-y-0.5">
           <div className="min-w-0">
             <div className="truncate t-body font-medium text-foreground">{asset.filename}</div>
             <div className="t-caption text-muted-foreground">{asset.asset_type} · {asset.source}</div>
           </div>
-          <Button asChild variant="outline" size="sm" className="btn-cta-secondary btn-sm">
-            <a href={downloadMediaWorkbenchAsset(asset.asset_id)}><Download className="h-3.5 w-3.5" />下载</a>
-          </Button>
+          <a href={downloadMediaWorkbenchAsset(asset.asset_id)} className={DS_ANCHOR_SECONDARY_SM}>
+            <Download className="h-3.5 w-3.5" />下载
+          </a>
         </div>
       ))}
     </div>
@@ -708,24 +731,30 @@ function HistoryList({ imageRuns, videoRuns }: {
   ];
   if (!rows.length) {
     return (
-      <div className="empty-state-pro mt-5 r-lg border border-dashed border-border">
-        <div className="icon-wrap"><RefreshCw className="h-5 w-5" /></div>
-        <div className="title">暂无历史任务</div>
-        <div className="desc">真实生成任务会在这里保留最近记录。</div>
-      </div>
+      <DSEmptyState className="mt-6"
+        icon={<RefreshCw className="h-5 w-5" />}
+        title="暂无历史任务"
+        desc="真实生成任务会在这里保留最近记录。" />
     );
   }
   return (
-    <div className="mt-5 max-h-[560px] space-y-sm overflow-y-auto scroll-fine">
-      {rows.map((row) => (
-        <div key={row.id} className="card-pro r-lg border border-border bg-background p-3">
-          <div className="flex items-center justify-between gap-md">
-            <div className="t-caption font-medium text-muted-foreground">{row.kind} · {row.meta}</div>
-            <ToneBadge tone={row.status === "failed" ? "warning" : row.status === "completed" ? "success" : "neutral"}>{row.status}</ToneBadge>
+    <div className="mt-6 max-h-[560px] space-y-3 overflow-y-auto scroll-fine">
+      {rows.map((row) => {
+        const badgeVariant: "success" | "warning" | "error" | "info" | "neutral" =
+          row.status === "failed" ? "error"
+          : row.status === "completed" ? "success"
+          : row.status === "processing" || row.status === "queued" ? "info"
+          : "neutral";
+        return (
+          <div key={row.id} className="rounded-lg border border-border bg-background p-3 transition-all duration-300 ease-apple hover:border-bronze/30 hover:-translate-y-0.5">
+            <div className="flex items-center justify-between gap-4">
+              <div className="t-caption font-medium text-muted-foreground">{row.kind} · {row.meta}</div>
+              <DSBadge variant={badgeVariant}>{row.status}</DSBadge>
+            </div>
+            <p className="mt-2 line-clamp-2 t-caption text-foreground">{row.prompt || row.id}</p>
           </div>
-          <p className="mt-2 line-clamp-2 t-caption text-foreground">{row.prompt || row.id}</p>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

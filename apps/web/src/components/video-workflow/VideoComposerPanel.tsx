@@ -5,8 +5,13 @@ import { toast } from "sonner";
 import { AlertTriangle, Download, Expand, Film, Loader2, Play, Sparkles, Wand2, Zap } from "lucide-react";
 import { downloadVideoWorkflowRun, streamVideoWorkflowRun } from "@/lib/api-client";
 import type { VideoWorkflowConfig, VideoWorkflowRun } from "@/lib/types";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import {
+  DSButton,
+  DSCard,
+  DSBadge,
+  DSEmptyState,
+  DSProgress,
+} from "@/components/ui/ds";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import {
@@ -17,6 +22,14 @@ import {
 import { cn } from "@/lib/utils";
 
 const videoComposerSubmitLocks = new Set<string>();
+
+// DSButton-equivalent anchor styles for download / fullscreen links (must render as <a>/<button>)
+const DS_ANCHOR_SECONDARY_SM =
+  "inline-flex items-center justify-center gap-3 font-medium rounded-lg transition-all duration-300 ease-apple focus-ring whitespace-nowrap h-9 px-3.5 text-xs bg-transparent text-foreground border border-border hover:border-bronze/50 hover:text-bronze hover:bg-bronze/5 hover:-translate-y-0.5 active:translate-y-0";
+
+// DSPill-equivalent button style (for template tag buttons that need onClick)
+const DS_PILL_BTN_H8 =
+  "inline-flex h-8 items-center gap-3 rounded-full px-4 text-xs font-medium transition-all duration-300 ease-apple bg-muted text-foreground hover:bg-muted/70 hover:border-border border border-transparent cursor-pointer focus-ring";
 
 /* 六维结构化模板：主体 / 动作 / 运镜 / 氛围 / 画质 / 节奏 */
 const PROMPT_TEMPLATES: { label: string; snippet: string }[] = [
@@ -52,32 +65,29 @@ function statusLabel(run: VideoWorkflowRun | null): string {
 }
 
 function VideoRunPlaceholder({ run }: { run: VideoWorkflowRun | null }) {
+  const isError = run?.status === "failed" || run?.status === "submission_unknown";
   return (
-    <div className="flex aspect-video w-full items-center justify-center bg-muted anim-float">
-      <div className="max-w-sm text-center">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center r-md bg-background text-muted-foreground shadow-apple-sm">
-          {run?.status === "failed" || run?.status === "submission_unknown" ? (
-            <AlertTriangle className="h-5 w-5 text-destructive" />
-          ) : run ? (
-            <Loader2 className="h-5 w-5 animate-spin text-primary" />
-          ) : (
-            <Film className="h-5 w-5" />
-          )}
-        </div>
-        <div className="mt-3 t-module font-semibold text-foreground">{statusLabel(run)}</div>
-        {run && (
-          <div className="mt-3">
-            <div className="progress-pro mx-auto max-w-[200px]">
-              <div
-                className={cn("progress-pro-bar", run.status === "processing" && "anim-pulse-soft")}
-                style={{ width: `${run.progress}%` }}
-              />
-            </div>
+    <DSEmptyState
+      icon={
+        isError ? (
+          <AlertTriangle className="h-5 w-5 text-destructive" />
+        ) : run ? (
+          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+        ) : (
+          <Film className="h-5 w-5" />
+        )
+      }
+      title={statusLabel(run)}
+      className="aspect-video w-full rounded-none border-0 bg-muted"
+      action={
+        run ? (
+          <div className="mt-3 w-full max-w-[200px]">
+            <DSProgress value={run.progress} variant="default" />
             <div className="mt-1.5 t-caption text-muted-foreground">{run.progress}%</div>
           </div>
-        )}
-      </div>
-    </div>
+        ) : undefined
+      }
+    />
   );
 }
 
@@ -89,31 +99,29 @@ function VideoPreview({ projectId, run }: { projectId: string; run: VideoWorkflo
   return (
     <div className="relative">
       {state === "loading" && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center gap-sm bg-black/60 t-caption text-white">
+        <div className="absolute inset-0 z-10 flex items-center justify-center gap-3 bg-black/60 t-caption text-white">
           <Loader2 className="h-4 w-4 animate-spin" />
           正在加载视频
         </div>
       )}
       {state === "error" && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-md bg-black/80 px-4 text-center text-white">
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-black/80 px-4 text-center text-white">
           <AlertTriangle className="h-5 w-5 text-destructive" />
           <div className="t-caption">视频无法播放，可以重新加载或下载源文件。</div>
-          <Button
+          <DSButton
             type="button"
-            size="sm"
             variant="secondary"
+            size="sm"
             onClick={() => {
               setState("loading");
               setReloadKey((current) => current + 1);
             }}
           >
             重新加载
-          </Button>
-          <Button type="button" size="sm" variant="secondary" asChild>
-            <a href={downloadUrl} download>
-              下载源文件
-            </a>
-          </Button>
+          </DSButton>
+          <a href={downloadUrl} download className={DS_ANCHOR_SECONDARY_SM}>
+            下载源文件
+          </a>
         </div>
       )}
       <video
@@ -126,23 +134,21 @@ function VideoPreview({ projectId, run }: { projectId: string; run: VideoWorkflo
         onError={() => setState("error")}
       />
       {state === "ready" && (
-        <div className="absolute bottom-2 right-2 flex gap-sm">
-          <Button
+        <div className="absolute bottom-2 right-2 flex gap-3">
+          <DSButton
             type="button"
-            size="sm"
             variant="secondary"
-            className="gap-1 bg-background/90"
+            size="sm"
+            className="bg-background/90"
             onClick={() => setFullscreen(true)}
             aria-label="全屏预览"
           >
             <Expand className="h-3.5 w-3.5" />
-          </Button>
-          <Button type="button" size="sm" variant="secondary" className="gap-1 bg-background/90" asChild>
-            <a href={downloadUrl} download>
-              <Download className="h-3.5 w-3.5" />
-              下载源文件
-            </a>
-          </Button>
+          </DSButton>
+          <a href={downloadUrl} download className={cn(DS_ANCHOR_SECONDARY_SM, "bg-background/90")}>
+            <Download className="h-3.5 w-3.5" />
+            下载源文件
+          </a>
         </div>
       )}
       <Dialog open={fullscreen} onOpenChange={setFullscreen}>
@@ -262,18 +268,18 @@ export function VideoComposerPanel({
   }
 
   return (
-    <section className="card-unified card-pad-md">
-      <div className="mb-lg flex items-start justify-between gap-md">
+    <DSCard>
+      <div className="mb-4 flex items-start justify-between gap-4">
         <div>
           <h3 className="t-module font-semibold text-foreground">创作与预览</h3>
           <p className="mt-1 t-caption text-muted-foreground">{modeLabel}</p>
         </div>
-        <Badge className="badge-unified" variant={config.provider_ready ? "secondary" : "destructive"}>
+        <DSBadge variant={config.provider_ready ? "success" : "error"}>
           {config.provider_ready ? "可生成" : config.provider_user_message}
-        </Badge>
+        </DSBadge>
       </div>
 
-      <div className="overflow-hidden r-lg border border-border bg-black">
+      <div className="overflow-hidden rounded-lg border border-border bg-black">
         {selectedRun?.video_ready ? (
           <VideoPreview projectId={projectId} run={selectedRun} />
         ) : (
@@ -281,25 +287,25 @@ export function VideoComposerPanel({
         )}
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-sm">
-        <Badge className="badge-unified" variant="outline">{config.model}</Badge>
-        <Badge className="badge-unified" variant="outline">{config.size}</Badge>
-        <Badge className="badge-unified" variant="outline">{config.duration_sec} 秒</Badge>
-        <Badge className="badge-unified" variant="outline">单结果</Badge>
+      <div className="mt-4 flex flex-wrap gap-3">
+        <DSBadge variant="neutral">{config.model}</DSBadge>
+        <DSBadge variant="neutral">{config.size}</DSBadge>
+        <DSBadge variant="neutral">{config.duration_sec} 秒</DSBadge>
+        <DSBadge variant="neutral">单结果</DSBadge>
       </div>
 
-      {/* 六维结构化模板 */}
+      {/* 六维结构化模板 — DSPill 视觉语言（h-8）映射到可点击 button */}
       <div className="mt-4">
-        <div className="mb-2 flex items-center gap-sm t-overline text-muted-foreground/70">
+        <div className="mb-3 flex items-center gap-3 t-overline text-muted-foreground/70">
           <Wand2 className="h-3 w-3" />结构化模板
         </div>
-        <div className="flex flex-wrap gap-sm">
+        <div className="flex flex-wrap gap-3">
           {PROMPT_TEMPLATES.map((tpl) => (
             <button
               key={tpl.label}
               type="button"
               onClick={() => insertTemplate(tpl.snippet)}
-              className="pill-unified h-8!"
+              className={DS_PILL_BTN_H8}
             >
               {tpl.label}
             </button>
@@ -308,12 +314,12 @@ export function VideoComposerPanel({
       </div>
 
       {/* 提示词 + AI 润色 + 三色计数器 */}
-      <div className="mt-4 space-y-sm">
-        <div className="flex items-center justify-between gap-sm">
+      <div className="mt-4 flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3">
           <Label htmlFor="video-workflow-prompt" className="t-caption text-muted-foreground">
             视频提示词
           </Label>
-          <div className="flex items-center gap-md">
+          <div className="flex items-center gap-4">
             <button
               type="button"
               onClick={() => void polishPrompt()}
@@ -339,9 +345,11 @@ export function VideoComposerPanel({
         />
       </div>
 
-      {/* CTA 强化：btn-cta-primary + credits-hint */}
-      <Button
-        className="btn-cta-primary btn-lg mt-4 w-full gap-sm font-semibold"
+      {/* CTA 强化：DSButton primary + credits-hint */}
+      <DSButton
+        variant="primary"
+        size="lg"
+        className="mt-4 w-full font-semibold"
         disabled={submitDisabled}
         aria-disabled={submitDisabled}
         onClick={() => void handleSubmit()}
@@ -355,18 +363,18 @@ export function VideoComposerPanel({
         )}
         <span>生成 10 秒视频</span>
         <span className="credits-hint">≈{videoCredits} 积分</span>
-      </Button>
+      </DSButton>
       {disabledReason && (
-        <p className={config.provider_ready ? "mt-2 t-caption text-muted-foreground" : "mt-2 t-caption text-destructive"}>
+        <p className={config.provider_ready ? "mt-3 t-caption text-muted-foreground" : "mt-3 t-caption text-destructive"}>
           {disabledReason}
         </p>
       )}
       {!disabledReason && (
-        <p className="mt-2 flex items-center gap-sm t-caption text-muted-foreground/70">
+        <p className="mt-3 flex items-center gap-3 t-caption text-muted-foreground/70">
           <Zap className="h-3 w-3 text-bronze" />
           参考图越多画面越稳定；空提示词时建议先用模板补全结构。
         </p>
       )}
-    </section>
+    </DSCard>
   );
 }

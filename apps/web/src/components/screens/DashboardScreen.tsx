@@ -5,12 +5,16 @@ import { useAppStore } from "@/lib/store";
 import { MOCK_PENDING_ITEMS, MOCK_SYSTEM_STATUS, MOCK_RECENT_ACTIVITIES } from "@/lib/mock-data";
 import { stageDefByKey } from "@/lib/workflow";
 import { ProjectCard } from "@/components/project/ProjectCard";
-import { ProjectStatusBadge, ToneBadge } from "@/components/common/StatusBadge";
-import { EmptyState } from "@/components/common/StateViews";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
-import { Separator } from "@/components/ui/separator";
+import { ProjectStatusBadge } from "@/components/common/StatusBadge";
+import {
+  DSButton,
+  DSCard,
+  DSSectionTitle,
+  DSBadge,
+  DSEmptyState,
+  DSProgress,
+  DSStatusDot,
+} from "@/components/ui/ds";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -21,7 +25,6 @@ import {
 } from "@/components/ui/select";
 import {
   ArrowRight,
-  ArrowUpRight,
   Plus,
   ClipboardList,
   Activity,
@@ -71,7 +74,7 @@ export function DashboardScreen() {
   return (
     <div className="mx-auto w-full max-w-[1440px] px-4 py-6 lg:px-8 lg:py-8">
       {/* 页头 */}
-      <div className="flex flex-col gap-lg sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="t-overline text-muted-foreground/70">工作台首页</div>
           <h1 className="mt-2 h-page-title">
@@ -81,42 +84,46 @@ export function DashboardScreen() {
             以下是当前需要你关注的工作。一眼看清下一步要做什么。
           </p>
         </div>
-        <Button className="btn-cta-primary btn-md gap-sm" onClick={() => go("new-project")}>
+        <DSButton variant="primary" size="md" onClick={() => go("new-project")}>
           <Plus className="h-4 w-4" />
           新建项目
-        </Button>
+        </DSButton>
       </div>
 
       {/* 1. 继续工作 —— 首页视觉主角 */}
       <section className="mt-8">
-        <SectionHeader index="01" title="继续工作" desc="从上次离开的地方继续推进" />
+        <DSSectionTitle
+          icon={<span className="text-xs font-bold text-bronze">01</span>}
+          title="继续工作"
+          desc="从上次离开的地方继续推进"
+        />
         {projectsStatus === "loading" ? (
-          <Card className="card-unified card-pad-lg text-center">
+          <DSCard hover={false} className="p-10 text-center">
             <Activity className="mx-auto h-8 w-8 animate-pulse text-muted-foreground" />
             <p className="mt-3 t-module">正在同步项目列表</p>
             <p className="mt-1 t-caption text-muted-foreground">
               稍后会显示你最近的备课项目。
             </p>
-          </Card>
+          </DSCard>
         ) : projectsStatus === "error" ? (
-          <Card className="card-unified card-pad-lg border-dashed text-center">
+          <DSCard hover={false} className="border-dashed p-10 text-center">
             <AlertTriangle className="mx-auto h-8 w-8 text-destructive" />
             <p className="mt-3 t-module">项目列表读取失败</p>
             <p className="mt-1 t-caption text-muted-foreground">
               {projectsError || "请确认后端 API 已启动"}
             </p>
-            <Button className="btn-cta-primary btn-md mt-lg gap-sm" onClick={() => void loadProjects()}>
-              <RefreshCwIcon />
+            <DSButton variant="primary" size="md" className="mt-6" onClick={() => void loadProjects()}>
+              <RefreshCw className="h-4 w-4" />
               重试
-            </Button>
-          </Card>
+            </DSButton>
+          </DSCard>
         ) : continueProject ? (
           <ContinueWorkHero
             project={continueProject}
             onEnter={() => openProject(continueProject.id)}
           />
         ) : (
-          <Card className="card-unified card-pad-lg border-dashed text-center">
+          <DSCard hover={false} className="border-dashed p-10 text-center">
             <Inbox className="mx-auto h-8 w-8 text-muted-foreground" />
             <p className="mt-3 t-module">暂无进行中的项目</p>
             {dataMode === "api" && (
@@ -124,15 +131,15 @@ export function DashboardScreen() {
                 当前连接真实后端项目数据。
               </p>
             )}
-            <Button className="btn-cta-primary btn-md mt-lg gap-sm" onClick={() => go("new-project")}>
+            <DSButton variant="primary" size="md" className="mt-6" onClick={() => go("new-project")}>
               <Plus className="h-4 w-4" /> 新建第一个项目
-            </Button>
-          </Card>
+            </DSButton>
+          </DSCard>
         )}
       </section>
 
       {/* 2 + 3 双栏 */}
-      <div className="mt-10 grid gap-xl lg:grid-cols-3 grid-align-stretch">
+      <div className="mt-10 grid gap-6 lg:grid-cols-3 items-stretch">
         {/* 2. 项目概览（带筛选/排序/搜索） */}
         <section className="lg:col-span-2">
           <ProjectOverview />
@@ -140,12 +147,12 @@ export function DashboardScreen() {
 
         {/* 3. 待处理事项 */}
         <section>
-          <SectionHeader
-            index="03"
+          <DSSectionTitle
+            icon={<span className="text-xs font-bold text-bronze">03</span>}
             title="待处理事项"
             desc="需要你确认或处理"
           />
-          <Card className="card-unified card-pad-sm">
+          <DSCard hover={false} className="p-4">
             {pendingItems.length > 0 ? (
               <ul className="divide-y divide-border">
                 {pendingItems.map((item) => (
@@ -157,24 +164,24 @@ export function DashboardScreen() {
                 ))}
               </ul>
             ) : (
-              <EmptyState
+              <DSEmptyState
                 title="暂无待处理事项"
                 desc="后续接入任务提醒后会显示在这里。"
                 icon={<Inbox className="h-5 w-5" />}
               />
             )}
-          </Card>
+          </DSCard>
         </section>
       </div>
 
       {/* 4. 系统轻状态 */}
       <section className="mt-10">
-        <SectionHeader
-          index="04"
+        <DSSectionTitle
+          icon={<span className="text-xs font-bold text-bronze">04</span>}
           title="系统轻状态"
           desc="仅显示必要的运行状态，不堆砌监控"
         />
-        <div className="grid gap-lg sm:grid-cols-2 lg:grid-cols-4 grid-align-stretch">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 items-stretch">
           <LightStat
             icon={<Activity className="h-4 w-4" />}
             label="调度器"
@@ -203,7 +210,7 @@ export function DashboardScreen() {
         </div>
 
         {isAdmin && (
-          <Card className="card-unified card-pad-md mt-4">
+          <DSCard hover={false} className="mt-4">
             <div className="t-overline mb-3 text-muted-foreground/70">
               服务状态
             </div>
@@ -211,45 +218,18 @@ export function DashboardScreen() {
               {system.services.map((svc) => (
                 <div
                   key={svc.name}
-                  className="flex items-center justify-between gap-md"
+                  className="flex items-center justify-between gap-4"
                 >
                   <span className="t-body text-muted-foreground">{svc.name}</span>
                   <ServiceStatus status={svc.status} note={svc.note} />
                 </div>
               ))}
             </div>
-          </Card>
+          </DSCard>
         )}
       </section>
 
       <div className="h-2" />
-    </div>
-  );
-}
-
-function SectionHeader({
-  index,
-  title,
-  desc,
-  action,
-}: {
-  index: string;
-  title: string;
-  desc?: string;
-  action?: React.ReactNode;
-}) {
-  return (
-    <div className="mb-lg flex items-end justify-between gap-md">
-      <div className="section-title-unified mb-0!">
-        <div className="icon-box">
-          <span className="text-overline">{index}</span>
-        </div>
-        <div className="text-block">
-          <h2>{title}</h2>
-          {desc && <div className="desc">{desc}</div>}
-        </div>
-      </div>
-      {action}
     </div>
   );
 }
@@ -264,11 +244,11 @@ function ContinueWorkHero({
   const stage = stageDefByKey(project.currentStage);
   const stageTitle = project.currentStageTitle || stage?.title || project.currentStage;
   return (
-    <Card className="card-unified relative overflow-hidden p-0">
+    <DSCard hover={false} className="relative overflow-hidden p-0">
       <div className="grid gap-0 lg:grid-cols-[1.4fr_1fr]">
         {/* 左：项目信息 */}
         <div className="p-6 lg:p-8">
-          <div className="flex items-center gap-sm">
+          <div className="flex items-center gap-3">
             <span className="t-overline text-bronze">继续工作</span>
             <ProjectStatusBadge status={project.status} />
           </div>
@@ -287,9 +267,9 @@ function ContinueWorkHero({
             <span>{project.lessonType}</span>
           </div>
 
-          <div className="mt-6 r-lg border border-border bg-gradient-to-br from-muted/40 to-muted/20 p-lg transition-all duration-300 ease-apple hover:border-bronze/30 hover:shadow-apple-sm">
+          <div className="mt-6 rounded-lg border border-border bg-gradient-to-br from-muted/40 to-muted/20 p-4 transition-all duration-300 ease-apple hover:border-bronze/30 hover:shadow-apple-sm">
             <div className="t-overline text-muted-foreground/70">下一步动作</div>
-            <div className="mt-1.5 flex items-center gap-sm t-body font-semibold text-foreground">
+            <div className="mt-1.5 flex items-center gap-3 t-body font-semibold text-foreground">
               <span className="inline-block h-4 w-1 rounded-full bg-primary" />
               {project.nextAction}
             </div>
@@ -302,23 +282,18 @@ function ContinueWorkHero({
                 {project.progress}%
               </span>
             </div>
-            <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-primary to-bronze transition-all duration-700 ease-apple"
-                style={{ width: `${project.progress}%` }}
-              />
-            </div>
+            <DSProgress value={project.progress} className="mt-3" />
           </div>
 
-          <div className="mt-6 flex flex-wrap gap-md">
-            <Button className="btn-cta-primary btn-lg gap-sm" onClick={onEnter}>
+          <div className="mt-6 flex flex-wrap gap-4">
+            <DSButton variant="primary" size="lg" onClick={onEnter}>
               进入工作区
               <ArrowRight className="h-4 w-4" />
-            </Button>
-            <Button variant="outline" className="btn-cta-secondary btn-lg gap-sm">
+            </DSButton>
+            <DSButton variant="secondary" size="lg">
               <ClipboardList className="h-4 w-4" />
               查看流程
-            </Button>
+            </DSButton>
           </div>
         </div>
 
@@ -336,7 +311,7 @@ function ContinueWorkHero({
           </div>
         </div>
       </div>
-    </Card>
+    </DSCard>
   );
 }
 
@@ -375,30 +350,30 @@ function ActivityTimeline({ projectId }: { projectId?: string }) {
   }
 
   return (
-    <ol className="mt-3 space-y-3.5">
+    <ol className="mt-3 space-y-4">
       {items.map((item, idx) => {
         const meta = ACTIVITY_META[item.kind];
         const Icon = meta.Icon;
         const isLast = idx === items.length - 1;
         return (
-          <li key={item.id} className="relative flex gap-md">
+          <li key={item.id} className="relative flex gap-4">
             {/* 时间线竖线 */}
             {!isLast && (
               <span
-                className="absolute left-[13px] top-7 bottom-[-14px] w-px bg-border"
+                className="absolute left-[13px] top-7 bottom-[-16px] w-px bg-border"
                 aria-hidden
               />
             )}
             <span
               className={cn(
-                "relative z-10 flex h-7 w-7 shrink-0 items-center justify-center r-full",
+                "relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full",
                 meta.bg,
               )}
             >
               <Icon className={cn("h-3.5 w-3.5", meta.tone)} />
             </span>
             <div className="min-w-0 flex-1 pb-1">
-              <div className="flex items-center justify-between gap-sm">
+              <div className="flex items-center justify-between gap-3">
                 <span className="t-caption font-medium text-foreground/80">
                   {item.title}
                 </span>
@@ -412,7 +387,7 @@ function ActivityTimeline({ projectId }: { projectId?: string }) {
               <button
                 type="button"
                 onClick={() => openProject(item.projectId)}
-                className="mt-1 inline-flex items-center gap-1 t-caption text-muted-foreground/70 transition-colors hover:text-primary focus-ring"
+                className="mt-1 inline-flex items-center gap-3 t-caption text-muted-foreground/70 transition-colors hover:text-primary focus-ring"
               >
                 {item.projectName} · {item.stageTitle}
                 <ArrowRight className="h-2.5 w-2.5" />
@@ -423,10 +398,6 @@ function ActivityTimeline({ projectId }: { projectId?: string }) {
       })}
     </ol>
   );
-}
-
-function RefreshCwIcon() {
-  return <RefreshCw className="h-4 w-4" />;
 }
 
 function StageMiniRail({ currentStageKey }: { currentStageKey: string }) {
@@ -443,15 +414,20 @@ function StageMiniRail({ currentStageKey }: { currentStageKey: string }) {
   ];
   const currentIndex = nodes.findIndex((n) => n.k === currentStageKey);
   return (
-    <div className="mt-4 space-y-2.5">
+    <div className="mt-4 space-y-3">
       {nodes.map((n, i) => {
         const done = i < currentIndex;
         const current = i === currentIndex;
+        const dotStatus: "active" | "completed" | "failed" | "pending" = done
+          ? "completed"
+          : current
+          ? "active"
+          : "pending";
         return (
-          <div key={n.k} className="flex items-center gap-md">
+          <div key={n.k} className="flex items-center gap-4">
             <span
               className={cn(
-                "flex h-7 w-7 items-center justify-center r-full text-[0.65rem] font-bold transition-all duration-300 ease-apple",
+                "flex h-7 w-7 items-center justify-center rounded-full text-[0.65rem] font-bold transition-all duration-300 ease-apple",
                 done && "stage-node-done",
                 current && "stage-node-current",
                 !done && !current && "stage-node-pending"
@@ -468,7 +444,9 @@ function StageMiniRail({ currentStageKey }: { currentStageKey: string }) {
               {n.t}
             </span>
             {current && (
-              <span className="ml-auto t-caption text-primary">进行中</span>
+              <span className="ml-auto flex items-center gap-3 t-caption text-primary">
+                <DSStatusDot status={dotStatus} />进行中
+              </span>
             )}
           </div>
         );
@@ -494,16 +472,22 @@ function PendingRow({
     error: { label: "异常", tone: "danger" },
   };
   const meta = kindMeta[item.kind];
+  const badgeVariant: "success" | "warning" | "error" | "info" | "neutral" =
+    meta.tone === "danger"
+      ? "error"
+      : meta.tone === "warning"
+      ? "warning"
+      : "info";
   return (
     <li>
       <button
         type="button"
         onClick={onClick}
-        className="card-pro flex w-full items-start gap-md r-lg p-3 text-left hover:bg-muted/30 focus-ring"
+        className="flex w-full items-start gap-4 rounded-lg p-3 text-left transition-all duration-300 ease-apple hover:bg-muted/30 focus-ring"
       >
         <span
           className={cn(
-            "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center r-full",
+            "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full",
             meta.tone === "danger"
               ? "bg-destructive/10 text-destructive"
               : meta.tone === "warning"
@@ -518,18 +502,18 @@ function PendingRow({
           )}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-sm">
+          <div className="flex items-center gap-3">
             <span className="t-body truncate font-semibold text-foreground">{item.title}</span>
             {item.priority === "high" && (
-              <span className="badge-unified bg-destructive/10 text-destructive">
+              <DSBadge variant="error">
                 <AlertTriangle className="h-3 w-3" />高优先级
-              </span>
+              </DSBadge>
             )}
           </div>
           <div className="mt-0.5 t-caption text-muted-foreground line-clamp-1">
             {item.desc}
           </div>
-          <div className="mt-1.5 flex items-center gap-sm t-caption text-muted-foreground/80">
+          <div className="mt-1.5 flex items-center gap-3 t-caption text-muted-foreground/80">
             <span className="truncate">{item.projectName}</span>
             <span>·</span>
             <span>{item.stageTitle}</span>
@@ -570,17 +554,19 @@ function LightStat({
       : tone === "warning"
       ? "text-warning"
       : "text-muted-foreground";
+  const progressVariant: "default" | "success" | "warning" =
+    tone === "success" ? "success" : tone === "warning" ? "warning" : "default";
   return (
-    <Card className="card-unified card-pad-sm card-equal">
+    <DSCard className="h-full p-4">
       <div className="flex items-center justify-between">
         <span className="t-caption text-muted-foreground">{label}</span>
         <span className={iconTone}>{icon}</span>
       </div>
-      <div className={cn("mt-2 text-xl", toneText)}>{value}</div>
+      <div className={cn("mt-3 text-xl", toneText)}>{value}</div>
       {typeof progress === "number" && (
-        <Progress value={progress} className="mt-2 h-1 bg-muted" />
+        <DSProgress value={progress} variant={progressVariant} className="mt-3" />
       )}
-    </Card>
+    </DSCard>
   );
 }
 
@@ -592,14 +578,14 @@ function ServiceStatus({
   note: string;
 }) {
   const map = {
-    ok: { label: "正常", tone: "success" as const },
-    degraded: { label: "降级", tone: "warning" as const },
-    down: { label: "异常", tone: "danger" as const },
+    ok: { label: "正常", variant: "success" as const },
+    degraded: { label: "降级", variant: "warning" as const },
+    down: { label: "异常", variant: "error" as const },
   };
   const m = map[status];
   return (
-    <div className="flex items-center gap-sm">
-      <ToneBadge tone={m.tone}>{m.label}</ToneBadge>
+    <div className="flex items-center gap-3">
+      <DSBadge variant={m.variant}>{m.label}</DSBadge>
       <span className="t-caption text-muted-foreground">{note}</span>
     </div>
   );
@@ -681,8 +667,8 @@ function ProjectOverview() {
 
   return (
     <>
-      <SectionHeader
-        index="02"
+      <DSSectionTitle
+        icon={<span className="text-xs font-bold text-bronze">02</span>}
         title="项目概览"
         desc="所有项目的当前状态一览"
         action={
@@ -693,8 +679,8 @@ function ProjectOverview() {
       />
 
       {/* 筛选栏 */}
-      <Card className="card-unified card-pad-sm mb-lg">
-        <div className="flex flex-col gap-md lg:flex-row lg:items-center">
+      <DSCard hover={false} className="mb-4 p-3">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
           {/* 搜索 */}
           <div className="relative flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -769,21 +755,16 @@ function ProjectOverview() {
           </Select>
 
           {hasActiveFilter && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="btn-sm gap-sm text-muted-foreground"
-              onClick={resetFilters}
-            >
+            <DSButton variant="ghost" size="sm" className="text-muted-foreground" onClick={resetFilters}>
               <X className="h-3.5 w-3.5" />
               重置
-            </Button>
+            </DSButton>
           )}
         </div>
 
         {/* 激活筛选标签 */}
         {hasActiveFilter && (
-          <div className="mt-2.5 flex flex-wrap items-center gap-sm border-t border-border pt-2.5">
+          <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-border pt-3">
             <span className="t-caption text-muted-foreground">已筛选：</span>
             {statusFilter !== "all" && (
               <FilterChip
@@ -799,31 +780,31 @@ function ProjectOverview() {
             )}
           </div>
         )}
-      </Card>
+      </DSCard>
 
       {/* 项目卡片网格 */}
       {filtered.length > 0 ? (
-        <div className="grid gap-lg sm:grid-cols-2 xl:grid-cols-3 grid-align-stretch">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 items-stretch">
           {filtered.map((p) => (
             <ProjectCard key={p.id} project={p} />
           ))}
         </div>
       ) : (
-        <Card className="card-unified card-pad-lg border-dashed">
-          <EmptyState
+        <DSCard hover={false} className="border-dashed p-10">
+          <DSEmptyState
             title="未找到匹配的项目"
             desc="尝试调整筛选条件或搜索关键词。"
             icon={<Search className="h-5 w-5" />}
           />
           {hasActiveFilter && (
-            <div className="flex justify-center pb-2">
-              <Button variant="outline" size="sm" className="btn-cta-secondary btn-sm gap-sm" onClick={resetFilters}>
+            <div className="mt-4 flex justify-center pb-2">
+              <DSButton variant="secondary" size="sm" onClick={resetFilters}>
                 <X className="h-3.5 w-3.5" />
                 清除筛选
-              </Button>
+              </DSButton>
             </div>
           )}
-        </Card>
+        </DSCard>
       )}
     </>
   );
@@ -831,7 +812,7 @@ function ProjectOverview() {
 
 function FilterChip({ label, onClear }: { label: string; onClear: () => void }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 t-caption text-primary">
+    <span className="inline-flex items-center gap-3 rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 t-caption text-primary">
       {label}
       <button
         type="button"
